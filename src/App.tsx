@@ -1,15 +1,24 @@
 import { useState, useRef, useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Menu, X } from 'lucide-react';
 import LandingScreen from '@/components/LandingScreen';
 import Sidebar from '@/components/Sidebar';
 import ChatInput from '@/components/ChatInput';
 import ChatMessage from '@/components/ChatMessage';
+import LoginPage from '@/components/auth/LoginPage';
+import SignupPage from '@/components/auth/SignupPage';
+import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { Message, Region, Year } from '@/types';
 import { generateMockProtocol } from '@/data/mockData';
+import { useAuth } from '@/contexts/AuthContext';
 
 function App() {
-  const [showLanding, setShowLanding] = useState(true);
+  const { currentUser } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -24,17 +33,25 @@ function App() {
   }, [messages]);
 
   const handleStartSearch = () => {
-    setShowLanding(false);
-    setIsSidebarOpen(true);
+    if (currentUser) {
+      navigate('/dashboard');
+      setIsSidebarOpen(true);
+    } else {
+      navigate('/login');
+    }
   };
 
   const handleSampleQuery = (query: string) => {
-    setShowLanding(false);
-    setIsSidebarOpen(true);
-    // Simulate sending the sample query
-    setTimeout(() => {
-      handleSendMessage(query, 'India', '2024');
-    }, 100);
+    if (currentUser) {
+      navigate('/dashboard');
+      setIsSidebarOpen(true);
+      // Simulate sending the sample query
+      setTimeout(() => {
+        handleSendMessage(query, 'India', '2024');
+      }, 100);
+    } else {
+      navigate('/login');
+    }
   };
 
   const handleSendMessage = async (content: string, _region: Region, _year: Year) => {
@@ -78,16 +95,12 @@ function App() {
     console.log('Loading saved protocol:', protocolId);
   };
 
-  if (showLanding) {
-    return (
-      <LandingScreen 
-        onStartSearch={handleStartSearch}
-        onSampleQuery={handleSampleQuery}
-      />
-    );
-  }
+  const handleAuthSuccess = () => {
+    const from = location.state?.from?.pathname || '/dashboard';
+    navigate(from, { replace: true });
+  };
 
-  return (
+  const Dashboard = () => (
     <div className="h-screen flex bg-slate-50">
       {/* Sidebar */}
       {isSidebarOpen && (
@@ -125,7 +138,7 @@ function App() {
           </div>
           <Button
             variant="outline"
-            onClick={() => setShowLanding(true)}
+            onClick={() => navigate('/')}
             className="text-slate-600"
           >
             Back to Home
@@ -187,6 +200,21 @@ function App() {
         />
       </div>
     </div>
+  );
+
+  return (
+    <Routes>
+      <Route path="/" element={<LandingScreen onStartSearch={handleStartSearch} onSampleQuery={handleSampleQuery} />} />
+      <Route path="/login" element={<LoginPage onLoginSuccess={handleAuthSuccess} />} />
+      <Route path="/signup" element={<SignupPage onSignupSuccess={handleAuthSuccess} />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/dashboard" element={
+        <ProtectedRoute>
+          <Dashboard />
+        </ProtectedRoute>
+      } />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
