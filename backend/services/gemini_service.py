@@ -15,7 +15,6 @@ def _ensure_client():
     _model = genai.GenerativeModel(
         model_name=settings.GEMINI_MODEL,
         generation_config={
-            "response_mime_type": "application/json",
             "max_output_tokens": 768,
             "temperature": 0.2,
         },
