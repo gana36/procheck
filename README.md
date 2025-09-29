@@ -8,6 +8,7 @@ A React/TypeScript application that provides healthcare professionals with insta
 - **Clinically Cited**: Every protocol backed by peer-reviewed medical literature
 - **Global Standards**: Access protocols from WHO, ICMR, CDC, and regional health authorities
 - **Always Updated**: Latest 2024 guidelines with real-time updates
+- **User Authentication**: Secure login with email/password and Google sign-in
 - **Professional UI**: Clean, medical-themed interface with teal/blue color palette
 - **Responsive Design**: Works seamlessly on desktop and mobile devices
 
@@ -30,31 +31,53 @@ cd procheck
 npm install
 ```
 
-3. Start the development server:
+3. Set up Firebase Authentication:
+   - Create a Firebase project at [Firebase Console](https://console.firebase.google.com/)
+   - Enable Authentication and configure Email/Password and Google sign-in
+   - Create a `.env` file in the root directory with your Firebase config:
+   ```env
+   VITE_FIREBASE_API_KEY=your_api_key_here
+   VITE_FIREBASE_AUTH_DOMAIN=your_project_id.firebaseapp.com
+   VITE_FIREBASE_PROJECT_ID=your_project_id
+   VITE_FIREBASE_STORAGE_BUCKET=your_project_id.appspot.com
+   VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
+   VITE_FIREBASE_APP_ID=your_app_id
+   VITE_FIREBASE_MEASUREMENT_ID=your_measurement_id
+   ```
+
+4. Start the development server:
 ```bash
 npm run dev
 ```
 
-4. Open your browser and navigate to `http://localhost:5173`
+5. Open your browser and navigate to `http://localhost:5173`
 
 ## 🏗️ Project Structure
 
 ```
 src/
 ├── components/
+│   ├── auth/               # Authentication components
+│   │   ├── LoginPage.tsx   # Login page with email/Google auth
+│   │   ├── SignupPage.tsx  # Signup page with validation
+│   │   ├── ForgotPasswordPage.tsx # Password reset page
+│   │   └── ProtectedRoute.tsx # Route protection component
 │   ├── ui/                 # ShadCN UI components
 │   ├── LandingScreen.tsx   # Landing page with hero section
 │   ├── Sidebar.tsx         # Navigation with recent searches
 │   ├── ChatInput.tsx       # Input with region/year selectors
 │   ├── ChatMessage.tsx     # Message display component
 │   └── ProtocolCard.tsx    # Complex protocol display
+├── contexts/
+│   └── AuthContext.tsx     # Authentication context and provider
 ├── data/
 │   └── mockData.ts         # Mock medical protocol data
 ├── types/
 │   └── index.ts            # TypeScript interfaces
 ├── lib/
+│   ├── firebase.ts         # Firebase configuration
 │   └── utils.ts            # Utility functions
-└── App.tsx                 # Main application component
+└── App.tsx                 # Main application component with routing
 ```
 
 ## 🎨 Design System
@@ -100,6 +123,8 @@ src/
 
 - **React 18** with TypeScript
 - **Vite** for fast development and building
+- **React Router** for client-side routing
+- **Firebase** for authentication and database
 - **Tailwind CSS** for styling
 - **ShadCN UI** for component library
 - **Lucide React** for icons
@@ -119,16 +144,26 @@ src/
 - `npm run preview` - Preview production build
 - `npm run lint` - Run ESLint
 
+## 🔐 Authentication Features
+
+- **Email/Password Authentication**: Secure account creation and login
+- **Google Sign-In**: One-click authentication with Google
+- **Password Reset**: Forgot password functionality with email verification
+- **Protected Routes**: Dashboard access requires authentication
+- **Session Management**: Persistent login state across browser sessions
+- **Error Handling**: Comprehensive error messages for auth failures
+
 ## 🔮 Future Enhancements
 
 - Backend integration with medical databases
 - LLM integration for dynamic protocol generation
-- User authentication and saved protocols
 - PDF export functionality
 - Team collaboration features
 - Real-time protocol updates
 - Advanced search filters
 - Protocol comparison tools
+- User profile management
+- Saved protocols persistence
 
 ## 🏥 Medical Disclaimer
 

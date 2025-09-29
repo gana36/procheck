@@ -1,33 +1,27 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { 
   Send, 
   Paperclip, 
-  MapPin, 
-  Calendar,
   X,
   Loader2
 } from 'lucide-react';
-import { Region, Year, regions, years } from '@/types';
 import { sampleQueries } from '@/data/mockData';
 
 interface ChatInputProps {
-  onSendMessage: (message: string, region: Region, year: Year) => void;
+  onSendMessage: (message: string) => void;
   isLoading: boolean;
 }
 
 export default function ChatInput({ onSendMessage, isLoading }: ChatInputProps) {
   const [message, setMessage] = useState('');
-  const [selectedRegion, setSelectedRegion] = useState<Region>('India');
-  const [selectedYear, setSelectedYear] = useState<Year>('2024');
   const [showSampleQueries, setShowSampleQueries] = useState(true);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim() && !isLoading) {
-      onSendMessage(message.trim(), selectedRegion, selectedYear);
+      onSendMessage(message.trim());
       setMessage('');
       setShowSampleQueries(false);
     }
@@ -37,9 +31,6 @@ export default function ChatInput({ onSendMessage, isLoading }: ChatInputProps) 
     setMessage(query);
     setShowSampleQueries(false);
   };
-
-  const removeRegion = () => setSelectedRegion('India');
-  const removeYear = () => setSelectedYear('2024');
 
   return (
     <div className="bg-white border-t border-slate-200 p-4">
@@ -73,65 +64,6 @@ export default function ChatInput({ onSendMessage, isLoading }: ChatInputProps) 
         </div>
       )}
 
-      {/* Region and Year Selectors */}
-      <div className="mb-4">
-        <div className="flex items-center space-x-2 mb-2">
-          <div className="flex items-center space-x-1">
-            <MapPin className="h-4 w-4 text-slate-500" />
-            <span className="text-sm text-slate-600">Region:</span>
-          </div>
-          <select
-            value={selectedRegion}
-            onChange={(e) => setSelectedRegion(e.target.value as Region)}
-            className="text-sm border border-slate-200 rounded-md px-2 py-1 bg-white"
-          >
-            {regions.map((region) => (
-              <option key={region} value={region}>
-                {region}
-              </option>
-            ))}
-          </select>
-          
-          <div className="flex items-center space-x-1">
-            <Calendar className="h-4 w-4 text-slate-500" />
-            <span className="text-sm text-slate-600">Year:</span>
-          </div>
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(e.target.value as Year)}
-            className="text-sm border border-slate-200 rounded-md px-2 py-1 bg-white"
-          >
-            {years.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
-        </div>
-        
-        {/* Display Selected Filters */}
-        <div className="flex items-center space-x-2">
-          <Badge 
-            variant="secondary" 
-            className="bg-teal-100 text-teal-700 hover:bg-teal-200 cursor-pointer"
-            onClick={removeRegion}
-          >
-            <MapPin className="h-3 w-3 mr-1" />
-            {selectedRegion}
-            <X className="h-3 w-3 ml-1" />
-          </Badge>
-          <Badge 
-            variant="secondary" 
-            className="bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer"
-            onClick={removeYear}
-          >
-            <Calendar className="h-3 w-3 mr-1" />
-            {selectedYear}
-            <X className="h-3 w-3 ml-1" />
-          </Badge>
-        </div>
-      </div>
-
       {/* Input Field */}
       <form onSubmit={handleSubmit} className="flex items-end space-x-2">
         <div className="flex-1">
@@ -143,7 +75,6 @@ export default function ChatInput({ onSendMessage, isLoading }: ChatInputProps) 
             disabled={isLoading}
           />
         </div>
-        
         <div className="flex items-center space-x-2">
           <Button
             type="button"
@@ -154,7 +85,6 @@ export default function ChatInput({ onSendMessage, isLoading }: ChatInputProps) 
           >
             <Paperclip className="h-5 w-5 text-slate-500" />
           </Button>
-          
           <Button
             type="submit"
             size="icon"

@@ -1,8 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Stethoscope, Shield, Zap, Globe, Clock, CheckCircle } from 'lucide-react';
+import { Stethoscope, Shield, Zap, Globe, Clock, CheckCircle, User, LogOut } from 'lucide-react';
 import { sampleQueries } from '@/data/mockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { Link } from 'react-router-dom';
 
 interface LandingScreenProps {
   onStartSearch: () => void;
@@ -10,6 +12,16 @@ interface LandingScreenProps {
 }
 
 export default function LandingScreen({ onStartSearch, onSampleQuery }: LandingScreenProps) {
+  const { currentUser, logout } = useAuth();
+  
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Failed to log out:', error);
+    }
+  };
+
   const features = [
     {
       icon: <Shield className="h-6 w-6 text-teal-600" />,
@@ -47,9 +59,43 @@ export default function LandingScreen({ onStartSearch, onSampleQuery }: LandingS
               <p className="text-sm text-slate-600">Protocol Synthesizer</p>
             </div>
           </div>
-          <Badge variant="secondary" className="bg-teal-100 text-teal-700">
-            Beta
-          </Badge>
+          <div className="flex items-center space-x-3">
+            <Badge variant="secondary" className="bg-teal-100 text-teal-700">
+              Beta
+            </Badge>
+            {currentUser ? (
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-2">
+                  <User className="h-4 w-4 text-slate-600" />
+                  <span className="text-sm text-slate-700">
+                    {currentUser.displayName || currentUser.email}
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLogout}
+                  className="text-slate-600 hover:text-slate-900"
+                >
+                  <LogOut className="h-4 w-4 mr-1" />
+                  Logout
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-2">
+                <Link to="/login">
+                  <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900">
+                    Sign In
+                  </Button>
+                </Link>
+                <Link to="/signup">
+                  <Button size="sm" className="bg-teal-600 hover:bg-teal-700 text-white">
+                    Sign Up
+                  </Button>
+                </Link>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

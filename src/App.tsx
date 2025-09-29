@@ -1,15 +1,24 @@
 import { useState, useRef, useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Menu, X } from 'lucide-react';
 import LandingScreen from '@/components/LandingScreen';
 import Sidebar from '@/components/Sidebar';
 import ChatInput from '@/components/ChatInput';
 import ChatMessage from '@/components/ChatMessage';
-import { Message, Region, Year } from '@/types';
-import { generateMockProtocol } from '@/data/mockData';
+import LoginPage from '@/components/auth/LoginPage';
+import SignupPage from '@/components/auth/SignupPage';
+import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import { Message, ProtocolData, ProtocolStep, Citation } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
+import { searchProtocols, generateProtocol } from '@/lib/api';
 
 function App() {
-  const [showLanding, setShowLanding] = useState(true);
+  const { currentUser } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -24,20 +33,158 @@ function App() {
   }, [messages]);
 
   const handleStartSearch = () => {
-    setShowLanding(false);
-    setIsSidebarOpen(true);
+    if (currentUser) {
+      navigate('/dashboard');
+      setIsSidebarOpen(true);
+    } else {
+      navigate('/login');
+    }
   };
 
   const handleSampleQuery = (query: string) => {
-    setShowLanding(false);
-    setIsSidebarOpen(true);
-    // Simulate sending the sample query
-    setTimeout(() => {
-      handleSendMessage(query, 'India', '2024');
-    }, 100);
+    if (currentUser) {
+      navigate('/dashboard');
+      setIsSidebarOpen(true);
+      setTimeout(() => {
+        handleSendMessage(query);
+      }, 100);
+    } else {
+      navigate('/login');
+    }
   };
 
-  const handleSendMessage = async (content: string, _region: Region, _year: Year) => {
+  const cleanStepText = (text: string): string => {
+    if (!text) return '';
+    let t = text.replace(/\s+/g, ' ').trim();
+    t = t.replace(/^([0-9]+[\.)\-:]\s*|[\-•]\s*)+/g, '').trim();
+    t = t.replace(/\s*([0-9]+[\.)])\s*/g, ' ').trim();
+    if (t.length > 0) t = t.charAt(0).toUpperCase() + t.slice(1);
+    if (!(/[\.!?]$/.test(t))) t = t + '.';
+    if (t.length > 140) {
+      const cut = t.slice(0, 140);
+      const idx = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('; '), cut.lastIndexOf(', '));
+      t = (idx > 80 ? cut.slice(0, idx + 1) : cut.trim()) + (t.length > 150 ? '…' : '');
+    }
+    return t;
+  };
+
+  const normalizeChecklist = (items: { step: number; text: string }[]): { step: number; text: string }[] => {
+    const seen = new Set<string>();
+    const out: { step: number; text: string }[] = [];
+    for (const item of items || []) {
+      const cleaned = cleanStepText(item?.text || '');
+      if (!cleaned || cleaned.length < 4) continue;
+      const key = cleaned.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ step: out.length + 1, text: cleaned });
+    }
+    return out.slice(0, 12);
+  };
+
+  const selectSnippets = (query: string, hits: any[]): string[] => {
+    // Use semantic relevance scoring - trust Elasticsearch scores but add context diversity
+    const scored = (hits || []).map((h) => {
+      const s = h.source || {};
+      let score = h.score || 0;
+      
+      // Boost based on content type relevance to query intent
+      const section = String(s.section || '').toLowerCase();
+      const title = String(s.title || '').toLowerCase();
+      const queryLower = query.toLowerCase();
+      
+      // Boost clinical/management content for protocol queries
+      if (section.includes('checklist') || section.includes('protocol') || section.includes('management')) {
+        score += 1.0;
+      }
+      if (title.includes('protocol') || title.includes('checklist') || title.includes('guidelines')) {
+        score += 0.8;
+      }
+      
+      // Slight penalty for prevention/vaccination when query seems clinical
+      if ((section.includes('prevention') || section.includes('vaccination')) && 
+          (queryLower.includes('treatment') || queryLower.includes('management') || queryLower.includes('protocol'))) {
+        score -= 0.3;
+      }
+      
+      return { h, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+
+    const snippets: string[] = [];
+    for (const { h } of scored) {
+      const s = h.source || {};
+      const body = s.body || s.content || s.title;
+      if (!body) continue;
+      snippets.push(String(body));
+      if (snippets.length >= 8) break; // Limit context to avoid overwhelming LLM
+    }
+    return snippets;
+  };
+
+  const mapBackendToProtocolData = (
+    title: string,
+    hits: any[],
+    checklist: { step: number; text: string }[],
+    citations: string[]
+  ): ProtocolData => {
+    const best = hits?.[0]?.source || {};
+    const region = String(best.region || 'Global');
+    const year = String(best.year || new Date().getFullYear());
+    const organization = String(best.organization || 'ProCheck');
+
+    const normalized = normalizeChecklist(checklist);
+    const steps: ProtocolStep[] = normalized.length > 0
+      ? normalized.map((item) => ({ id: item.step, step: item.text, citations: [] }))
+      : (hits || []).slice(0, 6).map((h: any, idx: number) => ({
+          id: idx + 1,
+          step: cleanStepText(h.source?.body || h.source?.content || h.source?.title || '—'),
+          citations: [],
+        }));
+
+    const citationObjs: Citation[] = [];
+    for (let i = 0; i < Math.min(citations.length, 5); i++) {
+      const url = citations[i];
+      citationObjs.push({
+        id: i + 1,
+        source: 'Reference',
+        organization: organization,
+        year,
+        region,
+        url,
+        excerpt: url,
+      });
+    }
+    if (citationObjs.length === 0 && hits?.length) {
+      hits.slice(0, 3).forEach((h: any) => {
+        const url = h.source?.source_url || h.source?.url;
+        if (url) {
+          citationObjs.push({
+            id: citationObjs.length + 1,
+            source: h.source?.title || 'Source',
+            organization: h.source?.organization || organization,
+            year: String(h.source?.year || year),
+            region: h.source?.region || region,
+            url,
+            excerpt: h.source?.section || h.source?.title || url,
+          });
+        }
+      });
+    }
+
+    return {
+      title,
+      region,
+      year,
+      organization,
+      steps,
+      citations: citationObjs,
+      lastUpdated: new Date().toISOString(),
+    };
+  };
+
+  const handleSendMessage = async (content: string) => {
     const userMessage: Message = {
       id: Date.now().toString(),
       type: 'user',
@@ -48,10 +195,29 @@ function App() {
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
-    // Simulate AI response delay
-    setTimeout(() => {
-      const protocolData = generateMockProtocol(content);
-      
+    try {
+      const searchRes = await searchProtocols({
+        query: content,
+        size: 8,
+      });
+
+      const snippets = selectSnippets(content, searchRes.hits);
+
+      const genRes = await generateProtocol({
+        title: content,
+        context_snippets: snippets.length > 0 ? snippets : [content],
+        instructions: `Analyze the provided context and generate a concise, actionable medical protocol checklist. Focus on the most relevant information for the user's query. Ignore irrelevant or conflicting information from different sources.`,
+        region: null,
+        year: null,
+      });
+
+      const protocolData: ProtocolData = mapBackendToProtocolData(
+        content,
+        searchRes.hits,
+        genRes.checklist,
+        genRes.citations
+      );
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
@@ -61,8 +227,17 @@ function App() {
       };
 
       setMessages(prev => [...prev, assistantMessage]);
+    } catch (err: any) {
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: `Sorry, I couldn't process that request. ${err?.message || ''}`.trim(),
+        timestamp: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+    } finally {
       setIsLoading(false);
-    }, 2000);
+    }
   };
 
   const handleNewSearch = () => {
@@ -70,34 +245,26 @@ function App() {
   };
 
   const handleRecentSearch = (query: string) => {
-    handleSendMessage(query, 'India', '2024');
+    handleSendMessage(query);
   };
 
   const handleSavedProtocol = (protocolId: string) => {
-    // In a real app, this would load the saved protocol
     console.log('Loading saved protocol:', protocolId);
   };
 
-  if (showLanding) {
-    return (
-      <LandingScreen 
-        onStartSearch={handleStartSearch}
-        onSampleQuery={handleSampleQuery}
-      />
-    );
-  }
+  const handleAuthSuccess = () => {
+    const from = location.state?.from?.pathname || '/dashboard';
+    navigate(from, { replace: true });
+  };
 
-  return (
+  const Dashboard = () => (
     <div className="h-screen flex bg-slate-50">
-      {/* Sidebar */}
       {isSidebarOpen && (
         <>
-          {/* Mobile overlay */}
           <div 
             className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
             onClick={() => setIsSidebarOpen(false)}
           />
-          {/* Sidebar */}
           <div className="fixed lg:relative lg:translate-x-0 inset-y-0 left-0 z-50 lg:z-auto">
             <Sidebar
               onNewSearch={handleNewSearch}
@@ -107,10 +274,7 @@ function App() {
           </div>
         </>
       )}
-
-      {/* Main Content */}
       <div className="flex-1 flex flex-col h-full">
-        {/* Header */}
         <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Button
@@ -125,14 +289,12 @@ function App() {
           </div>
           <Button
             variant="outline"
-            onClick={() => setShowLanding(true)}
+            onClick={() => navigate('/')}
             className="text-slate-600"
           >
             Back to Home
           </Button>
         </header>
-
-        {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 && (
             <div className="flex items-center justify-center h-full">
@@ -148,11 +310,9 @@ function App() {
               </div>
             </div>
           )}
-          
           {messages.map((message) => (
             <ChatMessage key={message.id} message={message} />
           ))}
-          
           {isLoading && (
             <div className="flex justify-start">
               <div className="max-w-[90%]">
@@ -176,17 +336,29 @@ function App() {
               </div>
             </div>
           )}
-          
           <div ref={messagesEndRef} />
         </div>
-
-        {/* Chat Input */}
         <ChatInput 
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
         />
       </div>
     </div>
+  );
+
+  return (
+    <Routes>
+      <Route path="/" element={<LandingScreen onStartSearch={handleStartSearch} onSampleQuery={handleSampleQuery} />} />
+      <Route path="/login" element={<LoginPage onLoginSuccess={handleAuthSuccess} />} />
+      <Route path="/signup" element={<SignupPage onSignupSuccess={handleAuthSuccess} />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/dashboard" element={
+        <ProtectedRoute>
+          <Dashboard />
+        </ProtectedRoute>
+      } />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
