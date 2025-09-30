@@ -506,3 +506,4 @@ ssl/
 ehthumbs.db
 Thumbs.db
 
+backend/cred.json

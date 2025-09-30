@@ -12,16 +12,19 @@ import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { Message, ProtocolData, ProtocolStep, Citation } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { searchProtocols, generateProtocol } from '@/lib/api';
+import { searchProtocols, generateProtocol, saveConversation, ConversationMessage } from '@/lib/api';
 
 function App() {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentConversationId, setCurrentConversationId] = useState<string>(() =>
+    `conv_${Date.now()}`
+  );
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -180,8 +183,51 @@ function App() {
       organization,
       steps,
       citations: citationObjs,
-      lastUpdated: new Date().toISOString(),
+      lastUpdated: getUserTimestamp(),
     };
+  };
+
+  // Helper function to get user's local timestamp in backend format
+  const getUserTimestamp = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const ms = String(now.getMilliseconds()).padStart(3, '0');
+
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}`;
+  };
+
+  // Helper function to save conversation
+  const saveCurrentConversation = async (updatedMessages: Message[], lastQuery: string) => {
+    if (!currentUser) return;
+
+    try {
+      const conversationMessages: ConversationMessage[] = updatedMessages.map(msg => ({
+        id: msg.id,
+        type: msg.type as 'user' | 'assistant',
+        content: msg.content,
+        timestamp: msg.timestamp, // Preserve original message timestamp
+        protocol_data: msg.protocolData || undefined,
+      }));
+
+      // Use the first message timestamp as conversation created_at
+      const firstMessageTimestamp = updatedMessages.length > 0 ? updatedMessages[0].timestamp : getUserTimestamp();
+
+      await saveConversation(currentUser.uid, {
+        id: currentConversationId,
+        title: lastQuery.length > 50 ? lastQuery.substring(0, 50) + '...' : lastQuery,
+        messages: conversationMessages,
+        last_query: lastQuery,
+        tags: ['medical-protocol'],
+        created_at: firstMessageTimestamp,
+      });
+    } catch (error) {
+      console.error('Failed to save conversation:', error);
+    }
   };
 
   const handleSendMessage = async (content: string) => {
@@ -189,7 +235,7 @@ function App() {
       id: Date.now().toString(),
       type: 'user',
       content,
-      timestamp: new Date().toISOString(),
+      timestamp: getUserTimestamp(),
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -222,19 +268,29 @@ function App() {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
         content: `Here's the comprehensive protocol for your query:`,
-        timestamp: new Date().toISOString(),
+        timestamp: getUserTimestamp(),
         protocolData,
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages(prev => {
+        const newMessages = [...prev, assistantMessage];
+        // Save conversation asynchronously
+        saveCurrentConversation(newMessages, content);
+        return newMessages;
+      });
     } catch (err: any) {
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
         content: `Sorry, I couldn't process that request. ${err?.message || ''}`.trim(),
-        timestamp: new Date().toISOString(),
+        timestamp: getUserTimestamp(),
       };
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages(prev => {
+        const newMessages = [...prev, assistantMessage];
+        // Save conversation even on error
+        saveCurrentConversation(newMessages, content);
+        return newMessages;
+      });
     } finally {
       setIsLoading(false);
     }
@@ -242,6 +298,7 @@ function App() {
 
   const handleNewSearch = () => {
     setMessages([]);
+    setCurrentConversationId(`conv_${Date.now()}`); // Generate new conversation ID
   };
 
   const handleRecentSearch = (query: string) => {
