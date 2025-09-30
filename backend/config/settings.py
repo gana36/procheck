@@ -23,6 +23,9 @@ class Settings:
     # Gemini API Configuration
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+    # Google Cloud / Firestore Configuration
+    GOOGLE_CLOUD_CREDENTIALS_PATH: str = os.getenv("GOOGLE_CLOUD_CREDENTIALS_PATH", "")
     
     # FastAPI Configuration
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
