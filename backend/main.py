@@ -15,6 +15,13 @@ from models.protocol_models import (
     ProtocolGenerateRequest,
     ProtocolGenerateResponse,
 )
+from models.conversation_models import (
+    ConversationSaveRequest,
+    ConversationResponse,
+    ConversationListResponse,
+    ConversationDetailResponse,
+    ConversationTitleUpdateRequest,
+)
 from services.elasticsearch_service import (
     check_cluster_health,
     ensure_index,
@@ -24,6 +31,7 @@ from services.elasticsearch_service import (
     search_with_filters,
 )
 from services.gemini_service import summarize_checklist
+from services.firestore_service import FirestoreService
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -153,6 +161,89 @@ async def protocols_generate(payload: ProtocolGenerateRequest):
         checklist=checklist_items,
         citations=result.get("citations", []),
     )
+
+# Conversation management endpoints
+@app.post("/conversations/save", response_model=ConversationResponse)
+async def save_conversation(user_id: str, payload: ConversationSaveRequest):
+    """Save or update a conversation for a user"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+
+    result = FirestoreService.save_conversation(user_id, payload.model_dump())
+
+    if not result.get("success"):
+        status_code = 502 if result.get("error") == "firestore_error" else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return ConversationResponse(**result)
+
+@app.get("/conversations/{user_id}", response_model=ConversationListResponse)
+async def get_user_conversations(user_id: str, limit: int = 20):
+    """Get all conversations for a user"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+
+    result = FirestoreService.get_user_conversations(user_id, limit)
+
+    if not result.get("success"):
+        status_code = 502 if result.get("error") == "firestore_error" else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return ConversationListResponse(**result)
+
+@app.get("/conversations/{user_id}/{conversation_id}", response_model=ConversationDetailResponse)
+async def get_conversation(user_id: str, conversation_id: str):
+    """Get a specific conversation for a user"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not conversation_id or not conversation_id.strip():
+        raise HTTPException(status_code=400, detail="conversation_id is required")
+
+    result = FirestoreService.get_conversation(user_id, conversation_id)
+
+    if not result.get("success"):
+        if result.get("error") == "not_found":
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        status_code = 502 if result.get("error") == "firestore_error" else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return ConversationDetailResponse(**result)
+
+@app.delete("/conversations/{user_id}/{conversation_id}")
+async def delete_conversation(user_id: str, conversation_id: str):
+    """Delete a conversation for a user"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not conversation_id or not conversation_id.strip():
+        raise HTTPException(status_code=400, detail="conversation_id is required")
+
+    result = FirestoreService.delete_conversation(user_id, conversation_id)
+
+    if not result.get("success"):
+        if result.get("error") == "not_found":
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        status_code = 502 if result.get("error") == "firestore_error" else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return {"success": True, "message": "Conversation deleted successfully"}
+
+@app.put("/conversations/{user_id}/{conversation_id}/title")
+async def update_conversation_title(user_id: str, conversation_id: str, payload: ConversationTitleUpdateRequest):
+    """Update conversation title"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not conversation_id or not conversation_id.strip():
+        raise HTTPException(status_code=400, detail="conversation_id is required")
+
+    result = FirestoreService.update_conversation_title(user_id, conversation_id, payload.title)
+
+    if not result.get("success"):
+        if result.get("error") == "not_found":
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        status_code = 502 if result.get("error") == "firestore_error" else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return {"success": True, "message": "Title updated successfully"}
 
 if __name__ == "__main__":
     uvicorn.run(
