@@ -70,7 +70,7 @@ export default function ChatInput({ onSendMessage, isLoading }: ChatInputProps) 
           <Input
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Ask about any protocol, e.g. 'Checklist for dengue in Delhi, 2024'..."
+            placeholder="Ask in natural language... Hybrid AI understands meaning, not just keywords"
             className="min-h-[60px] resize-none rounded-xl border-slate-200 focus:border-teal-300 focus:ring-teal-200"
             disabled={isLoading}
           />

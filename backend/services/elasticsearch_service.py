@@ -60,6 +60,8 @@ def ensure_index(index_name: Optional[str] = None) -> Dict[str, Any]:
     try:
         if client.indices.exists(index=index):
             return {"exists": True, "index": index}
+        
+        # Enhanced mapping with dense_vector for hybrid search
         body = {
             "settings": {
                 "number_of_shards": 1,
@@ -67,11 +69,34 @@ def ensure_index(index_name: Optional[str] = None) -> Dict[str, Any]:
             },
             "mappings": {
                 "properties": {
-                    "title": {"type": "text"},
+                    # Medical document fields
+                    "disease": {"type": "keyword"},
+                    "region": {"type": "keyword"},
+                    "year": {"type": "integer"},
+                    "organization": {"type": "keyword"},
+                    "title": {
+                        "type": "text",
+                        "fields": {
+                            "keyword": {"type": "keyword"}
+                        }
+                    },
+                    "section": {"type": "text"},
+                    "body": {"type": "text"},
+                    "source_url": {"type": "keyword"},
+                    "last_reviewed": {"type": "date"},
+                    "next_review_due": {"type": "date"},
+                    
+                    # Vector embedding field for semantic search (Gemini text-embedding-004 = 768 dims)
+                    "body_embedding": {
+                        "type": "dense_vector",
+                        "dims": 768,
+                        "index": True,
+                        "similarity": "cosine"
+                    },
+                    
+                    # Legacy fields for backward compatibility
                     "content": {"type": "text"},
                     "source": {"type": "keyword"},
-                    "year": {"type": "integer"},
-                    "region": {"type": "keyword"},
                     "tags": {"type": "keyword"}
                 }
             }
@@ -149,7 +174,7 @@ def search_with_filters(payload: Dict[str, Any], index_name: Optional[str] = Non
             must_clause.append({
                 "multi_match": {
                     "query": query,
-                    "fields": ["title^2", "content", "tags", "organization", "region"],
+                    "fields": ["title^3", "disease^2.5", "section^2", "body", "content", "tags", "organization"],
                     "type": "best_fields"
                 }
             })
@@ -165,6 +190,7 @@ def search_with_filters(payload: Dict[str, Any], index_name: Optional[str] = Non
         add_terms("year", filters.get("year"))
         add_terms("organization", filters.get("organization"))
         add_terms("tags", filters.get("tags"))
+        add_terms("disease", filters.get("disease"))
 
         es_query = {
             "bool": {
@@ -180,12 +206,193 @@ def search_with_filters(payload: Dict[str, Any], index_name: Optional[str] = Non
                 "query": es_query,
                 "highlight": {
                     "fields": {
-                        "content": {}
+                        "body": {"fragment_size": 150, "number_of_fragments": 3},
+                        "content": {"fragment_size": 150, "number_of_fragments": 3}
                     }
                 }
             }
         )
         return resp
+    except ApiError as e:
+        return {"error": "api_error", "details": str(e)}
+    except Exception as e:
+        return {"error": "unexpected_error", "details": str(e)}
+
+
+def hybrid_search(
+    query: str,
+    query_vector: Optional[list[float]] = None,
+    size: int = 10,
+    filters: Optional[Dict[str, Any]] = None,
+    index_name: Optional[str] = None,
+    use_rrf: bool = False
+) -> Dict[str, Any]:
+    """
+    HYBRID SEARCH: Combines BM25 keyword search with vector semantic search.
+    Uses kNN + text query combination (or RRF if supported).
+    
+    This is the core feature for the Elastic hackathon challenge!
+    
+    Args:
+        query: User's search query text
+        query_vector: Query embedding vector (768 dims for Gemini)
+        size: Number of results to return
+        filters: Optional filters (region, year, organization, etc.)
+        index_name: Elasticsearch index name
+        use_rrf: Whether to use RRF (True) or kNN approach (False, default)
+    
+    Returns:
+        Elasticsearch response with merged results
+    """
+    client = get_client()
+    index = index_name or settings.ELASTICSEARCH_INDEX_NAME
+    filters = filters or {}
+    
+    try:
+        # Build filter clause
+        filter_clause: list[Dict[str, Any]] = []
+        
+        def add_terms(field: str, values: Any):
+            if isinstance(values, list) and values:
+                filter_clause.append({"terms": {field: values}})
+        
+        add_terms("region", filters.get("region"))
+        add_terms("year", filters.get("year"))
+        add_terms("organization", filters.get("organization"))
+        add_terms("disease", filters.get("disease"))
+        add_terms("tags", filters.get("tags"))
+        
+        # If no vector provided, fall back to text-only search
+        if query_vector is None:
+            text_query = {
+                "bool": {
+                    "must": [{
+                        "multi_match": {
+                            "query": query,
+                            "fields": ["title^3", "disease^2.5", "section^2", "body", "content"],
+                            "type": "best_fields"
+                        }
+                    }],
+                    "filter": filter_clause
+                }
+            }
+            
+            resp = client.search(
+                index=index,
+                body={
+                    "size": size,
+                    "query": text_query,
+                    "highlight": {
+                        "fields": {
+                            "body": {"fragment_size": 150, "number_of_fragments": 3},
+                            "title": {}
+                        }
+                    }
+                }
+            )
+            return resp
+        
+        # HYBRID SEARCH with RRF (Reciprocal Rank Fusion)
+        # This combines keyword search (BM25) + semantic search (vectors)
+        if use_rrf:
+            # Use Elasticsearch's built-in RRF retriever (available in ES 8.9+)
+            # RRF formula: score = sum(1 / (rank + k)) where k=60 by default
+            resp = client.search(
+                index=index,
+                body={
+                    "size": size,
+                    "retriever": {
+                        "rrf": {
+                            "retrievers": [
+                                {
+                                    # BM25 text search retriever
+                                    "standard": {
+                                        "query": {
+                                            "bool": {
+                                                "must": [{
+                                                    "multi_match": {
+                                                        "query": query,
+                                                        "fields": ["title^3", "disease^2.5", "section^2", "body"],
+                                                        "type": "best_fields"
+                                                    }
+                                                }],
+                                                "filter": filter_clause
+                                            }
+                                        }
+                                    }
+                                },
+                                {
+                                    # Vector semantic search retriever
+                                    "standard": {
+                                        "query": {
+                                            "bool": {
+                                                "must": [{
+                                                    "script_score": {
+                                                        "query": {"match_all": {}},
+                                                        "script": {
+                                                            "source": "cosineSimilarity(params.query_vector, 'body_embedding') + 1.0",
+                                                            "params": {"query_vector": query_vector}
+                                                        }
+                                                    }
+                                                }],
+                                                "filter": filter_clause
+                                            }
+                                        }
+                                    }
+                                }
+                            ],
+                            "rank_window_size": size * 2,  # Consider more docs for ranking
+                            "rank_constant": 60  # RRF k parameter
+                        }
+                    },
+                    "highlight": {
+                        "fields": {
+                            "body": {"fragment_size": 150, "number_of_fragments": 3},
+                            "title": {}
+                        }
+                    }
+                }
+            )
+            return resp
+        else:
+            # Alternative: Manual combination using kNN + text query
+            resp = client.search(
+                index=index,
+                body={
+                    "size": size,
+                    "query": {
+                        "bool": {
+                            "should": [
+                                {
+                                    # Text search component
+                                    "multi_match": {
+                                        "query": query,
+                                        "fields": ["title^3", "disease^2.5", "section^2", "body"],
+                                        "type": "best_fields",
+                                        "boost": 1.0
+                                    }
+                                }
+                            ],
+                            "filter": filter_clause
+                        }
+                    },
+                    "knn": {
+                        "field": "body_embedding",
+                        "query_vector": query_vector,
+                        "k": size,
+                        "num_candidates": 100,
+                        "boost": 1.0
+                    },
+                    "highlight": {
+                        "fields": {
+                            "body": {"fragment_size": 150, "number_of_fragments": 3},
+                            "title": {}
+                        }
+                    }
+                }
+            )
+            return resp
+            
     except ApiError as e:
         return {"error": "api_error", "details": str(e)}
     except Exception as e:

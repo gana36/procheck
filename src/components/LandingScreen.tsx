@@ -22,21 +22,27 @@ export default function LandingScreen({ onStartSearch, onSampleQuery }: LandingS
     }
   };
 
-  const features = [
+  const features: Array<{
+    icon: JSX.Element;
+    title: string;
+    description: string;
+    badge?: string;
+  }> = [
+    {
+      icon: <Zap className="h-6 w-6 text-blue-600" />,
+      title: "Hybrid Search AI",
+      description: "Powered by Elastic + Google Cloud AI with semantic understanding for better results",
+      badge: "NEW"
+    },
     {
       icon: <Shield className="h-6 w-6 text-teal-600" />,
       title: "Clinically Cited",
       description: "Every protocol backed by peer-reviewed medical literature and official guidelines"
     },
     {
-      icon: <Zap className="h-6 w-6 text-blue-600" />,
-      title: "Instant Access",
-      description: "Get comprehensive medical protocols in seconds, not hours of research"
-    },
-    {
       icon: <Globe className="h-6 w-6 text-teal-600" />,
       title: "Global Standards",
-      description: "Access protocols from WHO, ICMR, CDC, and regional health authorities"
+      description: "Access protocols from WHO, NHS, CDC, and regional health authorities"
     },
     {
       icon: <Clock className="h-6 w-6 text-blue-600" />,
@@ -158,7 +164,14 @@ export default function LandingScreen({ onStartSearch, onSampleQuery }: LandingS
                   <div className="mx-auto mb-3 p-3 bg-slate-50 rounded-full w-fit">
                     {feature.icon}
                   </div>
-                  <CardTitle className="text-lg text-slate-900">{feature.title}</CardTitle>
+                  <div className="flex items-center justify-center gap-2">
+                    <CardTitle className="text-lg text-slate-900">{feature.title}</CardTitle>
+                    {feature.badge && (
+                      <Badge className="bg-gradient-to-r from-teal-500 to-blue-500 text-white text-xs">
+                        {feature.badge}
+                      </Badge>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <CardDescription className="text-slate-600">

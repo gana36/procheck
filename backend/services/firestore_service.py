@@ -12,35 +12,66 @@ from google.cloud.exceptions import GoogleCloudError
 from google.oauth2 import service_account
 from config.settings import settings
 
-# Initialize Firestore client with service account credentials
+# Global client instance (lazy initialization)
+_db_client = None
+_credentials_path = None
+
+def _get_credentials_path():
+    """Get the credentials file path"""
+    global _credentials_path
+
+    if _credentials_path:
+        return _credentials_path
+
+    # Get credentials path from environment variable or use default
+    credentials_path = settings.GOOGLE_CLOUD_CREDENTIALS_PATH
+
+    # Fallback to legacy cred.json location for backward compatibility
+    if not credentials_path:
+        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        credentials_path = os.path.join(current_dir, "cred.json")
+        if not os.path.exists(credentials_path):
+            credentials_path = None
+
+    if not credentials_path or not os.path.exists(credentials_path):
+        error_msg = f"Error: Google Cloud credentials not found. Set GOOGLE_CLOUD_CREDENTIALS_PATH environment variable to your service account JSON file path."
+        print(error_msg)
+        raise Exception(error_msg)
+
+    _credentials_path = credentials_path
+    return _credentials_path
+
 def _initialize_firestore_client():
-    """Initialize Firestore client with service account credentials"""
+    """Initialize Firestore client with service account credentials (lazy initialization)"""
+    global _db_client
+
+    if _db_client is not None:
+        return _db_client
+
     try:
-        # Get credentials path from environment variable or use default
-        credentials_path = settings.GOOGLE_CLOUD_CREDENTIALS_PATH
+        credentials_path = _get_credentials_path()
 
-        # Fallback to legacy cred.json location for backward compatibility
-        if not credentials_path:
-            current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            credentials_path = os.path.join(current_dir, "cred.json")
-            if not os.path.exists(credentials_path):
-                credentials_path = None
+        # Create credentials with proper scopes
+        credentials = service_account.Credentials.from_service_account_file(
+            credentials_path,
+            scopes=[
+                'https://www.googleapis.com/auth/cloud-platform',
+                'https://www.googleapis.com/auth/datastore'
+            ]
+        )
 
-        if credentials_path and os.path.exists(credentials_path):
-            credentials = service_account.Credentials.from_service_account_file(credentials_path)
-            # Use the specific database name 'esting'
-            client = firestore.Client(credentials=credentials, project=credentials.project_id, database='esting')
-            print(f"Firestore initialized successfully with project: {credentials.project_id}, database: esting")
-            return client
-        else:
-            error_msg = f"Error: Google Cloud credentials not found. Set GOOGLE_CLOUD_CREDENTIALS_PATH environment variable to your service account JSON file path."
-            print(error_msg)
-            raise Exception(error_msg)
+        # Use the specific database name 'esting'
+        _db_client = firestore.Client(
+            credentials=credentials,
+            project=credentials.project_id,
+            database='esting'
+        )
+        print(f"Firestore initialized successfully with project: {credentials.project_id}, database: esting")
+        return _db_client
+
     except Exception as e:
         print(f"Error: Firestore client initialization failed: {e}")
         raise
-
-db = _initialize_firestore_client()
 
 class FirestoreService:
     """Service for managing conversation data in Firestore"""
@@ -49,10 +80,11 @@ class FirestoreService:
 
     @staticmethod
     def _get_db():
-        """Get Firestore database client"""
-        if db is None:
-            raise Exception("Firestore client not initialized. Check your GCP credentials.")
-        return db
+        """Get Firestore database client (with lazy initialization)"""
+        try:
+            return _initialize_firestore_client()
+        except Exception as e:
+            raise Exception(f"Firestore client not initialized. Check your GCP credentials. Error: {e}")
 
     @staticmethod
     def save_conversation(user_id: str, conversation_data: Dict[str, Any]) -> Dict[str, Any]:

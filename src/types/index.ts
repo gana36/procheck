@@ -4,12 +4,21 @@ export interface Message {
   content: string;
   timestamp: string;
   protocolData?: ProtocolData;
+  searchMetadata?: SearchMetadata;
+}
+
+export interface SearchMetadata {
+  totalResults: number;
+  responseTimes: number;
+  searchMethod: 'hybrid' | 'traditional';
+  resultsFound: number;
 }
 
 export interface ProtocolStep {
   id: number;
   step: string;
-  citations: number[];
+  citation?: number;  // Primary citation for this step
+  citations: number[]; // Legacy support
   isNew?: boolean;
   changes?: string;
 }

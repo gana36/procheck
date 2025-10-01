@@ -1,4 +1,5 @@
 from typing import List, Dict, Any
+import re
 import google.generativeai as genai
 from config.settings import settings
 
@@ -15,11 +16,14 @@ def _ensure_client():
     _model = genai.GenerativeModel(
         model_name=settings.GEMINI_MODEL,
         generation_config={
-            "max_output_tokens": 768,
-            "temperature": 0.2,
+            "max_output_tokens": 2048,        # More room for synthesis
+            "temperature": 0.7,                # Higher = more creative/synthetic
+            "top_p": 0.95,                     # Nucleus sampling for diversity
+            "top_k": 40,                       # Consider top 40 tokens
         },
     )
     _client_initialized = True
+    print(f"✓ Gemini initialized: {settings.GEMINI_MODEL} (temp=0.7)")
 
 
 def _extract_text(response: Any) -> str:
@@ -53,6 +57,13 @@ def _clean_checklist_step(text: str) -> str:
     text = str(text).strip()
     if not text:
         return ""
+    
+    # Remove [Source N] tags and (disease): prefixes
+    text = re.sub(r'\[Source\s+\d+\]\s*', '', text)
+    text = re.sub(r'\([a-zA-Z\s]+\):\s*', '', text)
+    
+    # Remove leading numbers like "1.", "2)", "3 -", etc.
+    text = re.sub(r'^[\d\-\.\)]+\s*', '', text.strip())
     
     # Remove common prefixes that make it verbose
     prefixes_to_remove = [
@@ -94,25 +105,140 @@ def _clean_checklist_step(text: str) -> str:
     return text
 
 
+def classify_query_intent(title: str) -> str:
+    """Classify the query type to choose appropriate template"""
+    title_lower = title.lower()
+    
+    # Emergency keywords
+    if any(word in title_lower for word in ['emergency', 'urgent', 'attack', 'crisis', 'acute', 'severe', 'critical']):
+        return 'emergency'
+    
+    # Treatment keywords
+    if any(word in title_lower for word in ['treatment', 'manage', 'therapy', 'medication', 'drug', 'protocol']):
+        return 'treatment'
+    
+    # Diagnosis keywords
+    if any(word in title_lower for word in ['diagnosis', 'diagnose', 'differential', 'test', 'screening']):
+        return 'diagnosis'
+    
+    # Symptoms keywords
+    if any(word in title_lower for word in ['symptom', 'sign', 'presentation', 'manifestation']):
+        return 'symptoms'
+    
+    # Prevention keywords
+    if any(word in title_lower for word in ['prevention', 'prevent', 'avoid', 'protect', 'prophylaxis']):
+        return 'prevention'
+    
+    return 'general'
+
+
 def summarize_checklist(title: str, context_snippets: List[str], instructions: str | None = None, region: str | None = None, year: int | None = None) -> Dict[str, Any]:
     _ensure_client()
     assert _model is not None
 
-    prompt_parts: List[str] = [
-        "You are a medical protocol assistant. Generate a concise, actionable checklist.",
-        "CRITICAL: Each step must be SHORT (max 15 words), ACTIONABLE, and CLEAR.",
-        "Output ONLY JSON with this exact structure:",
-        '{"title": "string", "checklist": [{"step": 1, "text": "short action"}, ...], "citations": []}',
-        "Rules:",
-        "- Steps must be imperative commands (e.g., 'Assess vital signs', 'Administer medication')",
-        "- NO explanations, NO context, NO 'ensure that' or 'make sure'",
-        "- NO code fences, NO extra text",
-        "- Keep each step under 15 words",
-        "- Number steps 1, 2, 3...",
-        "- Analyze ALL provided context and select the MOST RELEVANT information for the user's query",
-        "- If context contains conflicting information, prioritize the most authoritative or recent sources",
-        "- Ignore irrelevant information that doesn't directly relate to the user's specific query",
+    # Classify query intent for smart templating
+    intent = classify_query_intent(title)
+    
+    # Base instructions - SIMPLE AND DIRECT
+    base_instructions = [
+        "You are a medical AI assistant. Your job is to READ medical sources and CREATE a concise checklist.",
+        "",
+        "STRICT RULES:",
+        "1. REPHRASE everything in your own words (NO copying sentences)",
+        "2. Each step must be SHORT (under 15 words)",
+        "3. EXTRACT the citation number from [Source N] in the context",
+        "4. ONLY include relevant information for this specific query",
+        "",
+        "BAD (copying): \"Dengue symptoms include high fever 39-40°C, severe headache...\"",
+        "GOOD (synthesis): \"Monitor fever (39-40°C) and severe headache\"",
+        "",
+        "Output format (MUST include citation field):",
+        '{"title": "X", "checklist": [{"step": 1, "text": "short action here", "citation": 1}], "citations": []}',
+        "",
+        "NO markdown, NO code blocks, ONLY the JSON object.",
     ]
+    
+    # Intent-specific templates
+    if intent == 'emergency':
+        prompt_parts = base_instructions + [
+            "",
+            "⚠️ EMERGENCY PROTOCOL FORMAT:",
+            "- Start with IMMEDIATE ACTIONS (call 911, position patient, etc.)",
+            "- Include critical warning signs to watch for",
+            "- Each step: urgent, clear command (e.g., 'Call emergency services immediately')",
+            "- Add severity indicators where relevant",
+            "- Keep steps SHORT (max 20 words) and ACTIONABLE",
+        ]
+    elif intent == 'symptoms':
+        prompt_parts = base_instructions + [
+            "",
+            "📋 SYMPTOMS GUIDE FORMAT:",
+            "- Start with EARLY symptoms and timeline (e.g., 'Within 2-5 days: fever, headache')",
+            "- Progress to LATER symptoms if applicable",
+            "- Include severity levels (mild/moderate/severe) where relevant",
+            "- Mention WHEN to seek medical attention",
+            "- Group related symptoms together",
+        ]
+    elif intent == 'treatment':
+        prompt_parts = base_instructions + [
+            "",
+            "💊 TREATMENT PROTOCOL FORMAT:",
+            "- Start with FIRST-LINE interventions",
+            "- Include specific actions (e.g., 'Administer paracetamol 500mg every 6 hours')",
+            "- Progress logically through treatment steps",
+            "- Mention monitoring requirements",
+            "- Each step: specific, actionable medical instruction",
+        ]
+    elif intent == 'diagnosis':
+        prompt_parts = base_instructions + [
+            "",
+            "🔬 DIAGNOSTIC APPROACH FORMAT:",
+            "- Start with CLINICAL ASSESSMENT (history, examination)",
+            "- List KEY diagnostic criteria or tests",
+            "- Include differential diagnoses if relevant",
+            "- Mention specific test values or findings",
+            "- Each step: diagnostic action or criterion",
+        ]
+    elif intent == 'prevention':
+        prompt_parts = base_instructions + [
+            "",
+            "🛡️ PREVENTION GUIDE FORMAT:",
+            "- Start with PRIMARY prevention measures",
+            "- Include practical, actionable steps (e.g., 'Use mosquito repellent containing DEET')",
+            "- Prioritize most effective interventions first",
+            "- Mention risk factors to avoid",
+            "- Each step: preventive action",
+        ]
+    else:  # general
+        prompt_parts = base_instructions + [
+            "",
+            "📌 GENERAL PROTOCOL FORMAT:",
+            "- Synthesize key information from context",
+            "- Each step: clear, actionable medical point",
+            "- Organize logically (assessment → intervention → follow-up)",
+            "- Keep steps concise (max 20 words)",
+            "- Focus on practical clinical guidance",
+        ]
+    
+    prompt_parts.extend([
+        "",
+        "SYNTHESIS REQUIREMENTS:",
+        "- DO NOT copy numbered lists from context (e.g., '1. Assess... 2. Order...')",
+        "- REPHRASE and CONDENSE information in your own words",
+        "- Each step should be ONE clear action (max 15 words)",
+        "- COMBINE related information from multiple sources",
+        "- Remove redundancy and wordiness",
+        "",
+        "CITATION REQUIREMENTS:",
+        "- Each step MUST have a 'citation' field (1, 2, 3...)",
+        "- Extract source number from [Source N] in context",
+        "- If synthesizing multiple sources, cite the primary one",
+        "",
+        "FILTERING RULES:",
+        "- ONLY use information relevant to the query",
+        "- IGNORE unrelated diseases completely",
+        "- Better 4-6 synthesized steps than 10+ copied steps",
+    ])
     
     if region:
         prompt_parts.append(f"Region: {region}.")
@@ -122,18 +248,58 @@ def summarize_checklist(title: str, context_snippets: List[str], instructions: s
         prompt_parts.append(f"Instructions: {instructions}")
 
     prompt_parts.append(f"Title: {title}")
-    prompt_parts.append("Context:")
-    for i, snippet in enumerate(context_snippets[:6], start=1):  # Limit context to avoid verbosity
-        prompt_parts.append(f"{i}. {snippet}")
+    prompt_parts.append("")
+    prompt_parts.append("Context Sources:")
+    prompt_parts.append("(Each source is labeled [Source N]. Extract the number N for your citation field.)")
+    prompt_parts.append("")
+    for snippet in context_snippets[:6]:  # Limit context to avoid verbosity
+        prompt_parts.append(snippet)
+    prompt_parts.append("")
+    prompt_parts.append("Remember: Extract the [Source N] number from each snippet and use N in your 'citation' field.")
 
     prompt = "\n".join(prompt_parts)
+    
+    # DEBUG: Print the actual prompt being sent
+    print("\n" + "="*60)
+    print("PROMPT SENT TO GEMINI:")
+    print("="*60)
+    print(prompt[:500] + "\n...\n" + prompt[-300:] if len(prompt) > 800 else prompt)
+    print("="*60 + "\n")
+    
     response = _model.generate_content(prompt)
     text = _extract_text(response)
+    
+    # DEBUG: Print raw response
+    print("\n" + "="*60)
+    print("RAW GEMINI RESPONSE:")
+    print("="*60)
+    print(text[:500] if len(text) > 500 else text)
+    print("="*60 + "\n")
 
     import json
     if text:
+        # Try to parse JSON, fixing common issues
         try:
-            data = json.loads(text)
+            # Remove markdown code blocks if present
+            cleaned_text = text.strip()
+            if cleaned_text.startswith("```json"):
+                cleaned_text = cleaned_text[7:]
+            if cleaned_text.startswith("```"):
+                cleaned_text = cleaned_text[3:]
+            if cleaned_text.endswith("```"):
+                cleaned_text = cleaned_text[:-3]
+            cleaned_text = cleaned_text.strip()
+            
+            # Try to fix incomplete JSON by adding closing braces
+            if not cleaned_text.endswith("}"):
+                # Count opening vs closing braces
+                open_braces = cleaned_text.count("{")
+                close_braces = cleaned_text.count("}")
+                if open_braces > close_braces:
+                    # Add missing closing braces
+                    cleaned_text += "]}" * (open_braces - close_braces)
+            
+            data = json.loads(cleaned_text)
             out_title = str(data.get("title", title)).strip() or title
             raw_items = data.get("checklist", [])
             checklist: List[Dict[str, Any]] = []
@@ -142,25 +308,34 @@ def summarize_checklist(title: str, context_snippets: List[str], instructions: s
                 if isinstance(item, dict):
                     step_num = int(item.get("step", idx))
                     step_text = _clean_checklist_step(item.get("text", ""))
+                    citation = item.get("citation", 0)  # Get citation number
                 else:
                     step_num = idx
                     step_text = _clean_checklist_step(str(item))
+                    citation = 0
                 
                 if step_text and len(step_text) > 3:  # Only include meaningful steps
-                    checklist.append({"step": step_num, "text": step_text})
+                    checklist.append({
+                        "step": step_num, 
+                        "text": step_text,
+                        "citation": citation if isinstance(citation, int) else 0
+                    })
             
             citations = data.get("citations", [])
             if not isinstance(citations, list):
                 citations = []
             citations = [str(c).strip() for c in citations if str(c).strip()]
             
+            print(f"✓ Successfully parsed {len(checklist)} checklist items")  # Debug
+            
             return {
                 "title": out_title,
                 "checklist": checklist,
                 "citations": citations,
             }
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"✗ JSON parsing failed: {e}")  # Debug
+            print(f"Attempted to parse: {cleaned_text[:200]}...")  # Debug
 
     # Fallback: create concise steps from context
     fallback_steps = []

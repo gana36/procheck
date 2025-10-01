@@ -1,0 +1,124 @@
+[
+  {
+    "disease": "dengue",
+    "region": "Global/UK",
+    "year": 2023,
+    "organization": "NHS",
+    "title": "Check if you're at risk of dengue",
+    "section": "Risk Factors",
+    "body": "You can get dengue if you're bitten by an infected mosquito. Dengue is very common in tropical regions of Africa, Asia, Central and South America, the Caribbean, the Pacific islands, and some areas of southern North America and Europe. Dengue is not found in the UK and cannot be caught from another person.",
+    "source_url": "https://www.nhs.uk/conditions/dengue/",
+    "last_reviewed": "2023-01-11",
+    "next_review_due": "2026-01-11"
+  },
+  {
+    "disease": "dengue",
+    "region": "Global/UK",
+    "year": 2023,
+    "organization": "NHS",
+    "title": "Symptoms of dengue",
+    "section": "Symptoms",
+    "body": "Symptoms of dengue usually develop suddenly, about 5 to 8 days after you become infected. Symptoms can include a high temperature, severe headache, pain behind the eyes, muscle and joint pain, feeling or being sick, a widespread red rash, and tummy pain and loss of appetite. The symptoms normally pass after about 1 week, although you may feel tired and slightly unwell for several weeks afterwards.",
+    "source_url": "https://www.nhs.uk/conditions/dengue/",
+    "last_reviewed": "2023-01-11",
+    "next_review_due": "2026-01-11"
+  },
+  {
+    "disease": "malaria",
+    "region": "Global",
+    "year": 2023,
+    "organization": "WHO",
+    "title": "Malaria prevention and control",
+    "section": "Prevention",
+    "body": "Vector control is the main way to prevent and reduce malaria transmission. If coverage of vector control interventions within a specific area is high enough, then a measure of protection will be conferred across the community. WHO recommends protection for all people at risk of malaria with effective malaria vector control. Two forms of vector control – insecticide-treated mosquito nets and indoor residual spraying – are effective in a wide range of circumstances.",
+    "source_url": "https://www.who.int/news-room/fact-sheets/detail/malaria",
+    "last_reviewed": "2023-04-04",
+    "next_review_due": "2024-04-04"
+  },
+  {
+    "disease": "malaria",
+    "region": "Global",
+    "year": 2023,
+    "organization": "WHO",
+    "title": "Malaria signs and symptoms",
+    "section": "Symptoms",
+    "body": "Malaria is an acute febrile illness. In a non-immune individual, symptoms usually appear 10–15 days after the infective mosquito bite. The first symptoms – fever, headache, and chills – may be mild and difficult to recognize as malaria. If not treated within 24 hours, P. falciparum malaria can progress to severe illness, often leading to death. Children with severe malaria frequently develop one or more of the following symptoms: severe anaemia, respiratory distress in relation to metabolic acidosis, or cerebral malaria.",
+    "source_url": "https://www.who.int/news-room/fact-sheets/detail/malaria",
+    "last_reviewed": "2023-04-04",
+    "next_review_due": "2024-04-04"
+  },
+  {
+    "disease": "covid-19",
+    "region": "Global/UK",
+    "year": 2024,
+    "organization": "NHS",
+    "title": "COVID-19 symptoms",
+    "section": "Symptoms",
+    "body": "The main symptoms of COVID-19 are a high temperature, a new, continuous cough, and a loss or change to your sense of smell or taste. Other symptoms include shortness of breath, feeling tired or exhausted, an aching body, a headache, a sore throat, a blocked or runny nose, loss of appetite, diarrhoea, and feeling sick or being sick. The symptoms are very similar to symptoms of other illnesses, such as colds and flu.",
+    "source_url": "https://www.nhs.uk/conditions/covid-19/covid-19-symptoms/",
+    "last_reviewed": "2024-01-15",
+    "next_review_due": "2025-01-15"
+  },
+  {
+    "disease": "covid-19",
+    "region": "Global/UK",
+    "year": 2024,
+    "organization": "NHS",
+    "title": "When to get medical help for COVID-19",
+    "section": "Treatment",
+    "body": "You should call 111 or contact your GP surgery if you're worried about your symptoms, or they're getting worse. If you need medical help, they can advise you what to do. Call 999 or go to A&E if you feel very unwell or think there's something seriously wrong, you have severe difficulty breathing, you cannot speak more than a few words, your skin, lips or tongue are blue, or you're so breathless that you're unable to eat or drink.",
+    "source_url": "https://www.nhs.uk/conditions/covid-19/covid-19-symptoms/",
+    "last_reviewed": "2024-01-15",
+    "next_review_due": "2025-01-15"
+  },
+  {
+    "disease": "asthma",
+    "region": "Global/UK",
+    "year": 2023,
+    "organization": "NHS",
+    "title": "Asthma attack emergency treatment",
+    "section": "Emergency Care",
+    "body": "If you think you're having an asthma attack, you should sit up straight and try to take slow, steady breaths. Try to remain calm, as panicking will make things worse. Take 1 puff of your reliever inhaler (usually blue) every 30 to 60 seconds, up to a maximum of 10 puffs. Call 999 for an ambulance if you do not have your inhaler with you, you feel worse despite using your inhaler, you do not feel better after taking 10 puffs, or if you're worried at any point.",
+    "source_url": "https://www.nhs.uk/conditions/asthma/asthma-attack/",
+    "last_reviewed": "2023-08-22",
+    "next_review_due": "2026-08-22"
+  },
+  {
+    "disease": "diabetes",
+    "region": "Global/UK",
+    "year": 2023,
+    "organization": "NHS",
+    "title": "Type 2 diabetes overview",
+    "section": "Overview",
+    "body": "Type 2 diabetes is a common condition that causes the level of sugar (glucose) in the blood to become too high. It can cause symptoms like excessive thirst, needing to pee a lot and tiredness. It can also increase your risk of getting serious problems with your eyes, heart and nerves. It's a lifelong condition that can affect your everyday life. You may need to change your diet, take medicines and have regular check-ups.",
+    "source_url": "https://www.nhs.uk/conditions/type-2-diabetes/",
+    "last_reviewed": "2023-05-10",
+    "next_review_due": "2026-05-10"
+  },
+  {
+    "disease": "hypertension",
+    "region": "Global/UK",
+    "year": 2023,
+    "organization": "NHS",
+    "title": "High blood pressure (hypertension) prevention",
+    "section": "Prevention",
+    "body": "You can take steps to prevent high blood pressure by eating a healthy, balanced diet low in salt, not drinking too much alcohol, losing weight if you're overweight, exercising regularly, cutting down on caffeine, and stopping smoking. Some people with high blood pressure may also need to take one or more medicines to stop their blood pressure getting too high.",
+    "source_url": "https://www.nhs.uk/conditions/high-blood-pressure-hypertension/",
+    "last_reviewed": "2023-09-15",
+    "next_review_due": "2026-09-15"
+  },
+  {
+    "disease": "stroke",
+    "region": "Global/UK",
+    "year": 2024,
+    "organization": "NHS",
+    "title": "Stroke symptoms and FAST test",
+    "section": "Symptoms",
+    "body": "The main stroke symptoms can be remembered with the word FAST: Face – the face may have dropped on one side, the person may not be able to smile, or their mouth or eye may have drooped. Arms – the person may not be able to lift both arms and keep them there because of weakness or numbness in one arm. Speech – their speech may be slurred or garbled, or the person may not be able to talk at all despite appearing to be awake. Time – it's time to dial 999 immediately if you notice any of these signs or symptoms.",
+    "source_url": "https://www.nhs.uk/conditions/stroke/",
+    "last_reviewed": "2024-02-20",
+    "next_review_due": "2027-02-20"
+  }
+]
+
+
