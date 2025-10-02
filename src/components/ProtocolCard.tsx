@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Star,
   Copy,
-  Download,
   Share2,
   ExternalLink,
   ChevronDown,
@@ -25,6 +24,7 @@ import { saveProtocol, deleteSavedProtocol, isProtocolSaved } from '@/lib/api';
 interface ProtocolCardProps {
   protocolData: ProtocolData;
   onSaveToggle?: () => void; // Callback to refresh saved list in sidebar
+  intent?: 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general';
 }
 
 // Professional theme configurations
@@ -109,9 +109,9 @@ const intentThemes = {
   }
 };
 
-export default function ProtocolCard({ protocolData, onSaveToggle }: ProtocolCardProps) {
+export default function ProtocolCard({ protocolData, onSaveToggle, intent = 'general' }: ProtocolCardProps) {
   const { currentUser } = useAuth();
-  const theme = intentThemes.general;
+  const theme = intentThemes[intent] || intentThemes.general;
   const ThemeIcon = theme.icon;
 
   const [isSaved, setIsSaved] = useState(false);
@@ -153,8 +153,8 @@ export default function ProtocolCard({ protocolData, onSaveToggle }: ProtocolCar
         // Save protocol
         await saveProtocol(currentUser.uid, {
           id: protocolId,
-          title: protocolData.title,
           ...protocolData,
+          intent,
         });
         setIsSaved(true);
       }

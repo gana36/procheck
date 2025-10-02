@@ -42,6 +42,7 @@ export interface ProtocolData {
   steps: ProtocolStep[];
   citations: Citation[];
   lastUpdated?: string;
+  intent?: 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general';
 }
 
 export interface RecentSearch {

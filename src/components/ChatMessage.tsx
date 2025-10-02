@@ -1,7 +1,7 @@
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
-  Stethoscope, User, Search, Clock, FileText
+  User, Search, Clock, FileText
 } from 'lucide-react';
 import { Message } from '@/types';
 import ProtocolCard from './ProtocolCard';
@@ -177,9 +177,16 @@ export default function ChatMessage({ message, onSaveToggle }: ChatMessageProps)
             )}
             
             {/* Protocol Data with Enhanced Display */}
-            {message.protocolData && (
-              <ProtocolCard protocolData={message.protocolData} onSaveToggle={onSaveToggle} />
-            )}
+            {message.protocolData && (() => {
+              const protocolIntent = (message.protocolData as any)?.intent || intent;
+              return (
+                <ProtocolCard 
+                  protocolData={message.protocolData} 
+                  onSaveToggle={onSaveToggle}
+                  intent={protocolIntent as 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general'}
+                />
+              );
+            })()}
           </div>
         </div>
       </div>

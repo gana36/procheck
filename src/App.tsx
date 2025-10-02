@@ -13,7 +13,7 @@ import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { Message, ProtocolData, ProtocolStep, Citation, SearchMetadata } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { searchProtocols, generateProtocol, saveConversation, getConversation, ConversationMessage } from '@/lib/api';
+import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocols, ConversationMessage } from '@/lib/api';
 
 function App() {
   const { currentUser } = useAuth();
@@ -115,7 +115,6 @@ function App() {
       const title = String(s.title || '').toLowerCase();
       const body = String(s.body || s.content || '').toLowerCase();
       const disease = String(s.disease || '').toLowerCase();
-      const section = String(s.section || '').toLowerCase();
       
       // DISEASE-SPECIFIC RELEVANCE: Only count matches for medical condition terms
       let relevanceScore = 0;
@@ -213,7 +212,7 @@ function App() {
         year: String(s.year || year),
         region: s.region || region,
         url: s.source_url || s.url || '',
-        excerpt: s.body || s.content || s.section || '',  // Full content for expansion
+        excerpt: s.body || s.content || '',  // Full content for expansion
       });
     });
 
@@ -316,21 +315,6 @@ CITATION REQUIREMENT:
         year: null,
       });
 
-      const protocolData: ProtocolData = mapBackendToProtocolData(
-        content,
-        searchRes.hits,
-        genRes.checklist,
-        genRes.citations
-      );
-
-      // Capture search metadata for display
-      const searchMetadata: SearchMetadata = {
-        totalResults: searchRes.total,
-        responseTimes: searchRes.took_ms,
-        searchMethod: 'hybrid', // Using hybrid search by default
-        resultsFound: searchRes.hits?.length || 0,
-      };
-
       // Classify query intent for UI formatting
       const classifyIntent = (query: string) => {
         const q = query.toLowerCase();
@@ -343,6 +327,26 @@ CITATION REQUIREMENT:
       };
 
       const intent = classifyIntent(content);
+
+      const protocolData: ProtocolData = mapBackendToProtocolData(
+        content,
+        searchRes.hits,
+        genRes.checklist,
+        genRes.citations
+      );
+
+      // Attach intent to protocol for persistence (used when saving/loading)
+      protocolData.intent = intent;
+
+      // Capture search metadata for display
+      const searchMetadata: SearchMetadata = {
+        totalResults: searchRes.total,
+        responseTimes: searchRes.took_ms,
+        searchMethod: 'hybrid', // Using hybrid search by default
+        resultsFound: searchRes.hits?.length || 0,
+      };
+
+      
       const intentMessages: Record<string, string> = {
         emergency: 'Emergency Protocol - Immediate actions required:',
         symptoms: 'Symptom Overview - Clinical presentation:',
@@ -425,16 +429,35 @@ CITATION REQUIREMENT:
     setMessages([]);
     setCurrentConversationId(`conv_${Date.now()}`);
 
-    // Create a message with the saved protocol
-    const assistantMessage: Message = {
-      id: Date.now().toString(),
-      type: 'assistant',
-      content: `Here's your saved protocol:`,
-      timestamp: getUserTimestamp(),
-      protocolData: protocolData,
-    };
+    try {
+      let fullProtocol = protocolData;
 
-    setMessages([assistantMessage]);
+      if (!fullProtocol && currentUser) {
+        const res = await getSavedProtocols(currentUser.uid, 100);
+        const found = res.success ? (res.protocols || []).find((p: any) => p.id === protocolId) : null;
+        fullProtocol = found?.protocol_data || null;
+      }
+
+      const contentTitle = fullProtocol?.title ? `Saved: ${fullProtocol.title}` : `Here's your saved protocol:`;
+
+      const assistantMessage: Message = {
+        id: Date.now().toString(),
+        type: 'assistant',
+        content: contentTitle,
+        timestamp: getUserTimestamp(),
+        protocolData: fullProtocol || undefined,
+      };
+
+      setMessages([assistantMessage]);
+    } catch (e) {
+      const assistantMessage: Message = {
+        id: Date.now().toString(),
+        type: 'assistant',
+        content: `Couldn't load saved protocol.`,
+        timestamp: getUserTimestamp(),
+      };
+      setMessages([assistantMessage]);
+    }
   };
 
   const handleAuthSuccess = () => {
