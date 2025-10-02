@@ -5,9 +5,10 @@ import ProtocolCard from './ProtocolCard';
 
 interface ChatMessageProps {
   message: Message;
+  onSaveToggle?: () => void;
 }
 
-export default function ChatMessage({ message }: ChatMessageProps) {
+export default function ChatMessage({ message, onSaveToggle }: ChatMessageProps) {
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -63,7 +64,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             )}
             
             {message.protocolData && (
-              <ProtocolCard protocolData={message.protocolData} />
+              <ProtocolCard protocolData={message.protocolData} onSaveToggle={onSaveToggle} />
             )}
           </div>
         </div>
