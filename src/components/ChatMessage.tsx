@@ -8,6 +8,7 @@ import ProtocolCard from './ProtocolCard';
 
 interface ChatMessageProps {
   message: Message;
+  onSaveToggle?: () => void;
 }
 
 // Detect query intent from message content
@@ -85,7 +86,7 @@ const intentThemes = {
   }
 };
 
-export default function ChatMessage({ message }: ChatMessageProps) {
+export default function ChatMessage({ message, onSaveToggle }: ChatMessageProps) {
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -177,7 +178,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             
             {/* Protocol Data with Enhanced Display */}
             {message.protocolData && (
-              <ProtocolCard protocolData={message.protocolData} intent={intent} />
+              <ProtocolCard protocolData={message.protocolData} onSaveToggle={onSaveToggle} />
             )}
           </div>
         </div>

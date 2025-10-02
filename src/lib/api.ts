@@ -185,3 +185,65 @@ export async function deleteConversation(userId: string, conversationId: string)
   }
   return res.json();
 }
+
+// ==================== Saved Protocols API ====================
+
+export type SavedProtocol = {
+  id: string;
+  title: string;
+  saved_at: string;
+  region: string;
+  year: string;
+  organization: string;
+  protocol_data: any;
+};
+
+export type SavedProtocolsResponse = {
+  success: boolean;
+  protocols: SavedProtocol[];
+  total: number;
+  error?: string;
+  details?: string;
+};
+
+export async function saveProtocol(userId: string, protocolData: any): Promise<{ success: boolean; protocol_id: string; document_id: string }> {
+  const res = await fetch(`${API_BASE}/protocols/save?user_id=${encodeURIComponent(userId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(protocolData),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Save protocol failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+export async function getSavedProtocols(userId: string, limit: number = 20): Promise<SavedProtocolsResponse> {
+  const res = await fetch(`${API_BASE}/protocols/saved/${encodeURIComponent(userId)}?limit=${limit}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Get saved protocols failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+export async function deleteSavedProtocol(userId: string, protocolId: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Delete protocol failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+export async function isProtocolSaved(userId: string, protocolId: string): Promise<{ success: boolean; is_saved: boolean }> {
+  const res = await fetch(`${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}/check`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Check protocol saved failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}

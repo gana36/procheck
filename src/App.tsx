@@ -13,7 +13,7 @@ import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { Message, ProtocolData, ProtocolStep, Citation, SearchMetadata } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { searchProtocols, generateProtocol, saveConversation, ConversationMessage } from '@/lib/api';
+import { searchProtocols, generateProtocol, saveConversation, getConversation, ConversationMessage } from '@/lib/api';
 
 function App() {
   const { currentUser } = useAuth();
@@ -26,6 +26,8 @@ function App() {
   const [currentConversationId, setCurrentConversationId] = useState<string>(() =>
     `conv_${Date.now()}`
   );
+  const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0);
+  const [savedProtocolsRefreshTrigger, setSavedProtocolsRefreshTrigger] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -264,6 +266,9 @@ function App() {
         tags: ['medical-protocol'],
         created_at: firstMessageTimestamp,
       });
+
+      // Trigger sidebar refresh to show new conversation
+      setSidebarRefreshTrigger(prev => prev + 1);
     } catch (error) {
       console.error('Failed to save conversation:', error);
     }
@@ -385,12 +390,51 @@ CITATION REQUIREMENT:
     setCurrentConversationId(`conv_${Date.now()}`); // Generate new conversation ID
   };
 
-  const handleRecentSearch = (query: string) => {
-    handleSendMessage(query);
+  const handleRecentSearch = async (conversationId: string) => {
+    if (!currentUser) return;
+
+    try {
+      setIsLoading(true);
+      const response = await getConversation(currentUser.uid, conversationId);
+
+      if (response.success && response.conversation) {
+        const conv = response.conversation;
+
+        // Convert conversation messages back to Message format
+        const loadedMessages: Message[] = (conv.messages || []).map((msg: ConversationMessage) => ({
+          id: msg.id,
+          type: msg.type,
+          content: msg.content,
+          timestamp: msg.timestamp,
+          protocolData: msg.protocol_data,
+        }));
+
+        // Set the messages and conversation ID
+        setMessages(loadedMessages);
+        setCurrentConversationId(conversationId);
+      }
+    } catch (error) {
+      console.error('Failed to load conversation:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleSavedProtocol = (protocolId: string) => {
-    // Handle saved protocol loading
+  const handleSavedProtocol = async (protocolId: string, protocolData: any) => {
+    // Clear current messages and start fresh
+    setMessages([]);
+    setCurrentConversationId(`conv_${Date.now()}`);
+
+    // Create a message with the saved protocol
+    const assistantMessage: Message = {
+      id: Date.now().toString(),
+      type: 'assistant',
+      content: `Here's your saved protocol:`,
+      timestamp: getUserTimestamp(),
+      protocolData: protocolData,
+    };
+
+    setMessages([assistantMessage]);
   };
 
   const handleAuthSuccess = () => {
@@ -411,6 +455,8 @@ CITATION REQUIREMENT:
               onNewSearch={handleNewSearch}
               onRecentSearch={handleRecentSearch}
               onSavedProtocol={handleSavedProtocol}
+              refreshTrigger={sidebarRefreshTrigger}
+              savedProtocolsRefreshTrigger={savedProtocolsRefreshTrigger}
             />
           </div>
         </>
@@ -455,7 +501,11 @@ CITATION REQUIREMENT:
             </div>
           )}
           {messages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
+            <ChatMessage
+              key={message.id}
+              message={message}
+              onSaveToggle={() => setSavedProtocolsRefreshTrigger(prev => prev + 1)}
+            />
           ))}
           {isLoading && (
             <div className="flex justify-start">

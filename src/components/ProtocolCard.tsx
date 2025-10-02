@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  Star, 
-  Copy, 
-  Share2, 
+import {
+  Star,
+  Copy,
+  Download,
+  Share2,
   ExternalLink,
   ChevronDown,
   ChevronUp,
@@ -18,10 +19,12 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { ProtocolData } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
+import { saveProtocol, deleteSavedProtocol, isProtocolSaved } from '@/lib/api';
 
 interface ProtocolCardProps {
   protocolData: ProtocolData;
-  intent?: string;
+  onSaveToggle?: () => void; // Callback to refresh saved list in sidebar
 }
 
 // Professional theme configurations
@@ -106,16 +109,65 @@ const intentThemes = {
   }
 };
 
-export default function ProtocolCard({ protocolData, intent = 'general' }: ProtocolCardProps) {
-  const theme = intentThemes[intent as keyof typeof intentThemes] || intentThemes.general;
+export default function ProtocolCard({ protocolData, onSaveToggle }: ProtocolCardProps) {
+  const { currentUser } = useAuth();
+  const theme = intentThemes.general;
   const ThemeIcon = theme.icon;
-  
+
   const [isSaved, setIsSaved] = useState(false);
   const [isReferencesOpen, setIsReferencesOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
 
-  const handleSave = () => {
-    setIsSaved(!isSaved);
+  // Generate a unique ID for this protocol based on title
+  const protocolId = `protocol_${protocolData.title.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+
+  // Check if protocol is already saved when component mounts
+  useEffect(() => {
+    const checkSaved = async () => {
+      if (!currentUser) return;
+
+      try {
+        const result = await isProtocolSaved(currentUser.uid, protocolId);
+        if (result.success) {
+          setIsSaved(result.is_saved);
+        }
+      } catch (error) {
+        console.error('Failed to check if protocol is saved:', error);
+      }
+    };
+
+    checkSaved();
+  }, [currentUser, protocolId]);
+
+  const handleSave = async () => {
+    if (!currentUser || isSaving) return;
+
+    setIsSaving(true);
+    try {
+      if (isSaved) {
+        // Unsave/delete protocol
+        await deleteSavedProtocol(currentUser.uid, protocolId);
+        setIsSaved(false);
+      } else {
+        // Save protocol
+        await saveProtocol(currentUser.uid, {
+          id: protocolId,
+          title: protocolData.title,
+          ...protocolData,
+        });
+        setIsSaved(true);
+      }
+
+      // Trigger callback to refresh sidebar
+      if (onSaveToggle) {
+        onSaveToggle();
+      }
+    } catch (error) {
+      console.error('Failed to toggle save protocol:', error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCopy = () => {

@@ -1,18 +1,16 @@
 """
 Firestore service for ProCheck conversation storage
-Handles conversation data persistence in GCP Firestore
+Uses direct document access to avoid query limitations on Enterprise databases
 """
 
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-import json
 import os
-from google.cloud import firestore
-from google.cloud.exceptions import GoogleCloudError
-from google.oauth2 import service_account
+import firebase_admin
+from firebase_admin import credentials, firestore
 from config.settings import settings
 
-# Global client instance (lazy initialization)
+_firebase_app = None
 _db_client = None
 _credentials_path = None
 
@@ -34,16 +32,19 @@ def _get_credentials_path():
             credentials_path = None
 
     if not credentials_path or not os.path.exists(credentials_path):
-        error_msg = f"Error: Google Cloud credentials not found. Set GOOGLE_CLOUD_CREDENTIALS_PATH environment variable to your service account JSON file path."
+        error_msg = (
+            "Error: Google Cloud credentials not found. Set GOOGLE_CLOUD_CREDENTIALS_PATH "
+            "environment variable to your service account JSON file path."
+        )
         print(error_msg)
         raise Exception(error_msg)
 
     _credentials_path = credentials_path
     return _credentials_path
 
-def _initialize_firestore_client():
-    """Initialize Firestore client with service account credentials (lazy initialization)"""
-    global _db_client
+def _initialize_firebase():
+    """Initialize Firebase Admin SDK and return Firestore client (lazy)."""
+    global _firebase_app, _db_client
 
     if _db_client is not None:
         return _db_client
@@ -51,38 +52,37 @@ def _initialize_firestore_client():
     try:
         credentials_path = _get_credentials_path()
 
-        # Create credentials with proper scopes
-        credentials = service_account.Credentials.from_service_account_file(
-            credentials_path,
-            scopes=[
-                'https://www.googleapis.com/auth/cloud-platform',
-                'https://www.googleapis.com/auth/datastore'
-            ]
-        )
+        # Initialize Firebase Admin SDK
+        cred = credentials.Certificate(credentials_path)
+        if _firebase_app is None:
+            _firebase_app = firebase_admin.initialize_app(cred)
 
-        # Use the specific database name 'esting'
-        _db_client = firestore.Client(
-            credentials=credentials,
-            project=credentials.project_id,
-            database='esting'
-        )
-        print(f"Firestore initialized successfully with project: {credentials.project_id}, database: esting")
+        # Get Firestore client - prefer specific database 'esting' with fallback
+        try:
+            _db_client = firestore.client(app=_firebase_app, database_id='esting')
+            print("Firestore initialized successfully with database: esting")
+        except Exception:
+            _db_client = firestore.client(app=_firebase_app)
+            print("Firestore initialized successfully with default database")
+
         return _db_client
-
     except Exception as e:
-        print(f"Error: Firestore client initialization failed: {e}")
+        print(f"Error: Firebase initialization failed: {e}")
         raise
 
 class FirestoreService:
-    """Service for managing conversation data in Firestore"""
+    """Service for managing conversation data in Firestore using document-based operations"""
 
     CONVERSATIONS_COLLECTION = "conversations"
+    USER_INDEX_COLLECTION = "user_conversation_index"
+    SAVED_PROTOCOLS_COLLECTION = "saved_protocols"
+    USER_PROTOCOLS_INDEX_COLLECTION = "user_protocols_index"
 
     @staticmethod
     def _get_db():
-        """Get Firestore database client (with lazy initialization)"""
+        """Get Firestore database client"""
         try:
-            return _initialize_firestore_client()
+            return _initialize_firebase()
         except Exception as e:
             raise Exception(f"Firestore client not initialized. Check your GCP credentials. Error: {e}")
 
@@ -121,7 +121,7 @@ class FirestoreService:
                 "updated_at": datetime.now().isoformat(),
                 "protocol_data": conversation_data.get('protocol_data'),
                 "metadata": {
-                    "message_count": len(conversation_data.get('messages', [])),
+                    "message_count": len(messages),
                     "last_query": conversation_data.get('last_query', ''),
                     "tags": conversation_data.get('tags', []),
                 }
@@ -130,7 +130,34 @@ class FirestoreService:
             # Create unique document ID: user_id + conversation_id + created_at
             doc_id = f"{user_id}_{conversation_id}_{created_timestamp}"
             doc_ref = db.collection(FirestoreService.CONVERSATIONS_COLLECTION).document(doc_id)
-            doc_ref.set(doc_data)  # No merge - create new document each time
+            doc_ref.set(doc_data)
+
+            # Also update user index for efficient retrieval
+            user_index_ref = db.collection(FirestoreService.USER_INDEX_COLLECTION).document(user_id)
+            user_index_data = user_index_ref.get()
+
+            if user_index_data.exists:
+                conversations_list = user_index_data.to_dict().get('conversations', [])
+            else:
+                conversations_list = []
+
+            # Add/update conversation in index
+            conv_entry = {
+                "conversation_id": conversation_id,
+                "document_id": doc_id,
+                "title": doc_data["title"],
+                "created_at": created_at,
+                "updated_at": doc_data["updated_at"],
+                "message_count": len(messages),
+                "last_query": conversation_data.get('last_query', '')
+            }
+
+            # Remove old entry if exists
+            conversations_list = [c for c in conversations_list if c.get('conversation_id') != conversation_id]
+            conversations_list.append(conv_entry)
+
+            # Update index
+            user_index_ref.set({'conversations': conversations_list})
 
             return {
                 "success": True,
@@ -138,8 +165,6 @@ class FirestoreService:
                 "document_id": doc_id
             }
 
-        except GoogleCloudError as e:
-            return {"success": False, "error": "firestore_error", "details": str(e)}
         except Exception as e:
             return {"success": False, "error": "unexpected_error", "details": str(e)}
 
@@ -147,6 +172,7 @@ class FirestoreService:
     def get_user_conversations(user_id: str, limit: int = 20) -> Dict[str, Any]:
         """
         Get all conversations for a user
+        Uses user index document to avoid query limitations
 
         Args:
             user_id: Firebase Auth user ID
@@ -158,32 +184,43 @@ class FirestoreService:
         try:
             db = FirestoreService._get_db()
 
-            conversations = []
-            docs = (db.collection(FirestoreService.CONVERSATIONS_COLLECTION)
-                   .where("user_id", "==", user_id)
-                   .order_by("updated_at", direction=firestore.Query.DESCENDING)
-                   .limit(limit)
-                   .stream())
+            # Get user index document
+            user_index_ref = db.collection(FirestoreService.USER_INDEX_COLLECTION).document(user_id)
+            user_index_data = user_index_ref.get()
 
-            for doc in docs:
-                data = doc.to_dict()
-                conversations.append({
-                    "id": data.get("conversation_id"),
-                    "title": data.get("title"),
-                    "created_at": data.get("created_at"),
-                    "updated_at": data.get("updated_at"),
-                    "message_count": data.get("metadata", {}).get("message_count", 0),
-                    "last_query": data.get("metadata", {}).get("last_query", "")
+            if not user_index_data.exists:
+                return {
+                    "success": True,
+                    "conversations": [],
+                    "total": 0
+                }
+
+            conversations_list = user_index_data.to_dict().get('conversations', [])
+
+            # Sort by updated_at descending
+            conversations_list.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
+
+            # Limit results
+            conversations = conversations_list[:limit]
+
+            # Format for response (remove document_id)
+            formatted_conversations = []
+            for conv in conversations:
+                formatted_conversations.append({
+                    "id": conv.get("conversation_id"),
+                    "title": conv.get("title"),
+                    "created_at": conv.get("created_at"),
+                    "updated_at": conv.get("updated_at"),
+                    "message_count": conv.get("message_count", 0),
+                    "last_query": conv.get("last_query", "")
                 })
 
             return {
                 "success": True,
-                "conversations": conversations,
-                "total": len(conversations)
+                "conversations": formatted_conversations,
+                "total": len(formatted_conversations)
             }
 
-        except GoogleCloudError as e:
-            return {"success": False, "error": "firestore_error", "details": str(e)}
         except Exception as e:
             return {"success": False, "error": "unexpected_error", "details": str(e)}
 
@@ -191,6 +228,7 @@ class FirestoreService:
     def get_conversation(user_id: str, conversation_id: str) -> Dict[str, Any]:
         """
         Get a specific conversation for a user
+        Uses index to find document ID
 
         Args:
             user_id: Firebase Auth user ID
@@ -202,20 +240,36 @@ class FirestoreService:
         try:
             db = FirestoreService._get_db()
 
-            doc_ref = db.collection(FirestoreService.CONVERSATIONS_COLLECTION).document(f"{user_id}_{conversation_id}")
+            # Get document ID from user index
+            user_index_ref = db.collection(FirestoreService.USER_INDEX_COLLECTION).document(user_id)
+            user_index_data = user_index_ref.get()
+
+            if not user_index_data.exists:
+                return {"success": False, "error": "not_found", "details": "Conversation not found"}
+
+            conversations_list = user_index_data.to_dict().get('conversations', [])
+            doc_id = None
+
+            for conv in conversations_list:
+                if conv.get('conversation_id') == conversation_id:
+                    doc_id = conv.get('document_id')
+                    break
+
+            if not doc_id:
+                return {"success": False, "error": "not_found", "details": "Conversation not found"}
+
+            # Get the actual conversation document
+            doc_ref = db.collection(FirestoreService.CONVERSATIONS_COLLECTION).document(doc_id)
             doc = doc_ref.get()
 
             if not doc.exists:
                 return {"success": False, "error": "not_found", "details": "Conversation not found"}
 
-            data = doc.to_dict()
             return {
                 "success": True,
-                "conversation": data
+                "conversation": doc.to_dict()
             }
 
-        except GoogleCloudError as e:
-            return {"success": False, "error": "firestore_error", "details": str(e)}
         except Exception as e:
             return {"success": False, "error": "unexpected_error", "details": str(e)}
 
@@ -234,18 +288,34 @@ class FirestoreService:
         try:
             db = FirestoreService._get_db()
 
-            doc_ref = db.collection(FirestoreService.CONVERSATIONS_COLLECTION).document(f"{user_id}_{conversation_id}")
+            # Get document ID from user index
+            user_index_ref = db.collection(FirestoreService.USER_INDEX_COLLECTION).document(user_id)
+            user_index_data = user_index_ref.get()
 
-            # Check if document exists
-            if not doc_ref.get().exists:
+            if not user_index_data.exists:
                 return {"success": False, "error": "not_found", "details": "Conversation not found"}
 
+            conversations_list = user_index_data.to_dict().get('conversations', [])
+            doc_id = None
+
+            for conv in conversations_list:
+                if conv.get('conversation_id') == conversation_id:
+                    doc_id = conv.get('document_id')
+                    break
+
+            if not doc_id:
+                return {"success": False, "error": "not_found", "details": "Conversation not found"}
+
+            # Delete the conversation document
+            doc_ref = db.collection(FirestoreService.CONVERSATIONS_COLLECTION).document(doc_id)
             doc_ref.delete()
+
+            # Update user index (remove conversation)
+            conversations_list = [c for c in conversations_list if c.get('conversation_id') != conversation_id]
+            user_index_ref.set({'conversations': conversations_list})
 
             return {"success": True, "message": "Conversation deleted successfully"}
 
-        except GoogleCloudError as e:
-            return {"success": False, "error": "firestore_error", "details": str(e)}
         except Exception as e:
             return {"success": False, "error": "unexpected_error", "details": str(e)}
 
@@ -265,20 +335,246 @@ class FirestoreService:
         try:
             db = FirestoreService._get_db()
 
-            doc_ref = db.collection(FirestoreService.CONVERSATIONS_COLLECTION).document(f"{user_id}_{conversation_id}")
+            # Get document ID from user index
+            user_index_ref = db.collection(FirestoreService.USER_INDEX_COLLECTION).document(user_id)
+            user_index_data = user_index_ref.get()
 
-            # Check if document exists
-            if not doc_ref.get().exists:
+            if not user_index_data.exists:
                 return {"success": False, "error": "not_found", "details": "Conversation not found"}
 
+            conversations_list = user_index_data.to_dict().get('conversations', [])
+            doc_id = None
+
+            for conv in conversations_list:
+                if conv.get('conversation_id') == conversation_id:
+                    doc_id = conv.get('document_id')
+                    break
+
+            if not doc_id:
+                return {"success": False, "error": "not_found", "details": "Conversation not found"}
+
+            updated_at = datetime.now().isoformat()
+
+            # Update the conversation document
+            doc_ref = db.collection(FirestoreService.CONVERSATIONS_COLLECTION).document(doc_id)
             doc_ref.update({
                 "title": new_title,
-                "updated_at": datetime.now().isoformat()
+                "updated_at": updated_at
             })
+
+            # Update user index
+            for conv in conversations_list:
+                if conv.get('conversation_id') == conversation_id:
+                    conv['title'] = new_title
+                    conv['updated_at'] = updated_at
+                    break
+
+            user_index_ref.set({'conversations': conversations_list})
 
             return {"success": True, "message": "Title updated successfully"}
 
-        except GoogleCloudError as e:
-            return {"success": False, "error": "firestore_error", "details": str(e)}
         except Exception as e:
             return {"success": False, "error": "unexpected_error", "details": str(e)}
+
+    # ==================== Saved Protocols Methods ====================
+
+    @staticmethod
+    def save_protocol(user_id: str, protocol_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Save/bookmark a single protocol for a user
+
+        Args:
+            user_id: Firebase Auth user ID
+            protocol_data: Protocol data including title, steps, citations, etc.
+
+        Returns:
+            Dict with success status and protocol ID
+        """
+        try:
+            db = FirestoreService._get_db()
+
+            # Generate protocol ID from title or use provided ID
+            protocol_id = protocol_data.get('id') or f"protocol_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            saved_at = datetime.now().isoformat()
+
+            # Create document data
+            doc_data = {
+                "user_id": user_id,
+                "protocol_id": protocol_id,
+                "title": protocol_data.get('title', 'Untitled Protocol'),
+                "protocol_data": protocol_data,
+                "saved_at": saved_at,
+                "region": protocol_data.get('region', 'Global'),
+                "year": protocol_data.get('year', str(datetime.now().year)),
+                "organization": protocol_data.get('organization', 'ProCheck'),
+                "source_conversation_id": protocol_data.get('source_conversation_id'),  # Optional
+            }
+
+            # Create unique document ID
+            doc_id = f"{user_id}_{protocol_id}"
+            doc_ref = db.collection(FirestoreService.SAVED_PROTOCOLS_COLLECTION).document(doc_id)
+            doc_ref.set(doc_data)
+
+            # Also update user protocols index for efficient retrieval
+            user_protocols_index_ref = db.collection(FirestoreService.USER_PROTOCOLS_INDEX_COLLECTION).document(user_id)
+            user_protocols_index_data = user_protocols_index_ref.get()
+
+            if user_protocols_index_data.exists:
+                protocols_list = user_protocols_index_data.to_dict().get('protocols', [])
+            else:
+                protocols_list = []
+
+            # Add/update protocol in index
+            protocol_entry = {
+                "protocol_id": protocol_id,
+                "document_id": doc_id,
+                "title": doc_data["title"],
+                "saved_at": saved_at,
+                "region": doc_data["region"],
+                "year": doc_data["year"],
+                "organization": doc_data["organization"]
+            }
+
+            # Remove old entry if exists
+            protocols_list = [p for p in protocols_list if p.get('protocol_id') != protocol_id]
+            protocols_list.append(protocol_entry)
+
+            # Update index
+            user_protocols_index_ref.set({'protocols': protocols_list})
+
+            return {
+                "success": True,
+                "protocol_id": protocol_id,
+                "document_id": doc_id
+            }
+
+        except Exception as e:
+            return {"success": False, "error": "save_protocol_error", "details": str(e)}
+
+    @staticmethod
+    def get_saved_protocols(user_id: str, limit: int = 20) -> Dict[str, Any]:
+        """
+        Get all saved protocols for a user
+        Uses user index document to avoid query limitations
+
+        Args:
+            user_id: Firebase Auth user ID
+            limit: Maximum number of protocols to return
+
+        Returns:
+            Dict with saved protocols list
+        """
+        try:
+            db = FirestoreService._get_db()
+
+            # Get user protocols index document
+            user_protocols_index_ref = db.collection(FirestoreService.USER_PROTOCOLS_INDEX_COLLECTION).document(user_id)
+            user_protocols_index_data = user_protocols_index_ref.get()
+
+            if not user_protocols_index_data.exists:
+                return {
+                    "success": True,
+                    "protocols": [],
+                    "total": 0
+                }
+
+            protocols_list = user_protocols_index_data.to_dict().get('protocols', [])
+
+            # Sort by saved_at descending
+            protocols_list.sort(key=lambda x: x.get("saved_at", ""), reverse=True)
+
+            # Limit results
+            protocols = protocols_list[:limit]
+
+            # Fetch full protocol data for each protocol
+            full_protocols = []
+            for protocol in protocols:
+                doc_id = protocol.get('document_id')
+                if doc_id:
+                    doc_ref = db.collection(FirestoreService.SAVED_PROTOCOLS_COLLECTION).document(doc_id)
+                    doc = doc_ref.get()
+                    if doc.exists:
+                        data = doc.to_dict()
+                        full_protocols.append({
+                            "id": data.get("protocol_id"),
+                            "title": data.get("title"),
+                            "saved_at": data.get("saved_at"),
+                            "region": data.get("region"),
+                            "year": data.get("year"),
+                            "organization": data.get("organization"),
+                            "protocol_data": data.get("protocol_data")
+                        })
+
+            return {
+                "success": True,
+                "protocols": full_protocols,
+                "total": len(full_protocols)
+            }
+
+        except Exception as e:
+            return {"success": False, "error": "get_protocols_error", "details": str(e)}
+
+    @staticmethod
+    def delete_saved_protocol(user_id: str, protocol_id: str) -> Dict[str, Any]:
+        """
+        Delete a saved protocol
+
+        Args:
+            user_id: Firebase Auth user ID
+            protocol_id: Protocol ID
+
+        Returns:
+            Dict with success status
+        """
+        try:
+            db = FirestoreService._get_db()
+
+            doc_id = f"{user_id}_{protocol_id}"
+            doc_ref = db.collection(FirestoreService.SAVED_PROTOCOLS_COLLECTION).document(doc_id)
+
+            # Check if exists
+            if not doc_ref.get().exists:
+                return {"success": False, "error": "not_found", "details": "Protocol not found"}
+
+            # Delete the protocol document
+            doc_ref.delete()
+
+            # Update user protocols index (remove protocol)
+            user_protocols_index_ref = db.collection(FirestoreService.USER_PROTOCOLS_INDEX_COLLECTION).document(user_id)
+            user_protocols_index_data = user_protocols_index_ref.get()
+
+            if user_protocols_index_data.exists:
+                protocols_list = user_protocols_index_data.to_dict().get('protocols', [])
+                protocols_list = [p for p in protocols_list if p.get('protocol_id') != protocol_id]
+                user_protocols_index_ref.set({'protocols': protocols_list})
+
+            return {"success": True, "message": "Protocol deleted successfully"}
+
+        except Exception as e:
+            return {"success": False, "error": "delete_protocol_error", "details": str(e)}
+
+    @staticmethod
+    def is_protocol_saved(user_id: str, protocol_id: str) -> Dict[str, Any]:
+        """
+        Check if a protocol is saved by the user
+
+        Args:
+            user_id: Firebase Auth user ID
+            protocol_id: Protocol ID
+
+        Returns:
+            Dict with is_saved boolean
+        """
+        try:
+            db = FirestoreService._get_db()
+
+            doc_id = f"{user_id}_{protocol_id}"
+            doc_ref = db.collection(FirestoreService.SAVED_PROTOCOLS_COLLECTION).document(doc_id)
+
+            return {
+                "success": True,
+                "is_saved": doc_ref.get().exists
+            }
+
+        except Exception as e:
+            return {"success": False, "error": "check_saved_error", "details": str(e)}
