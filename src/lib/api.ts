@@ -39,6 +39,8 @@ export type BackendGenerateRequest = {
 export type BackendChecklistItem = {
   step: number;
   text: string;
+  explanation?: string;  // Detailed how-to explanation
+  citation?: number;  // Citation source number
   priority?: string;
   rationale?: string;
 };
@@ -98,8 +100,20 @@ export type ConversationListResponse = {
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
-export async function searchProtocols(req: BackendSearchRequest): Promise<BackendSearchResponse> {
-  const res = await fetch(`${API_BASE}/protocols/search`, {
+export async function searchProtocols(
+  req: BackendSearchRequest, 
+  options?: {
+    useHybrid?: boolean;
+    enhanceQuery?: boolean;
+  }
+): Promise<BackendSearchResponse> {
+  // Default to hybrid search enabled for better results!
+  const useHybrid = options?.useHybrid !== undefined ? options.useHybrid : true;
+  const enhanceQuery = options?.enhanceQuery || false;
+  
+  const url = `${API_BASE}/protocols/search?use_hybrid=${useHybrid}&enhance_query=${enhanceQuery}`;
+  
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
@@ -111,17 +125,9 @@ export async function searchProtocols(req: BackendSearchRequest): Promise<Backen
   return res.json();
 }
 
+// Backward compatibility: hybridSearchProtocols now just calls searchProtocols
 export async function hybridSearchProtocols(req: BackendSearchRequest): Promise<BackendSearchResponse> {
-  const res = await fetch(`${API_BASE}/protocols/hybrid-search`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Hybrid search failed: ${res.status} ${text}`);
-  }
-  return res.json();
+  return searchProtocols(req, { useHybrid: true, enhanceQuery: false });
 }
 
 export async function generateProtocol(req: BackendGenerateRequest): Promise<BackendGenerateResponse> {

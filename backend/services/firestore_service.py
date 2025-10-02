@@ -10,48 +10,65 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from config.settings import settings
 
-# Global Firebase app instance
 _firebase_app = None
 _db_client = None
+_credentials_path = None
+
+def _get_credentials_path():
+    """Get the credentials file path"""
+    global _credentials_path
+
+    if _credentials_path:
+        return _credentials_path
+
+    # Get credentials path from environment variable or use default
+    credentials_path = settings.GOOGLE_CLOUD_CREDENTIALS_PATH
+
+    # Fallback to legacy cred.json location for backward compatibility
+    if not credentials_path:
+        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        credentials_path = os.path.join(current_dir, "cred.json")
+        if not os.path.exists(credentials_path):
+            credentials_path = None
+
+    if not credentials_path or not os.path.exists(credentials_path):
+        error_msg = (
+            "Error: Google Cloud credentials not found. Set GOOGLE_CLOUD_CREDENTIALS_PATH "
+            "environment variable to your service account JSON file path."
+        )
+        print(error_msg)
+        raise Exception(error_msg)
+
+    _credentials_path = credentials_path
+    return _credentials_path
 
 def _initialize_firebase():
-    """Initialize Firebase Admin SDK"""
+    """Initialize Firebase Admin SDK and return Firestore client (lazy)."""
     global _firebase_app, _db_client
 
-    if _firebase_app is not None:
+    if _db_client is not None:
         return _db_client
 
     try:
-        # Get credentials path from environment variable or use default
-        credentials_path = settings.GOOGLE_CLOUD_CREDENTIALS_PATH
-
-        # Fallback to legacy cred.json location
-        if not credentials_path:
-            current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            credentials_path = os.path.join(current_dir, "cred.json")
-
-        if not os.path.exists(credentials_path):
-            raise FileNotFoundError(f"Credentials file not found at {credentials_path}")
+        credentials_path = _get_credentials_path()
 
         # Initialize Firebase Admin SDK
         cred = credentials.Certificate(credentials_path)
-        _firebase_app = firebase_admin.initialize_app(cred)
+        if _firebase_app is None:
+            _firebase_app = firebase_admin.initialize_app(cred)
 
-        # Get Firestore client - use default database first
+        # Get Firestore client - prefer specific database 'esting' with fallback
         try:
             _db_client = firestore.client(app=_firebase_app, database_id='esting')
-            print(f"Firestore initialized successfully with database: esting")
-        except:
-            # Fallback to default database
+            print("Firestore initialized successfully with database: esting")
+        except Exception:
             _db_client = firestore.client(app=_firebase_app)
-            print(f"Firestore initialized successfully with default database")
+            print("Firestore initialized successfully with default database")
 
         return _db_client
-
     except Exception as e:
         print(f"Error: Firebase initialization failed: {e}")
         raise
-
 
 class FirestoreService:
     """Service for managing conversation data in Firestore using document-based operations"""

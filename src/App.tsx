@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Menu, X } from 'lucide-react';
 import LandingScreen from '@/components/LandingScreen';
 import Sidebar from '@/components/Sidebar';
@@ -10,9 +11,9 @@ import LoginPage from '@/components/auth/LoginPage';
 import SignupPage from '@/components/auth/SignupPage';
 import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { Message, ProtocolData, ProtocolStep, Citation } from '@/types';
+import { Message, ProtocolData, ProtocolStep, Citation, SearchMetadata } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { searchProtocols, generateProtocol, saveConversation, getConversation, ConversationMessage } from '@/lib/api';
+import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocols, ConversationMessage } from '@/lib/api';
 
 function App() {
   const { currentUser } = useAuth();
@@ -73,58 +74,101 @@ function App() {
     return t;
   };
 
-  const normalizeChecklist = (items: { step: number; text: string }[]): { step: number; text: string }[] => {
+  const normalizeChecklist = (items: any[]): any[] => {
     const seen = new Set<string>();
-    const out: { step: number; text: string }[] = [];
+    const out: any[] = [];
     for (const item of items || []) {
       const cleaned = cleanStepText(item?.text || '');
       if (!cleaned || cleaned.length < 4) continue;
       const key = cleaned.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ step: out.length + 1, text: cleaned });
+      // Preserve ALL fields (explanation, citation, etc.)
+      out.push({ 
+        ...item,  // Keep all original fields
+        step: out.length + 1, 
+        text: cleaned 
+      });
     }
     return out.slice(0, 12);
   };
 
   const selectSnippets = (query: string, hits: any[]): string[] => {
-    // Use semantic relevance scoring - trust Elasticsearch scores but add context diversity
+    const queryLower = query.toLowerCase();
+    
+    // Extract MEDICAL TERMS (ignore generic words like "disease", "symptoms", "treatment")
+    const genericWords = ['disease', 'diseases', 'symptom', 'symptoms', 'treatment', 'protocol', 'management', 'checklist'];
+    const queryWords = queryLower.split(/\s+/)
+      .filter(w => w.length > 3)
+      .filter(w => !genericWords.includes(w));
+    
+    // If no specific terms, use first significant word
+    if (queryWords.length === 0) {
+      queryWords.push(queryLower.split(/\s+/).find(w => w.length > 3) || '');
+    }
+    
+    // Score and filter snippets for relevance
     const scored = (hits || []).map((h) => {
       const s = h.source || {};
       let score = h.score || 0;
       
-      // Boost based on content type relevance to query intent
-      const section = String(s.section || '').toLowerCase();
       const title = String(s.title || '').toLowerCase();
-      const queryLower = query.toLowerCase();
+      const body = String(s.body || s.content || '').toLowerCase();
+      const disease = String(s.disease || '').toLowerCase();
       
-      // Boost clinical/management content for protocol queries
-      if (section.includes('checklist') || section.includes('protocol') || section.includes('management')) {
-        score += 1.0;
-      }
-      if (title.includes('protocol') || title.includes('checklist') || title.includes('guidelines')) {
-        score += 0.8;
+      // DISEASE-SPECIFIC RELEVANCE: Only count matches for medical condition terms
+      let relevanceScore = 0;
+      
+      for (const word of queryWords) {
+        // Strong match: disease field contains the specific term (e.g., "dengue" contains "dengue")
+        if (disease.includes(word)) {
+          relevanceScore += 5;
+        }
+        // Medium match: title contains specific term
+        if (title.includes(word)) {
+          relevanceScore += 2;
+        }
+        // Weak match: body contains term
+        if (body.includes(word)) {
+          relevanceScore += 1;
+        }
       }
       
-      // Slight penalty for prevention/vaccination when query seems clinical
-      if ((section.includes('prevention') || section.includes('vaccination')) && 
-          (queryLower.includes('treatment') || queryLower.includes('management') || queryLower.includes('protocol'))) {
-        score -= 0.3;
+      // BALANCED FILTER: Keep if has keyword match OR high ES score
+      // This filters out COVID (no "mosquito", low relevance) but keeps dengue/malaria
+      if (relevanceScore === 0 && score < 3.0) {
+        score = 0; // Mark for removal - no keyword match AND low search score
       }
       
-      return { h, score };
+      // Boost high-relevance docs
+      if (relevanceScore >= 5) score += 3.0; // Disease name match
+      if (relevanceScore >= 2) score += 1.5; // Title match
+      if (relevanceScore >= 1) score += 0.5; // Body match
+      
+      return { h, score, relevanceScore };
     });
 
-    scored.sort((a, b) => b.score - a.score);
+    // Filter out irrelevant content
+    const filtered = scored.filter(s => s.score > 0);
+    filtered.sort((a, b) => b.score - a.score);
 
     const snippets: string[] = [];
-    for (const { h } of scored) {
+    let citationNum = 1;
+    
+    for (const { h } of filtered) {
       const s = h.source || {};
       const body = s.body || s.content || s.title;
       if (!body) continue;
-      snippets.push(String(body));
-      if (snippets.length >= 8) break; // Limit context to avoid overwhelming LLM
+      
+      // Add citation number prefix for LLM to track sources
+      const disease = s.disease ? `(${s.disease})` : '';
+      const numberedSnippet = `[Source ${citationNum}]${disease ? ' ' + disease : ''}: ${body}`;
+      snippets.push(numberedSnippet);
+      citationNum++;
+      
+      if (snippets.length >= 6) break; // Get more context
     }
+    
     return snippets;
   };
 
@@ -140,43 +184,37 @@ function App() {
     const organization = String(best.organization || 'ProCheck');
 
     const normalized = normalizeChecklist(checklist);
+    
     const steps: ProtocolStep[] = normalized.length > 0
-      ? normalized.map((item) => ({ id: item.step, step: item.text, citations: [] }))
+      ? normalized.map((item: any) => ({
+            id: item.step, 
+            step: item.text,
+            explanation: item.explanation || '',
+            citation: item.citation || 0,
+            citations: item.citation ? [item.citation] : []
+          }))
       : (hits || []).slice(0, 6).map((h: any, idx: number) => ({
           id: idx + 1,
           step: cleanStepText(h.source?.body || h.source?.content || h.source?.title || '—'),
-          citations: [],
+          explanation: '',
+          citation: idx + 1,
+          citations: [idx + 1],
         }));
 
+    // Build citations from search results with full body for expandable view
     const citationObjs: Citation[] = [];
-    for (let i = 0; i < Math.min(citations.length, 5); i++) {
-      const url = citations[i];
+    hits.slice(0, 6).forEach((h: any, idx: number) => {
+      const s = h.source || {};
       citationObjs.push({
-        id: i + 1,
-        source: 'Reference',
-        organization: organization,
-        year,
-        region,
-        url,
-        excerpt: url,
+        id: idx + 1,
+        source: s.title || 'Medical Source',
+        organization: s.organization || organization,
+        year: String(s.year || year),
+        region: s.region || region,
+        url: s.source_url || s.url || '',
+        excerpt: s.body || s.content || '',  // Full content for expansion
       });
-    }
-    if (citationObjs.length === 0 && hits?.length) {
-      hits.slice(0, 3).forEach((h: any) => {
-        const url = h.source?.source_url || h.source?.url;
-        if (url) {
-          citationObjs.push({
-            id: citationObjs.length + 1,
-            source: h.source?.title || 'Source',
-            organization: h.source?.organization || organization,
-            year: String(h.source?.year || year),
-            region: h.source?.region || region,
-            url,
-            excerpt: h.source?.section || h.source?.title || url,
-          });
-        }
-      });
-    }
+    });
 
     return {
       title,
@@ -257,10 +295,38 @@ function App() {
       const genRes = await generateProtocol({
         title: content,
         context_snippets: snippets.length > 0 ? snippets : [content],
-        instructions: `Analyze the provided context and generate a concise, actionable medical protocol checklist. Focus on the most relevant information for the user's query. Ignore irrelevant or conflicting information from different sources.`,
+        instructions: `Create a medical protocol checklist for: "${content}"
+
+STRICT FILTERING RULES:
+- ONLY use information that directly relates to the query topic
+- If a snippet is about a DIFFERENT disease/condition, DO NOT use it
+- Example: If query is "mosquito disease", ignore COVID-19, stroke, diabetes, etc.
+- Each step must be actionable and specific to "${content}"
+- Steps should be clear medical actions or information points
+- Do NOT include [Source N] tags in the step text
+- Better to have 3-4 highly relevant steps than 6+ with irrelevant ones
+
+CITATION REQUIREMENT:
+- Each checklist step MUST include a "citation" field
+- Set citation to the source number (1, 2, 3, etc.) where you got the information
+- If info is from [Source 1], use "citation": 1
+- If info is from [Source 2], use "citation": 2`,
         region: null,
         year: null,
       });
+
+      // Classify query intent for UI formatting
+      const classifyIntent = (query: string) => {
+        const q = query.toLowerCase();
+        if (q.includes('emergency') || q.includes('urgent') || q.includes('attack') || q.includes('crisis')) return 'emergency';
+        if (q.includes('treatment') || q.includes('therapy') || q.includes('medication')) return 'treatment';
+        if (q.includes('symptom') || q.includes('sign')) return 'symptoms';
+        if (q.includes('diagnosis') || q.includes('test')) return 'diagnosis';
+        if (q.includes('prevention') || q.includes('prevent')) return 'prevention';
+        return 'general';
+      };
+
+      const intent = classifyIntent(content);
 
       const protocolData: ProtocolData = mapBackendToProtocolData(
         content,
@@ -269,12 +335,34 @@ function App() {
         genRes.citations
       );
 
+      // Attach intent to protocol for persistence (used when saving/loading)
+      protocolData.intent = intent;
+
+      // Capture search metadata for display
+      const searchMetadata: SearchMetadata = {
+        totalResults: searchRes.total,
+        responseTimes: searchRes.took_ms,
+        searchMethod: 'hybrid', // Using hybrid search by default
+        resultsFound: searchRes.hits?.length || 0,
+      };
+
+      
+      const intentMessages: Record<string, string> = {
+        emergency: 'Emergency Protocol - Immediate actions required:',
+        symptoms: 'Symptom Overview - Clinical presentation:',
+        treatment: 'Treatment Protocol - Medical interventions:',
+        diagnosis: 'Diagnostic Approach - Assessment criteria:',
+        prevention: 'Prevention Guide - Protective measures:',
+        general: 'Medical Protocol - Key information:',
+      };
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: `Here's the comprehensive protocol for your query:`,
+        content: intentMessages[intent] || 'Here\'s the comprehensive protocol:',
         timestamp: getUserTimestamp(),
         protocolData,
+        searchMetadata,
       };
 
       setMessages(prev => {
@@ -341,16 +429,35 @@ function App() {
     setMessages([]);
     setCurrentConversationId(`conv_${Date.now()}`);
 
-    // Create a message with the saved protocol
-    const assistantMessage: Message = {
-      id: Date.now().toString(),
-      type: 'assistant',
-      content: `Here's your saved protocol:`,
-      timestamp: getUserTimestamp(),
-      protocolData: protocolData,
-    };
+    try {
+      let fullProtocol = protocolData;
 
-    setMessages([assistantMessage]);
+      if (!fullProtocol && currentUser) {
+        const res = await getSavedProtocols(currentUser.uid, 100);
+        const found = res.success ? (res.protocols || []).find((p: any) => p.id === protocolId) : null;
+        fullProtocol = found?.protocol_data || null;
+      }
+
+      const contentTitle = fullProtocol?.title ? `Saved: ${fullProtocol.title}` : `Here's your saved protocol:`;
+
+      const assistantMessage: Message = {
+        id: Date.now().toString(),
+        type: 'assistant',
+        content: contentTitle,
+        timestamp: getUserTimestamp(),
+        protocolData: fullProtocol || undefined,
+      };
+
+      setMessages([assistantMessage]);
+    } catch (e) {
+      const assistantMessage: Message = {
+        id: Date.now().toString(),
+        type: 'assistant',
+        content: `Couldn't load saved protocol.`,
+        timestamp: getUserTimestamp(),
+      };
+      setMessages([assistantMessage]);
+    }
   };
 
   const handleAuthSuccess = () => {
@@ -389,6 +496,9 @@ function App() {
               {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
             <h1 className="text-lg font-semibold text-slate-900">ProCheck Protocol Assistant</h1>
+            <Badge className="bg-slate-700 text-white border-0 hidden sm:flex">
+              Hybrid Search
+            </Badge>
           </div>
           <Button
             variant="outline"
@@ -433,10 +543,20 @@ function App() {
                     <div className="flex items-center space-x-2 mb-2">
                       <h4 className="font-semibold text-slate-900">ProCheck Protocol Assistant</h4>
                     </div>
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <Badge className="bg-slate-700 text-white border-0">
+                        Searching protocols...
+                      </Badge>
+                    </div>
                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                      <p className="text-sm text-slate-600">
-                        Analyzing medical guidelines and synthesizing protocol...
-                      </p>
+                      <div className="space-y-2">
+                        <p className="text-sm text-slate-600">
+                          Searching medical databases with semantic understanding...
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Using BM25 keyword + vector embeddings for better results
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>

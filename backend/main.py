@@ -29,9 +29,11 @@ from services.elasticsearch_service import (
     count_documents,
     get_sample_documents,
     search_with_filters,
+    hybrid_search,
 )
 from services.gemini_service import summarize_checklist
 from services.firestore_service import FirestoreService
+from services.embedding_service import generate_embedding, enhance_query_with_llm
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -119,12 +121,53 @@ async def elasticsearch_sample(size: int = 3):
     return get_sample_documents(size=size)
 
 @app.post("/protocols/search", response_model=ProtocolSearchResponse)
-async def protocols_search(payload: ProtocolSearchRequest):
+async def protocols_search(payload: ProtocolSearchRequest, use_hybrid: bool = True, enhance_query: bool = False):
+    """
+    Search medical protocols using hybrid search (BM25 + semantic vectors).
+    
+    Args:
+        payload: Search request with query and filters
+        use_hybrid: If True, use hybrid search; if False, use traditional text search
+        enhance_query: If True, use LLM to enhance the query before searching
+    """
     if not settings.elasticsearch_configured:
         raise HTTPException(status_code=400, detail="Elasticsearch is not configured.")
-    es_resp = search_with_filters(payload.model_dump())
+    
+    original_query = payload.query
+    enhanced_info = None
+    
+    # Optional: Enhance query using Gemini
+    if enhance_query and original_query and settings.gemini_configured:
+        try:
+            enhanced_info = enhance_query_with_llm(original_query)
+            # Use enhanced query for search
+            payload.query = enhanced_info.get("enhanced_query", original_query)
+        except Exception as e:
+            pass  # Silently fall back to original query
+    
+    # Use hybrid search if enabled and Gemini is configured
+    if use_hybrid and settings.gemini_configured and payload.query:
+        try:
+            # Generate query embedding for semantic search
+            query_vector = generate_embedding(payload.query, task_type="retrieval_query")
+            
+            # Perform hybrid search with RRF
+            es_resp = hybrid_search(
+                query=payload.query,
+                query_vector=query_vector,
+                size=payload.size,
+                filters=payload.filters
+            )
+        except Exception as e:
+            # Fallback to traditional search
+            es_resp = search_with_filters(payload.model_dump())
+    else:
+        # Traditional text-only search
+        es_resp = search_with_filters(payload.model_dump())
+    
     if "error" in es_resp:
         raise HTTPException(status_code=502, detail=es_resp)
+    
     hits = []
     for h in es_resp.get("hits", {}).get("hits", []):
         hits.append(ProtocolSearchHit(
@@ -133,8 +176,10 @@ async def protocols_search(payload: ProtocolSearchRequest):
             source=h.get("_source", {}),
             highlight=h.get("highlight")
         ))
+    
     total = es_resp.get("hits", {}).get("total", {}).get("value", 0)
     took = es_resp.get("took", 0)
+    
     return ProtocolSearchResponse(total=total, hits=hits, took_ms=took)
 
 @app.post("/protocols/generate", response_model=ProtocolGenerateResponse)
@@ -152,8 +197,14 @@ async def protocols_generate(payload: ProtocolGenerateRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail={"error": "gemini_error", "details": str(e)})
 
+    # Preserve all fields including citation and explanation
     checklist_items = [
-        {"step": item.get("step", idx + 1), "text": item.get("text", "")} 
+        {
+            "step": item.get("step", idx + 1), 
+            "text": item.get("text", ""),
+            "explanation": item.get("explanation", ""),  # Include explanation
+            "citation": item.get("citation", 0)  # Include citation field
+        } 
         for idx, item in enumerate(result.get("checklist", []))
     ]
     return ProtocolGenerateResponse(

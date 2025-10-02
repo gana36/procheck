@@ -33,6 +33,8 @@ class ProtocolGenerateRequest(BaseModel):
 class ProtocolChecklistItem(BaseModel):
     step: int
     text: str
+    explanation: Optional[str] = ""  # Detailed how-to explanation
+    citation: Optional[int] = 0  # Citation source number
 
 class ProtocolGenerateResponse(BaseModel):
     title: str

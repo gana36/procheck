@@ -1,5 +1,8 @@
 import { Card, CardContent } from '@/components/ui/card';
-import { Stethoscope, User } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { 
+  User, Search, Clock, FileText
+} from 'lucide-react';
 import { Message } from '@/types';
 import ProtocolCard from './ProtocolCard';
 
@@ -7,6 +10,81 @@ interface ChatMessageProps {
   message: Message;
   onSaveToggle?: () => void;
 }
+
+// Detect query intent from message content
+const detectIntent = (content: string): string => {
+  const c = content.toLowerCase();
+  if (c.includes('emergency') || c.includes('urgent') || c.includes('attack') || c.includes('crisis')) return 'emergency';
+  if (c.includes('symptom') || c.includes('sign')) return 'symptoms';
+  if (c.includes('treatment') || c.includes('therapy') || c.includes('medication')) return 'treatment';
+  if (c.includes('diagnosis') || c.includes('test')) return 'diagnosis';
+  if (c.includes('prevention') || c.includes('prevent')) return 'prevention';
+  return 'general';
+};
+
+// Theme configurations for different intents - Professional medical colors
+const intentThemes = {
+  emergency: {
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    icon: FileText,
+    iconColor: 'text-slate-700',
+    iconBg: 'bg-slate-100',
+    badge: 'bg-slate-700',
+    badgeText: 'Emergency Protocol',
+    accent: 'border-l-4 border-l-slate-600'
+  },
+  symptoms: {
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    icon: FileText,
+    iconColor: 'text-slate-700',
+    iconBg: 'bg-slate-100',
+    badge: 'bg-slate-700',
+    badgeText: 'Symptom Guide',
+    accent: 'border-l-4 border-l-slate-600'
+  },
+  treatment: {
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    icon: FileText,
+    iconColor: 'text-slate-700',
+    iconBg: 'bg-slate-100',
+    badge: 'bg-slate-700',
+    badgeText: 'Treatment Protocol',
+    accent: 'border-l-4 border-l-slate-600'
+  },
+  diagnosis: {
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    icon: FileText,
+    iconColor: 'text-slate-700',
+    iconBg: 'bg-slate-100',
+    badge: 'bg-slate-700',
+    badgeText: 'Diagnostic Guide',
+    accent: 'border-l-4 border-l-slate-600'
+  },
+  prevention: {
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    icon: FileText,
+    iconColor: 'text-slate-700',
+    iconBg: 'bg-slate-100',
+    badge: 'bg-slate-700',
+    badgeText: 'Prevention Guide',
+    accent: 'border-l-4 border-l-slate-600'
+  },
+  general: {
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    icon: FileText,
+    iconColor: 'text-slate-700',
+    iconBg: 'bg-slate-100',
+    badge: 'bg-slate-700',
+    badgeText: 'Medical Protocol',
+    accent: 'border-l-4 border-l-slate-600'
+  }
+};
 
 export default function ChatMessage({ message, onSaveToggle }: ChatMessageProps) {
   const formatTime = (timestamp: string) => {
@@ -17,20 +95,20 @@ export default function ChatMessage({ message, onSaveToggle }: ChatMessageProps)
   if (message.type === 'user') {
     return (
       <div className="flex justify-end mb-6">
-        <div className="max-w-[80%]">
-          <div className="flex items-end space-x-2">
+        <div className="max-w-[75%]">
+          <div className="flex items-end justify-end space-x-3">
+            <Card className="bg-slate-700 text-white border-0 shadow-md">
+              <CardContent className="p-4">
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+              </CardContent>
+            </Card>
             <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-teal-600 rounded-full flex items-center justify-center">
+              <div className="w-9 h-9 bg-slate-700 rounded-full flex items-center justify-center shadow-sm">
                 <User className="h-4 w-4 text-white" />
               </div>
             </div>
-            <Card className="bg-teal-600 text-white border-teal-600">
-              <CardContent className="p-4">
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-              </CardContent>
-            </Card>
           </div>
-          <p className="text-xs text-slate-500 mt-1 text-right">
+          <p className="text-xs text-slate-500 mt-2 text-right">
             {formatTime(message.timestamp)}
           </p>
         </div>
@@ -38,34 +116,77 @@ export default function ChatMessage({ message, onSaveToggle }: ChatMessageProps)
     );
   }
 
+  // Detect intent for theming
+  const intent = detectIntent(message.content);
+  const theme = intentThemes[intent as keyof typeof intentThemes] || intentThemes.general;
+  const ThemeIcon = theme.icon;
+
   return (
     <div className="flex justify-start mb-6">
-      <div className="max-w-[90%]">
+      <div className="max-w-[95%] w-full">
         <div className="flex items-start space-x-3">
-          <div className="flex-shrink-0">
-            <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center">
-              <Stethoscope className="h-5 w-5 text-teal-600" />
+          <div className="flex-shrink-0 mt-1">
+            <div className={`w-10 h-10 ${theme.iconBg} rounded-full flex items-center justify-center shadow-sm`}>
+              <ThemeIcon className={`h-5 w-5 ${theme.iconColor}`} />
             </div>
           </div>
-          <div className="flex-1">
-            <div className="flex items-center space-x-2 mb-2">
-              <h4 className="font-semibold text-slate-900">ProCheck Protocol Assistant</h4>
+          <div className="flex-1 min-w-0">
+            {/* Header with metadata */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-2">
+                <h4 className="font-semibold text-slate-900">ProCheck AI</h4>
+                <Badge className={`${theme.badge} text-white text-xs`}>
+                  {theme.badgeText}
+                </Badge>
+              </div>
               <span className="text-xs text-slate-500">{formatTime(message.timestamp)}</span>
             </div>
             
+            {/* Search Metadata */}
+            {message.searchMetadata && (
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <Badge className="bg-slate-700 text-white border-0 shadow-sm">
+                  Hybrid Search
+                </Badge>
+                <Badge variant="outline" className="border-slate-300 text-slate-700 bg-white">
+                  <Search className="h-3 w-3 mr-1" />
+                  {message.searchMetadata.totalResults} sources
+                </Badge>
+                <Badge variant="outline" className="border-slate-300 text-slate-700 bg-white">
+                  <Clock className="h-3 w-3 mr-1" />
+                  {message.searchMetadata.responseTimes}ms
+                </Badge>
+              </div>
+            )}
+            
+            {/* Content Card with Theme */}
             {message.content && (
-              <Card className="bg-slate-50 border-slate-200 mb-4">
-                <CardContent className="p-4">
-                  <p className="text-sm text-slate-700 whitespace-pre-wrap">
-                    {message.content}
-                  </p>
+              <Card className={`${theme.bg} ${theme.border} ${theme.accent} shadow-sm mb-4`}>
+                <CardContent className="p-5">
+                  <div className="flex items-start space-x-3">
+                    {(() => {
+                      const IconComponent = theme.icon;
+                      return <IconComponent className={`h-5 w-5 ${theme.iconColor} flex-shrink-0 mt-0.5`} />;
+                    })()}
+                    <p className="text-sm leading-relaxed text-slate-800 font-medium">
+                      {message.content}
+                    </p>
+                  </div>
                 </CardContent>
               </Card>
             )}
             
-            {message.protocolData && (
-              <ProtocolCard protocolData={message.protocolData} onSaveToggle={onSaveToggle} />
-            )}
+            {/* Protocol Data with Enhanced Display */}
+            {message.protocolData && (() => {
+              const protocolIntent = (message.protocolData as any)?.intent || intent;
+              return (
+                <ProtocolCard 
+                  protocolData={message.protocolData} 
+                  onSaveToggle={onSaveToggle}
+                  intent={protocolIntent as 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general'}
+                />
+              );
+            })()}
           </div>
         </div>
       </div>
