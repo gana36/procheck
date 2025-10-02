@@ -245,6 +245,70 @@ async def update_conversation_title(user_id: str, conversation_id: str, payload:
 
     return {"success": True, "message": "Title updated successfully"}
 
+# ==================== Saved Protocols Endpoints ====================
+
+@app.post("/protocols/save")
+async def save_protocol_endpoint(user_id: str, protocol_data: dict):
+    """Save/bookmark a protocol for a user"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+
+    result = FirestoreService.save_protocol(user_id, protocol_data)
+
+    if not result.get("success"):
+        status_code = 502 if "firestore" in result.get("error", "") else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return result
+
+@app.get("/protocols/saved/{user_id}")
+async def get_saved_protocols_endpoint(user_id: str, limit: int = 20):
+    """Get all saved protocols for a user"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+
+    result = FirestoreService.get_saved_protocols(user_id, limit)
+
+    if not result.get("success"):
+        status_code = 502 if "firestore" in result.get("error", "") else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return result
+
+@app.delete("/protocols/saved/{user_id}/{protocol_id}")
+async def delete_saved_protocol_endpoint(user_id: str, protocol_id: str):
+    """Delete a saved protocol"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not protocol_id or not protocol_id.strip():
+        raise HTTPException(status_code=400, detail="protocol_id is required")
+
+    result = FirestoreService.delete_saved_protocol(user_id, protocol_id)
+
+    if not result.get("success"):
+        if result.get("error") == "not_found":
+            raise HTTPException(status_code=404, detail="Protocol not found")
+        status_code = 502 if "firestore" in result.get("error", "") else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return result
+
+@app.get("/protocols/saved/{user_id}/{protocol_id}/check")
+async def check_protocol_saved_endpoint(user_id: str, protocol_id: str):
+    """Check if a protocol is saved by the user"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not protocol_id or not protocol_id.strip():
+        raise HTTPException(status_code=400, detail="protocol_id is required")
+
+    result = FirestoreService.is_protocol_saved(user_id, protocol_id)
+
+    if not result.get("success"):
+        status_code = 502 if "firestore" in result.get("error", "") else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return result
+
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
