@@ -143,7 +143,7 @@ async def protocols_search(payload: ProtocolSearchRequest, use_hybrid: bool = Tr
             # Use enhanced query for search
             payload.query = enhanced_info.get("enhanced_query", original_query)
         except Exception as e:
-            print(f"Query enhancement failed, using original: {e}")
+            pass  # Silently fall back to original query
     
     # Use hybrid search if enabled and Gemini is configured
     if use_hybrid and settings.gemini_configured and payload.query:
@@ -159,7 +159,6 @@ async def protocols_search(payload: ProtocolSearchRequest, use_hybrid: bool = Tr
                 filters=payload.filters
             )
         except Exception as e:
-            print(f"Hybrid search failed, falling back to text search: {e}")
             # Fallback to traditional search
             es_resp = search_with_filters(payload.model_dump())
     else:
@@ -198,11 +197,12 @@ async def protocols_generate(payload: ProtocolGenerateRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail={"error": "gemini_error", "details": str(e)})
 
-    # Preserve all fields including citation
+    # Preserve all fields including citation and explanation
     checklist_items = [
         {
             "step": item.get("step", idx + 1), 
             "text": item.get("text", ""),
+            "explanation": item.get("explanation", ""),  # Include explanation
             "citation": item.get("citation", 0)  # Include citation field
         } 
         for idx, item in enumerate(result.get("checklist", []))

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Menu, X, Zap } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import LandingScreen from '@/components/LandingScreen';
 import Sidebar from '@/components/Sidebar';
 import ChatInput from '@/components/ChatInput';
@@ -72,16 +72,21 @@ function App() {
     return t;
   };
 
-  const normalizeChecklist = (items: { step: number; text: string }[]): { step: number; text: string }[] => {
+  const normalizeChecklist = (items: any[]): any[] => {
     const seen = new Set<string>();
-    const out: { step: number; text: string }[] = [];
+    const out: any[] = [];
     for (const item of items || []) {
       const cleaned = cleanStepText(item?.text || '');
       if (!cleaned || cleaned.length < 4) continue;
       const key = cleaned.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ step: out.length + 1, text: cleaned });
+      // Preserve ALL fields (explanation, citation, etc.)
+      out.push({ 
+        ...item,  // Keep all original fields
+        step: out.length + 1, 
+        text: cleaned 
+      });
     }
     return out.slice(0, 12);
   };
@@ -99,8 +104,6 @@ function App() {
     if (queryWords.length === 0) {
       queryWords.push(queryLower.split(/\s+/).find(w => w.length > 3) || '');
     }
-    
-    console.log('Query-specific terms:', queryWords); // Debug
     
     // Score and filter snippets for relevance
     const scored = (hits || []).map((h) => {
@@ -129,8 +132,6 @@ function App() {
           relevanceScore += 1;
         }
       }
-      
-      console.log(`${disease || 'unknown'}: relevanceScore=${relevanceScore}, score=${score}`); // Debug
       
       // BALANCED FILTER: Keep if has keyword match OR high ES score
       // This filters out COVID (no "mosquito", low relevance) but keeps dengue/malaria
@@ -167,8 +168,6 @@ function App() {
       if (snippets.length >= 6) break; // Get more context
     }
     
-    console.log(`Final snippets count: ${snippets.length}`); // Debug
-    console.log('Filtered diseases:', filtered.map(f => f.h.source?.disease || 'unknown').join(', ')); // Debug
     return snippets;
   };
 
@@ -184,16 +183,19 @@ function App() {
     const organization = String(best.organization || 'ProCheck');
 
     const normalized = normalizeChecklist(checklist);
+    
     const steps: ProtocolStep[] = normalized.length > 0
-      ? normalized.map((item: any) => ({ 
-          id: item.step, 
-          step: item.text, 
-          citation: item.citation || 0,
-          citations: item.citation ? [item.citation] : []
-        }))
+      ? normalized.map((item: any) => ({
+            id: item.step, 
+            step: item.text,
+            explanation: item.explanation || '',
+            citation: item.citation || 0,
+            citations: item.citation ? [item.citation] : []
+          }))
       : (hits || []).slice(0, 6).map((h: any, idx: number) => ({
           id: idx + 1,
           step: cleanStepText(h.source?.body || h.source?.content || h.source?.title || '—'),
+          explanation: '',
           citation: idx + 1,
           citations: [idx + 1],
         }));
@@ -337,12 +339,12 @@ CITATION REQUIREMENT:
 
       const intent = classifyIntent(content);
       const intentMessages: Record<string, string> = {
-        emergency: '⚠️ Emergency Protocol - Immediate actions required:',
-        symptoms: '📋 Symptom Overview - Clinical presentation:',
-        treatment: '💊 Treatment Protocol - Medical interventions:',
-        diagnosis: '🔬 Diagnostic Approach - Assessment criteria:',
-        prevention: '🛡️ Prevention Guide - Protective measures:',
-        general: '📌 Medical Protocol - Key information:',
+        emergency: 'Emergency Protocol - Immediate actions required:',
+        symptoms: 'Symptom Overview - Clinical presentation:',
+        treatment: 'Treatment Protocol - Medical interventions:',
+        diagnosis: 'Diagnostic Approach - Assessment criteria:',
+        prevention: 'Prevention Guide - Protective measures:',
+        general: 'Medical Protocol - Key information:',
       };
 
       const assistantMessage: Message = {
@@ -388,7 +390,7 @@ CITATION REQUIREMENT:
   };
 
   const handleSavedProtocol = (protocolId: string) => {
-    console.log('Loading saved protocol:', protocolId);
+    // Handle saved protocol loading
   };
 
   const handleAuthSuccess = () => {
@@ -425,9 +427,8 @@ CITATION REQUIREMENT:
               {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
             <h1 className="text-lg font-semibold text-slate-900">ProCheck Protocol Assistant</h1>
-            <Badge className="bg-gradient-to-r from-teal-500 to-blue-500 text-white border-0 hidden sm:flex">
-              <Zap className="h-3 w-3 mr-1" />
-              Hybrid Search AI
+            <Badge className="bg-slate-700 text-white border-0 hidden sm:flex">
+              Hybrid Search
             </Badge>
           </div>
           <Button
@@ -470,15 +471,14 @@ CITATION REQUIREMENT:
                       <h4 className="font-semibold text-slate-900">ProCheck Protocol Assistant</h4>
                     </div>
                     <div className="mb-3 flex flex-wrap items-center gap-2">
-                      <Badge className="bg-gradient-to-r from-teal-500 to-blue-500 text-white border-0 animate-pulse">
-                        <Zap className="h-3 w-3 mr-1" />
-                        Hybrid Search Active
+                      <Badge className="bg-slate-700 text-white border-0">
+                        Searching protocols...
                       </Badge>
                     </div>
                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
                       <div className="space-y-2">
                         <p className="text-sm text-slate-600">
-                          🔍 Searching medical databases with semantic understanding...
+                          Searching medical databases with semantic understanding...
                         </p>
                         <p className="text-xs text-slate-500">
                           Using BM25 keyword + vector embeddings for better results

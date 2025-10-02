@@ -39,7 +39,8 @@ export type BackendGenerateRequest = {
 export type BackendChecklistItem = {
   step: number;
   text: string;
-  citation?: number;  // ← CRITICAL: Citation source number
+  explanation?: string;  // Detailed how-to explanation
+  citation?: number;  // Citation source number
   priority?: string;
   rationale?: string;
 };

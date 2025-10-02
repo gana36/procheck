@@ -162,23 +162,23 @@ export default function ProtocolCard({ protocolData, intent = 'general' }: Proto
 
           {/* Title */}
           <CardTitle className="text-2xl font-bold leading-tight">
-            {protocolData.title}
-          </CardTitle>
+              {protocolData.title}
+            </CardTitle>
 
           {/* Meta Information */}
           <div className="flex flex-wrap gap-2">
             <Badge className="bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm border-0">
               <MapPin className="h-3 w-3 mr-1.5" />
               <span className="font-medium">{protocolData.region}</span>
-            </Badge>
+              </Badge>
             <Badge className="bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm border-0">
               <Calendar className="h-3 w-3 mr-1.5" />
               <span className="font-medium">{protocolData.year}</span>
-            </Badge>
+              </Badge>
             <Badge className="bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm border-0">
               <Building className="h-3 w-3 mr-1.5" />
               <span className="font-medium">{protocolData.organization}</span>
-            </Badge>
+              </Badge>
           </div>
 
           {/* Action Buttons */}
@@ -221,8 +221,8 @@ export default function ProtocolCard({ protocolData, intent = 'general' }: Proto
               Protocol Steps
             </h3>
             {protocolData.citations && protocolData.citations.length > 0 && (
-              <Badge className="bg-teal-100 text-teal-700 border-teal-300 hover:bg-teal-200">
-                📚 {protocolData.citations.length} sources
+              <Badge className="bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200">
+                {protocolData.citations.length} sources
               </Badge>
             )}
           </div>
@@ -262,26 +262,23 @@ export default function ProtocolCard({ protocolData, intent = 'general' }: Proto
                               e.stopPropagation();
                               handleCitationClick(citation);
                             }}
-                            className="inline-flex items-center flex-shrink-0 align-text-top text-xs px-2 py-1 rounded-md bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white font-bold shadow-sm hover:shadow-md transition-all cursor-pointer transform hover:scale-105"
-                            title={citationRef ? `Click to view: ${citationRef.organization} - ${citationRef.source}` : `View Source ${citation}`}
+                            className="inline-flex items-center flex-shrink-0 align-text-top text-xs text-slate-600 hover:text-slate-900 font-medium cursor-pointer transition-colors"
+                            title={citationRef ? `Source: ${citationRef.organization} - ${citationRef.source}` : `Source ${citation}`}
                           >
                             [{citation}]
                           </button>
                         )}
                       </div>
                       {citationRef && !isExpanded && (
-                        <div className="mt-2 flex items-center justify-between">
-                          <div className="flex items-center text-xs text-slate-500">
-                            <ExternalLink className="h-3 w-3 mr-1" />
-                            <span className="truncate">{citationRef.organization} • {citationRef.year}</span>
-                          </div>
-                          <span className="text-xs text-teal-600 font-medium">Click to expand</span>
+                        <div className="mt-2 flex items-center text-xs text-slate-500">
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          <span className="truncate">{citationRef.organization} • {citationRef.year}</span>
                         </div>
                       )}
                     </div>
 
                     {/* Expand/Collapse Icon */}
-                    <div className="flex-shrink-0">
+                  <div className="flex-shrink-0">
                       {isExpanded ? (
                         <ChevronUp className="h-5 w-5 text-slate-400" />
                       ) : (
@@ -291,56 +288,79 @@ export default function ProtocolCard({ protocolData, intent = 'general' }: Proto
                   </div>
                 </div>
 
-                {/* Expanded Content - Source Details */}
-                {isExpanded && citationRef && (
-                  <div className="px-4 pb-4 border-t border-slate-100 pt-4 mt-2">
-                    <div className={`p-4 rounded-lg ${theme.bg} border ${theme.border}`}>
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center space-x-2">
-                          <span className="inline-flex items-center px-2 py-1 rounded bg-slate-800 text-white text-xs font-bold">
-                            [{citation}]
-                          </span>
-                          <div>
-                            <p className="text-sm font-bold text-slate-900">
-                              {citationRef.source}
+                {/* Expanded Content - Explanation & Source Details */}
+                {isExpanded && (
+                  <div className="px-4 pb-4 border-t border-slate-100 pt-4 mt-2 space-y-4">
+                    {/* How-To Explanation */}
+                    {step.explanation && (
+                      <div className="bg-gradient-to-br from-slate-50 to-gray-50 p-4 rounded-lg border border-slate-200 shadow-sm">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center shadow-sm">
+                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </div>
+                          <div className="flex-1">
+                            <h5 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Clinical Guidance</h5>
+                            <p className="text-sm text-slate-700 leading-relaxed">
+                              {step.explanation}
                             </p>
-                            <div className="flex items-center space-x-2 text-xs text-slate-600 mt-1">
-                              <Badge variant="secondary" className="bg-white">
-                                {citationRef.organization}
-                              </Badge>
-                              <span>•</span>
-                              <span>{citationRef.year}</span>
-                              <span>•</span>
-                              <span>{citationRef.region}</span>
-                            </div>
                           </div>
                         </div>
-                        {citationRef.url && (
-                          <a
-                            href={citationRef.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="flex-shrink-0 flex items-center space-x-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-md transition-colors text-xs font-medium"
-                          >
-                            <span>View</span>
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
+                      </div>
+                    )}
+
+                    {/* Source Citation Details */}
+                    {citationRef && (
+                      <div className={`p-4 rounded-lg ${theme.bg} border ${theme.border}`}>
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center space-x-2">
+                            <span className="inline-flex items-center px-2 py-1 rounded bg-slate-800 text-white text-xs font-bold">
+                              [{citation}]
+                            </span>
+                            <div>
+                              <p className="text-sm font-bold text-slate-900">
+                                {citationRef.source}
+                              </p>
+                              <div className="flex items-center space-x-2 text-xs text-slate-600 mt-1">
+                                <Badge variant="secondary" className="bg-white">
+                                  {citationRef.organization}
+                                </Badge>
+                                <span>•</span>
+                                <span>{citationRef.year}</span>
+                                <span>•</span>
+                                <span>{citationRef.region}</span>
+                              </div>
+                            </div>
+                          </div>
+                          {citationRef.url && (
+                            <a
+                              href={citationRef.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex-shrink-0 flex items-center space-x-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-md transition-colors text-xs font-medium shadow-sm"
+                            >
+                              <span>View Source</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
+                        </div>
+                        
+                        {/* Full Source Content */}
+                        {citationRef.excerpt && (
+                          <div className="mt-3 p-3 bg-white rounded border border-slate-200">
+                            <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Source Text:</p>
+                            <p className="text-xs text-slate-700 leading-relaxed">
+                              {citationRef.excerpt}
+                            </p>
+                          </div>
                         )}
                       </div>
-                      
-                      {/* Full Source Content */}
-                      {citationRef.excerpt && (
-                        <div className="mt-3 p-3 bg-white rounded border border-slate-200">
-                          <p className="text-xs text-slate-700 leading-relaxed">
-                            {citationRef.excerpt}
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
                 )}
-              </div>
+                </div>
             );
           })}
         </div>
@@ -348,28 +368,28 @@ export default function ProtocolCard({ protocolData, intent = 'general' }: Proto
         {/* Citations Section */}
         {protocolData.citations && protocolData.citations.length > 0 && (
           <div className="mt-6 pt-6 border-t border-slate-200">
-            <Button
-              variant="ghost"
+          <Button
+            variant="ghost"
               size="sm"
-              onClick={() => setIsReferencesOpen(!isReferencesOpen)}
+            onClick={() => setIsReferencesOpen(!isReferencesOpen)}
               className="w-full justify-between text-slate-700 hover:text-slate-900 hover:bg-slate-100"
-            >
+          >
               <div className="flex items-center">
                 <FileText className="h-4 w-4 mr-2" />
                 <span className="font-semibold">
-                  References ({protocolData.citations.length})
-                </span>
+              References ({protocolData.citations.length})
+            </span>
               </div>
-              {isReferencesOpen ? (
+            {isReferencesOpen ? (
                 <ChevronUp className="h-4 w-4" />
-              ) : (
+            ) : (
                 <ChevronDown className="h-4 w-4" />
-              )}
-            </Button>
-
-            {isReferencesOpen && (
+            )}
+          </Button>
+          
+          {isReferencesOpen && (
               <div className="mt-3 space-y-2">
-                {protocolData.citations.map((citation) => (
+              {protocolData.citations.map((citation) => (
                   <div
                     key={citation.id}
                     id={`citation-${citation.id}`}
@@ -396,8 +416,8 @@ export default function ProtocolCard({ protocolData, intent = 'general' }: Proto
                         </div>
                         {citation.excerpt && (
                           <p className="text-xs text-slate-500 mt-2 italic">
-                            {citation.excerpt}
-                          </p>
+                          {citation.excerpt}
+                        </p>
                         )}
                       </div>
                       {citation.url && (
@@ -413,10 +433,10 @@ export default function ProtocolCard({ protocolData, intent = 'general' }: Proto
                       )}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          )}
+        </div>
         )}
 
         {/* Last Updated */}

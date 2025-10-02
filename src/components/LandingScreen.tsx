@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Stethoscope, Shield, Zap, Globe, Clock, CheckCircle, User, LogOut } from 'lucide-react';
+import { Stethoscope, Shield, Search, Globe, Clock, CheckCircle, User, LogOut } from 'lucide-react';
 import { sampleQueries } from '@/data/mockData';
 import { useAuth } from '@/contexts/AuthContext';
 import { Link } from 'react-router-dom';
@@ -29,8 +29,8 @@ export default function LandingScreen({ onStartSearch, onSampleQuery }: LandingS
     badge?: string;
   }> = [
     {
-      icon: <Zap className="h-6 w-6 text-blue-600" />,
-      title: "Hybrid Search AI",
+      icon: <Search className="h-6 w-6 text-teal-600" />,
+      title: "Hybrid Search",
       description: "Powered by Elastic + Google Cloud AI with semantic understanding for better results",
       badge: "NEW"
     },
@@ -45,7 +45,7 @@ export default function LandingScreen({ onStartSearch, onSampleQuery }: LandingS
       description: "Access protocols from WHO, NHS, CDC, and regional health authorities"
     },
     {
-      icon: <Clock className="h-6 w-6 text-blue-600" />,
+      icon: <Clock className="h-6 w-6 text-teal-600" />,
       title: "Always Updated",
       description: "Latest 2024 guidelines with real-time updates and version tracking"
     }
@@ -127,7 +127,7 @@ export default function LandingScreen({ onStartSearch, onSampleQuery }: LandingS
             className="bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 text-lg"
             onClick={onStartSearch}
           >
-            <Zap className="h-5 w-5 mr-2" />
+            <Search className="h-5 w-5 mr-2" />
             Start Protocol Search
           </Button>
         </div>
@@ -167,7 +167,7 @@ export default function LandingScreen({ onStartSearch, onSampleQuery }: LandingS
                   <div className="flex items-center justify-center gap-2">
                     <CardTitle className="text-lg text-slate-900">{feature.title}</CardTitle>
                     {feature.badge && (
-                      <Badge className="bg-gradient-to-r from-teal-500 to-blue-500 text-white text-xs">
+                      <Badge className="bg-gradient-to-r from-teal-500 to-teal-600 text-white text-xs">
                         {feature.badge}
                       </Badge>
                     )}

@@ -1,9 +1,7 @@
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
-  Stethoscope, User, Zap, Search, Clock, 
-  AlertTriangle, Activity, Pill, Microscope, Shield, FileText,
-  CheckCircle2, Info
+  Stethoscope, User, Search, Clock, FileText
 } from 'lucide-react';
 import { Message } from '@/types';
 import ProtocolCard from './ProtocolCard';
@@ -23,67 +21,67 @@ const detectIntent = (content: string): string => {
   return 'general';
 };
 
-// Theme configurations for different intents
+// Theme configurations for different intents - Professional medical colors
 const intentThemes = {
   emergency: {
-    bg: 'bg-red-50',
-    border: 'border-red-200',
-    icon: AlertTriangle,
-    iconColor: 'text-red-600',
-    iconBg: 'bg-red-100',
-    badge: 'bg-red-600',
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    icon: FileText,
+    iconColor: 'text-slate-700',
+    iconBg: 'bg-slate-100',
+    badge: 'bg-slate-700',
     badgeText: 'Emergency Protocol',
-    accent: 'border-l-4 border-l-red-500'
+    accent: 'border-l-4 border-l-slate-600'
   },
   symptoms: {
-    bg: 'bg-blue-50',
-    border: 'border-blue-200',
-    icon: Activity,
-    iconColor: 'text-blue-600',
-    iconBg: 'bg-blue-100',
-    badge: 'bg-blue-600',
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    icon: FileText,
+    iconColor: 'text-slate-700',
+    iconBg: 'bg-slate-100',
+    badge: 'bg-slate-700',
     badgeText: 'Symptom Guide',
-    accent: 'border-l-4 border-l-blue-500'
+    accent: 'border-l-4 border-l-slate-600'
   },
   treatment: {
-    bg: 'bg-purple-50',
-    border: 'border-purple-200',
-    icon: Pill,
-    iconColor: 'text-purple-600',
-    iconBg: 'bg-purple-100',
-    badge: 'bg-purple-600',
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    icon: FileText,
+    iconColor: 'text-slate-700',
+    iconBg: 'bg-slate-100',
+    badge: 'bg-slate-700',
     badgeText: 'Treatment Protocol',
-    accent: 'border-l-4 border-l-purple-500'
+    accent: 'border-l-4 border-l-slate-600'
   },
   diagnosis: {
-    bg: 'bg-indigo-50',
-    border: 'border-indigo-200',
-    icon: Microscope,
-    iconColor: 'text-indigo-600',
-    iconBg: 'bg-indigo-100',
-    badge: 'bg-indigo-600',
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    icon: FileText,
+    iconColor: 'text-slate-700',
+    iconBg: 'bg-slate-100',
+    badge: 'bg-slate-700',
     badgeText: 'Diagnostic Guide',
-    accent: 'border-l-4 border-l-indigo-500'
+    accent: 'border-l-4 border-l-slate-600'
   },
   prevention: {
-    bg: 'bg-green-50',
-    border: 'border-green-200',
-    icon: Shield,
-    iconColor: 'text-green-600',
-    iconBg: 'bg-green-100',
-    badge: 'bg-green-600',
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    icon: FileText,
+    iconColor: 'text-slate-700',
+    iconBg: 'bg-slate-100',
+    badge: 'bg-slate-700',
     badgeText: 'Prevention Guide',
-    accent: 'border-l-4 border-l-green-500'
+    accent: 'border-l-4 border-l-slate-600'
   },
   general: {
     bg: 'bg-slate-50',
     border: 'border-slate-200',
     icon: FileText,
-    iconColor: 'text-slate-600',
+    iconColor: 'text-slate-700',
     iconBg: 'bg-slate-100',
-    badge: 'bg-slate-600',
+    badge: 'bg-slate-700',
     badgeText: 'Medical Protocol',
-    accent: 'border-l-4 border-l-slate-500'
+    accent: 'border-l-4 border-l-slate-600'
   }
 };
 
@@ -98,13 +96,13 @@ export default function ChatMessage({ message }: ChatMessageProps) {
       <div className="flex justify-end mb-6">
         <div className="max-w-[75%]">
           <div className="flex items-end justify-end space-x-3">
-            <Card className="bg-gradient-to-br from-teal-600 to-teal-700 text-white border-0 shadow-md">
+            <Card className="bg-slate-700 text-white border-0 shadow-md">
               <CardContent className="p-4">
                 <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
               </CardContent>
             </Card>
             <div className="flex-shrink-0">
-              <div className="w-9 h-9 bg-gradient-to-br from-teal-600 to-teal-700 rounded-full flex items-center justify-center shadow-sm">
+              <div className="w-9 h-9 bg-slate-700 rounded-full flex items-center justify-center shadow-sm">
                 <User className="h-4 w-4 text-white" />
               </div>
             </div>
@@ -146,9 +144,8 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             {/* Search Metadata */}
             {message.searchMetadata && (
               <div className="mb-4 flex flex-wrap items-center gap-2">
-                <Badge className="bg-gradient-to-r from-teal-500 to-blue-500 text-white border-0 shadow-sm">
-                  <Zap className="h-3 w-3 mr-1" />
-                  Hybrid AI Search
+                <Badge className="bg-slate-700 text-white border-0 shadow-sm">
+                  Hybrid Search
                 </Badge>
                 <Badge variant="outline" className="border-slate-300 text-slate-700 bg-white">
                   <Search className="h-3 w-3 mr-1" />
@@ -166,7 +163,10 @@ export default function ChatMessage({ message }: ChatMessageProps) {
               <Card className={`${theme.bg} ${theme.border} ${theme.accent} shadow-sm mb-4`}>
                 <CardContent className="p-5">
                   <div className="flex items-start space-x-3">
-                    <Info className={`h-5 w-5 ${theme.iconColor} flex-shrink-0 mt-0.5`} />
+                    {(() => {
+                      const IconComponent = theme.icon;
+                      return <IconComponent className={`h-5 w-5 ${theme.iconColor} flex-shrink-0 mt-0.5`} />;
+                    })()}
                     <p className="text-sm leading-relaxed text-slate-800 font-medium">
                       {message.content}
                     </p>

@@ -17,6 +17,7 @@ export interface SearchMetadata {
 export interface ProtocolStep {
   id: number;
   step: string;
+  explanation?: string;  // Detailed how-to explanation
   citation?: number;  // Primary citation for this step
   citations: number[]; // Legacy support
   isNew?: boolean;

@@ -16,14 +16,13 @@ def _ensure_client():
     _model = genai.GenerativeModel(
         model_name=settings.GEMINI_MODEL,
         generation_config={
-            "max_output_tokens": 2048,        # More room for synthesis
-            "temperature": 0.7,                # Higher = more creative/synthetic
-            "top_p": 0.95,                     # Nucleus sampling for diversity
-            "top_k": 40,                       # Consider top 40 tokens
+            "max_output_tokens": 2048,
+            "temperature": 0.7,
+            "top_p": 0.95,
+            "top_k": 40,
         },
     )
     _client_initialized = True
-    print(f"✓ Gemini initialized: {settings.GEMINI_MODEL} (temp=0.7)")
 
 
 def _extract_text(response: Any) -> str:
@@ -141,19 +140,27 @@ def summarize_checklist(title: str, context_snippets: List[str], instructions: s
     
     # Base instructions - SIMPLE AND DIRECT
     base_instructions = [
-        "You are a medical AI assistant. Your job is to READ medical sources and CREATE a concise checklist.",
+        "You are a medical AI assistant. Your job is to READ medical sources and CREATE a concise checklist with detailed explanations.",
         "",
         "STRICT RULES:",
-        "1. REPHRASE everything in your own words (NO copying sentences)",
-        "2. Each step must be SHORT (under 15 words)",
+        "1. Each step has TWO parts:",
+        "   - 'text': Short action (under 15 words) - what to do",
+        "   - 'explanation': Detailed how-to (2-3 sentences) - how to do it",
+        "2. REPHRASE everything in your own words (NO copying)",
         "3. EXTRACT the citation number from [Source N] in the context",
         "4. ONLY include relevant information for this specific query",
         "",
-        "BAD (copying): \"Dengue symptoms include high fever 39-40°C, severe headache...\"",
-        "GOOD (synthesis): \"Monitor fever (39-40°C) and severe headache\"",
+        "EXAMPLE:",
+        "BAD: \"Dengue symptoms include high fever 39-40°C, severe headache...\"",
+        "GOOD:",
+        '{',
+        '  "text": "Monitor fever and headache",',
+        '  "explanation": "Check patient temperature regularly. Dengue typically causes high fever (39-40°C) along with severe frontal headache and pain behind the eyes. Document fever patterns and intensity.",',
+        '  "citation": 1',
+        '}',
         "",
-        "Output format (MUST include citation field):",
-        '{"title": "X", "checklist": [{"step": 1, "text": "short action here", "citation": 1}], "citations": []}',
+        "Output format:",
+        '{"title": "X", "checklist": [{"step": 1, "text": "action", "explanation": "how to do it", "citation": 1}], "citations": []}',
         "",
         "NO markdown, NO code blocks, ONLY the JSON object.",
     ]
@@ -259,22 +266,8 @@ def summarize_checklist(title: str, context_snippets: List[str], instructions: s
 
     prompt = "\n".join(prompt_parts)
     
-    # DEBUG: Print the actual prompt being sent
-    print("\n" + "="*60)
-    print("PROMPT SENT TO GEMINI:")
-    print("="*60)
-    print(prompt[:500] + "\n...\n" + prompt[-300:] if len(prompt) > 800 else prompt)
-    print("="*60 + "\n")
-    
     response = _model.generate_content(prompt)
     text = _extract_text(response)
-    
-    # DEBUG: Print raw response
-    print("\n" + "="*60)
-    print("RAW GEMINI RESPONSE:")
-    print("="*60)
-    print(text[:500] if len(text) > 500 else text)
-    print("="*60 + "\n")
 
     import json
     if text:
@@ -308,16 +301,19 @@ def summarize_checklist(title: str, context_snippets: List[str], instructions: s
                 if isinstance(item, dict):
                     step_num = int(item.get("step", idx))
                     step_text = _clean_checklist_step(item.get("text", ""))
+                    explanation = item.get("explanation", "")
                     citation = item.get("citation", 0)  # Get citation number
                 else:
                     step_num = idx
                     step_text = _clean_checklist_step(str(item))
+                    explanation = ""
                     citation = 0
                 
                 if step_text and len(step_text) > 3:  # Only include meaningful steps
                     checklist.append({
                         "step": step_num, 
                         "text": step_text,
+                        "explanation": explanation,
                         "citation": citation if isinstance(citation, int) else 0
                     })
             
@@ -326,16 +322,13 @@ def summarize_checklist(title: str, context_snippets: List[str], instructions: s
                 citations = []
             citations = [str(c).strip() for c in citations if str(c).strip()]
             
-            print(f"✓ Successfully parsed {len(checklist)} checklist items")  # Debug
-            
             return {
                 "title": out_title,
                 "checklist": checklist,
                 "citations": citations,
             }
         except Exception as e:
-            print(f"✗ JSON parsing failed: {e}")  # Debug
-            print(f"Attempted to parse: {cleaned_text[:200]}...")  # Debug
+            pass  # Silently continue to fallback
 
     # Fallback: create concise steps from context
     fallback_steps = []
