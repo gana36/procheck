@@ -22,7 +22,7 @@ A React/TypeScript application that provides healthcare professionals with insta
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/gana36/procheck
 cd procheck
 ```
 
