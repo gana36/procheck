@@ -19,11 +19,13 @@ import {
 } from 'lucide-react';
 import { ProtocolData } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { saveProtocol, deleteSavedProtocol, isProtocolSaved } from '@/lib/api';
+import { saveProtocol, deleteSavedProtocol, isProtocolSaved, stepThreadChat, ChatMessage as APIChatMessage } from '@/lib/api';
+import StepThread from './StepThread';
 
 interface ProtocolCardProps {
   protocolData: ProtocolData;
   onSaveToggle?: () => void; // Callback to refresh saved list in sidebar
+  onProtocolUpdate?: (updatedProtocol: ProtocolData) => void; // Callback when protocol is updated via threads
   intent?: 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general';
 }
 
@@ -109,7 +111,7 @@ const intentThemes = {
   }
 };
 
-export default function ProtocolCard({ protocolData, onSaveToggle, intent = 'general' }: ProtocolCardProps) {
+export default function ProtocolCard({ protocolData, onSaveToggle, onProtocolUpdate, intent = 'general' }: ProtocolCardProps) {
   const { currentUser } = useAuth();
   const theme = intentThemes[intent] || intentThemes.general;
   const ThemeIcon = theme.icon;
@@ -118,6 +120,8 @@ export default function ProtocolCard({ protocolData, onSaveToggle, intent = 'gen
   const [isReferencesOpen, setIsReferencesOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
+  const [activeStepThread, setActiveStepThread] = useState<number | null>(null);
+  const [stepThreadLoading, setStepThreadLoading] = useState<number | null>(null);
 
   // Generate a unique ID for this protocol based on title
   const protocolId = `protocol_${protocolData.title.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
@@ -195,6 +199,70 @@ export default function ProtocolCard({ protocolData, onSaveToggle, intent = 'gen
       }
       return newSet;
     });
+  };
+
+  const handleStepThreadMessage = async (stepId: number, message: string) => {
+    setStepThreadLoading(stepId);
+    
+    try {
+      const stepIndex = protocolData.steps.findIndex(s => s.id === stepId);
+      if (stepIndex === -1) return;
+      
+      const step = protocolData.steps[stepIndex];
+
+      // Build thread history
+      const threadHistory: APIChatMessage[] = (step.thread || []).map(msg => ({
+        role: msg.type as 'user' | 'assistant',
+        content: msg.content
+      }));
+
+      // Build citations array
+      const citations = protocolData.citations.map(c => c.excerpt || c.source);
+
+      // Call backend
+      const response = await stepThreadChat({
+        message,
+        step_id: stepId,
+        step_text: step.step,
+        step_citation: step.citation,
+        protocol_title: protocolData.title,
+        protocol_citations: citations,
+        thread_history: threadHistory
+      });
+
+      // Create message objects
+      const userMsg = {
+        id: Date.now().toString(),
+        type: 'user' as const,
+        content: message,
+        timestamp: new Date().toISOString()
+      };
+
+      const assistantMsg = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant' as const,
+        content: response.message,
+        timestamp: new Date().toISOString()
+      };
+
+      // Clone protocol data to update immutably
+      const updatedProtocol = { ...protocolData };
+      updatedProtocol.steps = [...protocolData.steps];
+      updatedProtocol.steps[stepIndex] = {
+        ...step,
+        thread: [...(step.thread || []), userMsg, assistantMsg]
+      };
+
+      // Notify parent to update the protocol
+      if (onProtocolUpdate) {
+        onProtocolUpdate(updatedProtocol);
+      }
+      
+    } catch (error) {
+      console.error('Failed to send step thread message:', error);
+    } finally {
+      setStepThreadLoading(null);
+    }
   };
 
   return (
@@ -410,6 +478,35 @@ export default function ProtocolCard({ protocolData, onSaveToggle, intent = 'gen
                         )}
                       </div>
                     )}
+
+                    {/* Step Thread Discussion */}
+                    <div className="border-t border-slate-200 pt-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setActiveStepThread(activeStepThread === step.id ? null : step.id)}
+                        className="text-slate-600 hover:text-slate-900"
+                      >
+                        <span className="flex items-center gap-2">
+                          💬 Discuss This Step
+                          {step.thread && step.thread.length > 0 && (
+                            <Badge variant="secondary" className="ml-1">
+                              {step.thread.length}
+                            </Badge>
+                          )}
+                        </span>
+                      </Button>
+                      
+                      {activeStepThread === step.id && (
+                        <StepThread
+                          stepId={step.id}
+                          stepText={step.step}
+                          messages={step.thread || []}
+                          onSendMessage={(msg) => handleStepThreadMessage(step.id, msg)}
+                          isLoading={stepThreadLoading === step.id}
+                        />
+                      )}
+                    </div>
                   </div>
                 )}
                 </div>

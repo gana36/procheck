@@ -14,6 +14,8 @@ from models.protocol_models import (
     ProtocolSearchHit,
     ProtocolGenerateRequest,
     ProtocolGenerateResponse,
+    StepThreadRequest,
+    ChatResponse,
 )
 from models.conversation_models import (
     ConversationSaveRequest,
@@ -31,7 +33,7 @@ from services.elasticsearch_service import (
     search_with_filters,
     hybrid_search,
 )
-from services.gemini_service import summarize_checklist
+from services.gemini_service import summarize_checklist, step_thread_chat
 from services.firestore_service import FirestoreService
 from services.embedding_service import generate_embedding, enhance_query_with_llm
 
@@ -212,6 +214,34 @@ async def protocols_generate(payload: ProtocolGenerateRequest):
         checklist=checklist_items,
         citations=result.get("citations", []),
     )
+
+# Step thread chat endpoint
+@app.post("/protocols/step-thread", response_model=ChatResponse)
+async def step_thread(payload: StepThreadRequest):
+    """Step-level thread chat for focused discussions"""
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY is not configured.")
+    
+    try:
+        # Convert pydantic models to dicts for service layer
+        history = [{"role": msg.role, "content": msg.content} for msg in payload.thread_history]
+        
+        result = step_thread_chat(
+            message=payload.message,
+            step_id=payload.step_id,
+            step_text=payload.step_text,
+            step_citation=payload.step_citation,
+            protocol_title=payload.protocol_title,
+            protocol_citations=payload.protocol_citations,
+            thread_history=history
+        )
+        
+        return ChatResponse(
+            message=result.get("message", ""),
+            updated_protocol=result.get("updated_protocol")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail={"error": "thread_error", "details": str(e)})
 
 # Conversation management endpoints
 @app.post("/conversations/save", response_model=ConversationResponse)

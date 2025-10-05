@@ -1,3 +1,24 @@
+// Chat types
+export type ChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+export type StepThreadRequest = {
+  message: string;
+  step_id: number;
+  step_text: string;
+  step_citation?: number | null;
+  protocol_title: string;
+  protocol_citations: string[];
+  thread_history?: ChatMessage[];
+};
+
+export type ChatResponse = {
+  message: string;
+  updated_protocol?: any;
+};
+
 export type BackendSearchFilters = {
   region?: string[];
   year?: number[];
@@ -244,6 +265,20 @@ export async function isProtocolSaved(userId: string, protocolId: string): Promi
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Check protocol saved failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+// Step thread chat
+export async function stepThreadChat(request: StepThreadRequest): Promise<ChatResponse> {
+  const res = await fetch(`${API_BASE}/protocols/step-thread`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Step thread chat failed: ${res.status} ${text}`);
   }
   return res.json();
 }

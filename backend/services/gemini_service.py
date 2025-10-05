@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import re
 import google.generativeai as genai
 from config.settings import settings
@@ -342,3 +342,66 @@ def summarize_checklist(title: str, context_snippets: List[str], instructions: s
         "checklist": fallback_steps,
         "citations": [],
     }
+
+
+def step_thread_chat(
+    message: str,
+    step_id: int,
+    step_text: str,
+    step_citation: Optional[int],
+    protocol_title: str,
+    protocol_citations: List[str],
+    thread_history: Optional[List[Dict[str, str]]] = None
+) -> Dict[str, Any]:
+    """
+    Handle step-level thread conversations.
+    Focused discussions about a specific protocol step.
+    """
+    _ensure_client()
+    
+    if thread_history is None:
+        thread_history = []
+    
+    # Get the relevant citation if available
+    citation_text = ""
+    if step_citation and 0 < step_citation <= len(protocol_citations):
+        citation_text = f"\n\nSOURCE [{step_citation}]: {protocol_citations[step_citation - 1]}"
+    
+    # Build thread history
+    history_text = ""
+    if thread_history:
+        history_text = "\n".join([
+            f"{msg.get('role', 'user').upper()}: {msg.get('content', '')}"
+            for msg in thread_history[-5:]  # Last 5 messages
+        ])
+    
+    prompt = f"""You are discussing a specific step from the "{protocol_title}" protocol.
+
+STEP {step_id}: {step_text}{citation_text}
+
+{f"DISCUSSION SO FAR:{chr(10)}{history_text}{chr(10)}" if history_text else ""}
+
+USER QUESTION: {message}
+
+INSTRUCTIONS:
+- Answer questions specifically about THIS step only
+- Explain rationale, contraindications, alternatives if asked
+- Reference the source citation if relevant
+- Keep answers focused and concise (2-4 sentences)
+- If the question is beyond this step's scope, suggest asking in the main chat
+
+Respond naturally and helpfully."""
+
+    try:
+        response = _model.generate_content(prompt)
+        answer = _extract_text(response)
+        
+        return {
+            "message": answer.strip() if answer else "Could you clarify your question about this step?",
+            "updated_protocol": None
+        }
+    except Exception as e:
+        return {
+            "message": "I had trouble processing that. Could you rephrase your question?",
+            "updated_protocol": None
+        }

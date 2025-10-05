@@ -424,6 +424,19 @@ CITATION REQUIREMENT:
     }
   };
 
+  const handleProtocolUpdate = (updatedProtocol: ProtocolData) => {
+    // Find the message with protocolData and update it
+    setMessages(prev => prev.map(msg => {
+      if (msg.protocolData && msg.protocolData.title === updatedProtocol.title) {
+        return {
+          ...msg,
+          protocolData: updatedProtocol
+        };
+      }
+      return msg;
+    }));
+  };
+
   const handleSavedProtocol = async (protocolId: string, protocolData: any) => {
     // Clear current messages and start fresh
     setMessages([]);
@@ -528,6 +541,7 @@ CITATION REQUIREMENT:
               key={message.id}
               message={message}
               onSaveToggle={() => setSavedProtocolsRefreshTrigger(prev => prev + 1)}
+              onProtocolUpdate={handleProtocolUpdate}
             />
           ))}
           {isLoading && (

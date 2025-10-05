@@ -1,4 +1,4 @@
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Literal
 from pydantic import BaseModel, Field
 
 class SearchFilters(BaseModel):
@@ -40,3 +40,23 @@ class ProtocolGenerateResponse(BaseModel):
     title: str
     checklist: List[ProtocolChecklistItem]
     citations: List[str]
+
+# Chat-related models
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+class StepThreadRequest(BaseModel):
+    """Request for step-level thread chat"""
+    message: str
+    step_id: int
+    step_text: str
+    step_citation: Optional[int] = None
+    protocol_title: str
+    protocol_citations: List[str]
+    thread_history: Optional[List[ChatMessage]] = []  # Step thread history
+
+class ChatResponse(BaseModel):
+    """Response for step-level chat"""
+    message: str
+    updated_protocol: Optional[Dict[str, Any]] = None  # If protocol was modified
