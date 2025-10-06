@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,14 +28,71 @@ function App() {
   );
   const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0);
   const [savedProtocolsRefreshTrigger, setSavedProtocolsRefreshTrigger] = useState(0);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageCountRef = useRef(0);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const lastAssistantMessageRef = useRef<HTMLDivElement>(null);
+  const isThreadInteractionRef = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const scrollToLastAssistant = () => {
+    console.log('scrollToLastAssistant called, lastAssistantMessageRef:', !!lastAssistantMessageRef.current);
+    // Scroll to START of last assistant message, not to bottom
+    if (lastAssistantMessageRef.current) {
+      console.log('Scrolling to last assistant message');
+      // Check if this is a protocol message
+      const hasProtocol = lastAssistantMessageRef.current.querySelector('[data-protocol-card]');
+      console.log('Last assistant message has protocol:', !!hasProtocol);
+      lastAssistantMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const scrollCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    // Throttle scroll checks to prevent excessive re-renders
+    if (scrollCheckTimeoutRef.current) return;
+    
+    scrollCheckTimeoutRef.current = setTimeout(() => {
+      const target = e.currentTarget;
+      // FIX: Check if target and its properties exist before accessing
+      if (target && target.scrollHeight !== null && target.scrollTop !== null && target.clientHeight !== null) {
+        const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 100;
+        setShowScrollButton(!isAtBottom);
+      }
+      scrollCheckTimeoutRef.current = null;
+    }, 150);
+  };
+
   useEffect(() => {
-    scrollToBottom();
+    console.log('Messages useEffect triggered:', {
+      messagesLength: messages.length,
+      messageCountRef: messageCountRef.current,
+      isThreadInteraction: isThreadInteractionRef.current
+    });
+    
+    // CRITICAL: If this is a thread interaction, NEVER scroll
+    if (isThreadInteractionRef.current) {
+      console.log('Thread interaction detected - NOT scrolling');
+      isThreadInteractionRef.current = false;
+      return; // Exit early - don't scroll at all
+    }
+    
+    // Only scroll when new messages are added, not when existing messages are updated
+    if (messages.length > messageCountRef.current) {
+      console.log('New message detected - scrolling to last assistant');
+      // Scroll to START of new assistant message instead of bottom
+      setTimeout(() => {
+        scrollToLastAssistant();
+      }, 100);
+      messageCountRef.current = messages.length;
+    } else {
+      console.log('No scroll condition met');
+    }
   }, [messages]);
 
   const handleStartSearch = () => {
@@ -175,8 +232,7 @@ function App() {
   const mapBackendToProtocolData = (
     title: string,
     hits: any[],
-    checklist: { step: number; text: string }[],
-    citations: string[]
+    checklist: { step: number; text: string }[]
   ): ProtocolData => {
     const best = hits?.[0]?.source || {};
     const region = String(best.region || 'Global');
@@ -266,7 +322,7 @@ function App() {
         created_at: firstMessageTimestamp,
       });
 
-      // Trigger sidebar refresh to show new conversation
+      // Trigger sidebar refresh to show updated conversation
       setSidebarRefreshTrigger(prev => prev + 1);
     } catch (error) {
       console.error('Failed to save conversation:', error);
@@ -331,8 +387,7 @@ CITATION REQUIREMENT:
       const protocolData: ProtocolData = mapBackendToProtocolData(
         content,
         searchRes.hits,
-        genRes.checklist,
-        genRes.citations
+        genRes.checklist
       );
 
       // Attach intent to protocol for persistence (used when saving/loading)
@@ -413,9 +468,19 @@ CITATION REQUIREMENT:
           protocolData: msg.protocol_data,
         }));
 
+        // Prevent auto-scroll by temporarily increasing message count
+        messageCountRef.current = loadedMessages.length;
+        
         // Set the messages and conversation ID
         setMessages(loadedMessages);
         setCurrentConversationId(conversationId);
+        
+        // Scroll to top after a brief delay
+        setTimeout(() => {
+          if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTop = 0;
+          }
+        }, 100);
       }
     } catch (error) {
       console.error('Failed to load conversation:', error);
@@ -424,18 +489,43 @@ CITATION REQUIREMENT:
     }
   };
 
-  const handleProtocolUpdate = (updatedProtocol: ProtocolData) => {
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleProtocolUpdate = useCallback((updatedProtocol: ProtocolData) => {
+    // Set flag to indicate this is a thread interaction
+    isThreadInteractionRef.current = true;
+    
     // Find the message with protocolData and update it
-    setMessages(prev => prev.map(msg => {
-      if (msg.protocolData && msg.protocolData.title === updatedProtocol.title) {
-        return {
-          ...msg,
-          protocolData: updatedProtocol
-        };
+    setMessages(prev => {
+      const updatedMessages = prev.map(msg => {
+        if (msg.protocolData && msg.protocolData.title === updatedProtocol.title) {
+          return {
+            ...msg,
+            protocolData: updatedProtocol
+          };
+        }
+        return msg;
+      });
+      
+      // Debounce conversation save to prevent too many updates
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
       }
-      return msg;
-    }));
-  };
+      
+      saveTimeoutRef.current = setTimeout(() => {
+        const lastUserMessage = [...updatedMessages].reverse().find(m => m.type === 'user');
+        if (lastUserMessage && currentUser) {
+          saveCurrentConversation(updatedMessages, lastUserMessage.content);
+        }
+      }, 2000); // Save 2 seconds after last update
+      
+      return updatedMessages;
+    });
+  }, [currentUser, currentConversationId]);
+
+  const handleSaveToggle = useCallback(() => {
+    setSavedProtocolsRefreshTrigger(prev => prev + 1);
+  }, []);
 
   const handleSavedProtocol = async (protocolId: string, protocolData: any) => {
     // Clear current messages and start fresh
@@ -521,7 +611,11 @@ CITATION REQUIREMENT:
             Back to Home
           </Button>
         </header>
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div 
+          ref={chatContainerRef}
+          className="flex-1 overflow-y-auto p-4 space-y-4 relative"
+          onScroll={handleScroll}
+        >
           {messages.length === 0 && (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
@@ -536,14 +630,23 @@ CITATION REQUIREMENT:
               </div>
             </div>
           )}
-          {messages.map((message) => (
-            <ChatMessage
-              key={message.id}
-              message={message}
-              onSaveToggle={() => setSavedProtocolsRefreshTrigger(prev => prev + 1)}
-              onProtocolUpdate={handleProtocolUpdate}
-            />
-          ))}
+          {messages.map((message, index) => {
+            const isLastAssistant = message.type === 'assistant' && index === messages.length - 1;
+            const isFirstUserMessage = message.type === 'user' && index === 0;
+            return (
+              <div 
+                key={message.id}
+                ref={isLastAssistant ? lastAssistantMessageRef : null}
+              >
+                <ChatMessage
+                  message={message}
+                  onSaveToggle={handleSaveToggle}
+                  onProtocolUpdate={handleProtocolUpdate}
+                  isFirstUserMessage={isFirstUserMessage}
+                />
+              </div>
+            );
+          })}
           {isLoading && (
             <div className="flex justify-start">
               <div className="max-w-[90%]">
@@ -578,6 +681,19 @@ CITATION REQUIREMENT:
             </div>
           )}
           <div ref={messagesEndRef} />
+          
+          {/* Scroll to Bottom Button */}
+          {showScrollButton && (
+            <button
+              onClick={scrollToBottom}
+              className="fixed bottom-24 right-8 bg-slate-700 hover:bg-slate-800 text-white rounded-full p-3 shadow-lg transition-all z-10 flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+              </svg>
+              <span className="text-sm font-medium">Scroll to Bottom</span>
+            </button>
+          )}
         </div>
         <ChatInput 
           onSendMessage={handleSendMessage}

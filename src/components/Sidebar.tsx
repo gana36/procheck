@@ -22,12 +22,11 @@ interface SidebarProps {
   onNewSearch: () => void;
   onRecentSearch: (conversationId: string) => void;
   onSavedProtocol: (protocolId: string, protocolData: any) => void;
-  onLoadConversation?: (conversationId: string) => void;
   refreshTrigger?: number;
   savedProtocolsRefreshTrigger?: number;
 }
 
-export default function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onLoadConversation, refreshTrigger, savedProtocolsRefreshTrigger }: SidebarProps) {
+export default function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, refreshTrigger, savedProtocolsRefreshTrigger }: SidebarProps) {
   const { currentUser } = useAuth();
   const [recentConversations, setRecentConversations] = useState<ConversationListItem[]>([]);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);

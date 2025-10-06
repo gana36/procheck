@@ -365,7 +365,7 @@ def step_thread_chat(
     # Get the relevant citation if available
     citation_text = ""
     if step_citation and 0 < step_citation <= len(protocol_citations):
-        citation_text = f"\n\nSOURCE [{step_citation}]: {protocol_citations[step_citation - 1]}"
+        citation_text = f"\n\nSOURCE [{step_citation}]:\n{protocol_citations[step_citation - 1]}"
     
     # Build thread history
     history_text = ""
@@ -375,22 +375,52 @@ def step_thread_chat(
             for msg in thread_history[-5:]  # Last 5 messages
         ])
     
-    prompt = f"""You are discussing a specific step from the "{protocol_title}" protocol.
+    prompt = f"""You are a knowledgeable medical AI assistant helping with the "{protocol_title}" protocol.
 
-STEP {step_id}: {step_text}{citation_text}
+CONTEXT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 STEP {step_id}: {step_text}
+{citation_text}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-{f"DISCUSSION SO FAR:{chr(10)}{history_text}{chr(10)}" if history_text else ""}
+{f"DISCUSSION HISTORY:{chr(10)}{history_text}{chr(10)}" if history_text else ""}
 
 USER QUESTION: {message}
 
-INSTRUCTIONS:
-- Answer questions specifically about THIS step only
-- Explain rationale, contraindications, alternatives if asked
-- Reference the source citation if relevant
-- Keep answers focused and concise (2-4 sentences)
-- If the question is beyond this step's scope, suggest asking in the main chat
+RESPONSE GUIDELINES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. **Stay Focused**: Answer questions specifically about THIS step
+2. **Be Comprehensive**: Cover the "why" and "how" when relevant
+3. **Structure Your Response**:
+   • Start with a direct answer to the question
+   • Provide clinical rationale or context
+   • Include practical considerations (timing, dosage, technique, etc.)
+   • Mention contraindications or warnings if relevant
+   • Suggest alternatives when appropriate
+   
+4. **Use Medical Evidence**: Reference the source citation when applicable
+5. **Length**: Aim for 3-5 well-structured sentences (can be longer if needed for complex topics)
+6. **Tone**: Professional, clear, and helpful
+7. **Scope Limits**: If the question goes beyond this step, politely redirect to the main protocol chat
+8. **Formatting**: Use markdown for better readability:
+   - Use **bold** for key medical terms or important points
+   - Use bullet points (•, -) for lists
+   - Use numbered lists for sequential steps
+   - Keep paragraphs concise and well-spaced
 
-Respond naturally and helpfully."""
+EXAMPLE RESPONSE:
+"**Direct Answer:** [Main response to the question].
+
+**Clinical Rationale:** [Why this step is important, evidence-based reasoning].
+
+**Practical Considerations:**
+- Timing: [When to perform]
+- Dosage/Technique: [How to perform]
+- Monitoring: [What to watch for]
+
+**Important Notes:** [Contraindications, warnings, or alternatives if applicable]."
+
+Now provide a clear, well-formatted, helpful response:"""
 
     try:
         response = _model.generate_content(prompt)
