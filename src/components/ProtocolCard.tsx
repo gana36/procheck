@@ -1,7 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
+// Global state type declaration
+declare global {
+  interface Window {
+    __protocolStates?: Map<string, {
+      expandedSteps: Set<number>;
+      activeStepThread: number | null;
+    }>;
+  }
+}
 import {
   Star,
   Copy,
@@ -19,12 +29,15 @@ import {
 } from 'lucide-react';
 import { ProtocolData } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { saveProtocol, deleteSavedProtocol, isProtocolSaved } from '@/lib/api';
+import { saveProtocol, deleteSavedProtocol, isProtocolSaved, stepThreadChat, ChatMessage as APIChatMessage } from '@/lib/api';
+import StepThread from './StepThread';
 
 interface ProtocolCardProps {
   protocolData: ProtocolData;
   onSaveToggle?: () => void; // Callback to refresh saved list in sidebar
+  onProtocolUpdate?: (updatedProtocol: ProtocolData) => void; // Callback when protocol is updated via threads
   intent?: 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general';
+  isAlreadySaved?: boolean; // Pass this to avoid unnecessary API calls
 }
 
 // Professional theme configurations
@@ -109,7 +122,7 @@ const intentThemes = {
   }
 };
 
-export default function ProtocolCard({ protocolData, onSaveToggle, intent = 'general' }: ProtocolCardProps) {
+const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, onProtocolUpdate, intent = 'general', isAlreadySaved = false }: ProtocolCardProps) {
   const { currentUser } = useAuth();
   const theme = intentThemes[intent] || intentThemes.general;
   const ThemeIcon = theme.icon;
@@ -117,13 +130,39 @@ export default function ProtocolCard({ protocolData, onSaveToggle, intent = 'gen
   const [isSaved, setIsSaved] = useState(false);
   const [isReferencesOpen, setIsReferencesOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
-
+  const [stepThreadLoading, setStepThreadLoading] = useState<number | null>(null);
+  
   // Generate a unique ID for this protocol based on title
   const protocolId = `protocol_${protocolData.title.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+  
+  // CRITICAL: Use global state storage that persists across re-renders
+  // Store state in a global Map keyed by protocolId
+  const getGlobalState = () => {
+    if (!window.__protocolStates) {
+      window.__protocolStates = new Map();
+    }
+    if (!window.__protocolStates.has(protocolId)) {
+      window.__protocolStates.set(protocolId, {
+        expandedSteps: new Set(),
+        activeStepThread: null
+      });
+    }
+    return window.__protocolStates.get(protocolId)!; // Non-null assertion since we just created it
+  };
+
+  const [, setUpdateCounter] = useState(0);
+  const globalState = getGlobalState();
+  const expandedSteps = globalState.expandedSteps;
+  const activeStepThread = globalState.activeStepThread;
 
   // Check if protocol is already saved when component mounts
   useEffect(() => {
+    // If we already know it's saved, don't make an API call
+    if (isAlreadySaved) {
+      setIsSaved(true);
+      return;
+    }
+
     const checkSaved = async () => {
       if (!currentUser) return;
 
@@ -138,7 +177,7 @@ export default function ProtocolCard({ protocolData, onSaveToggle, intent = 'gen
     };
 
     checkSaved();
-  }, [currentUser, protocolId]);
+  }, [currentUser, protocolId, isAlreadySaved]);
 
   const handleSave = async () => {
     if (!currentUser || isSaving) return;
@@ -186,15 +225,89 @@ export default function ProtocolCard({ protocolData, onSaveToggle, intent = 'gen
   };
 
   const toggleStepExpansion = (stepId: number) => {
-    setExpandedSteps(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(stepId)) {
-        newSet.delete(stepId);
-      } else {
-        newSet.add(stepId);
+    const state = getGlobalState();
+    if (state.expandedSteps.has(stepId)) {
+      state.expandedSteps.delete(stepId);
+    } else {
+      state.expandedSteps.add(stepId);
+    }
+    setUpdateCounter(prev => prev + 1); // Trigger re-render to show updated state
+  };
+
+  const handleStepThreadMessage = async (stepId: number, message: string) => {
+    setStepThreadLoading(stepId);
+    
+    // CRITICAL: Ensure thread stays open and step stays expanded BEFORE any async operations
+    const state = getGlobalState();
+    state.activeStepThread = stepId;
+    state.expandedSteps.add(stepId);
+    setUpdateCounter(prev => prev + 1); // Force re-render to show the state immediately
+    
+    try{
+      const stepIndex = protocolData.steps.findIndex(s => s.id === stepId);
+      if (stepIndex === -1) return;
+      
+      const step = protocolData.steps[stepIndex];
+
+      // Build thread history
+      const threadHistory: APIChatMessage[] = (step.thread || []).map(msg => ({
+        role: msg.type as 'user' | 'assistant',
+        content: msg.content
+      }));
+
+      // Build citations array
+      const citations = protocolData.citations.map(c => c.excerpt || c.source);
+
+      // Call backend
+      const response = await stepThreadChat({
+        message,
+        step_id: stepId,
+        step_text: step.step,
+        step_citation: step.citation,
+        protocol_title: protocolData.title,
+        protocol_citations: citations,
+        thread_history: threadHistory
+      });
+
+      // Create message objects
+      const userMsg = {
+        id: Date.now().toString(),
+        type: 'user' as const,
+        content: message,
+        timestamp: new Date().toISOString()
+      };
+
+      const assistantMsg = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant' as const,
+        content: response.message,
+        timestamp: new Date().toISOString()
+      };
+
+      // Clone protocol data to update immutably
+      const updatedProtocol = { ...protocolData };
+      updatedProtocol.steps = [...protocolData.steps];
+      updatedProtocol.steps[stepIndex] = {
+        ...step,
+        thread: [...(step.thread || []), userMsg, assistantMsg]
+      };
+
+      // Notify parent to update the protocol
+      if (onProtocolUpdate) {
+        onProtocolUpdate(updatedProtocol);
       }
-      return newSet;
-    });
+      
+      // CRITICAL: Re-ensure state is preserved after update
+      const state = getGlobalState();
+      state.activeStepThread = stepId;
+      state.expandedSteps.add(stepId);
+      
+    } catch (error) {
+      console.error('Failed to send step thread message:', error);
+    } finally {
+      setStepThreadLoading(null);
+      setUpdateCounter(prev => prev + 1); // Force re-render to show final state
+    }
   };
 
   return (
@@ -410,6 +523,41 @@ export default function ProtocolCard({ protocolData, onSaveToggle, intent = 'gen
                         )}
                       </div>
                     )}
+
+                    {/* Step Thread Discussion */}
+                    <div className="border-t border-slate-200 pt-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const state = getGlobalState();
+                          if (state.activeStepThread === step.id) {
+                            state.activeStepThread = null;
+                          } else {
+                            state.activeStepThread = step.id;
+                          }
+                          setUpdateCounter(prev => prev + 1); // Trigger re-render to show updated state
+                        }}
+                        className="text-slate-600 hover:text-slate-900"
+                      >
+                        <span className="flex items-center gap-2">
+                          💬 Discuss This Step
+                          {step.thread && step.thread.length > 0 && (
+                            <Badge variant="secondary" className="ml-1">
+                              {step.thread.length}
+                            </Badge>
+                          )}
+                        </span>
+                      </Button>
+                      
+                      {activeStepThread === step.id && (
+                        <StepThread
+                          messages={step.thread || []}
+                          onSendMessage={(msg) => handleStepThreadMessage(step.id, msg)}
+                          isLoading={stepThreadLoading === step.id}
+                        />
+                      )}
+                    </div>
                   </div>
                 )}
                 </div>
@@ -503,4 +651,43 @@ export default function ProtocolCard({ protocolData, onSaveToggle, intent = 'gen
       </CardContent>
     </Card>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function to prevent unnecessary re-renders
+  // Only re-render if protocolData actually changes (new thread messages, etc.)
+  
+  // Basic checks first
+  if (prevProps.protocolData.title !== nextProps.protocolData.title ||
+      prevProps.protocolData.steps.length !== nextProps.protocolData.steps.length ||
+      prevProps.intent !== nextProps.intent) {
+    return false; // Should re-render
+  }
+  
+  // Check if thread data has changed
+  for (let i = 0; i < prevProps.protocolData.steps.length; i++) {
+    const prevStep = prevProps.protocolData.steps[i];
+    const nextStep = nextProps.protocolData.steps[i];
+    
+    if (prevStep.id !== nextStep.id) {
+      return false; // Should re-render
+    }
+    
+    // Check thread messages
+    const prevThread = prevStep.thread || [];
+    const nextThread = nextStep.thread || [];
+    
+    if (prevThread.length !== nextThread.length) {
+      return false; // Should re-render
+    }
+    
+    for (let j = 0; j < prevThread.length; j++) {
+      if (prevThread[j].id !== nextThread[j].id ||
+          prevThread[j].content !== nextThread[j].content) {
+        return false; // Should re-render
+      }
+    }
+  }
+  
+  return true; // Props are equal, don't re-render
+});
+
+export default ProtocolCard;

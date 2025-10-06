@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +13,7 @@ import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { Message, ProtocolData, ProtocolStep, Citation, SearchMetadata } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocols, ConversationMessage } from '@/lib/api';
+import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocol, ConversationMessage } from '@/lib/api';
 
 function App() {
   const { currentUser } = useAuth();
@@ -26,9 +26,13 @@ function App() {
   const [currentConversationId, setCurrentConversationId] = useState<string>(() =>
     `conv_${Date.now()}`
   );
-  const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0);
   const [savedProtocolsRefreshTrigger, setSavedProtocolsRefreshTrigger] = useState(0);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageCountRef = useRef(0);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const lastAssistantMessageRef = useRef<HTMLDivElement>(null);
+  const isThreadInteractionRef = useRef(false);
 
   // Cache for loaded conversations to prevent redundant fetches
   const conversationCache = useRef<Map<string, Message[]>>(new Map());
@@ -37,8 +41,60 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const scrollToLastAssistant = () => {
+    console.log('scrollToLastAssistant called, lastAssistantMessageRef:', !!lastAssistantMessageRef.current);
+    // Scroll to START of last assistant message, not to bottom
+    if (lastAssistantMessageRef.current) {
+      console.log('Scrolling to last assistant message');
+      // Check if this is a protocol message
+      const hasProtocol = lastAssistantMessageRef.current.querySelector('[data-protocol-card]');
+      console.log('Last assistant message has protocol:', !!hasProtocol);
+      lastAssistantMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const scrollCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    // Throttle scroll checks to prevent excessive re-renders
+    if (scrollCheckTimeoutRef.current) return;
+    
+    scrollCheckTimeoutRef.current = setTimeout(() => {
+      const target = e.currentTarget;
+      // FIX: Check if target and its properties exist before accessing
+      if (target && target.scrollHeight !== null && target.scrollTop !== null && target.clientHeight !== null) {
+        const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 100;
+        setShowScrollButton(!isAtBottom);
+      }
+      scrollCheckTimeoutRef.current = null;
+    }, 150);
+  };
+
   useEffect(() => {
-    scrollToBottom();
+    console.log('Messages useEffect triggered:', {
+      messagesLength: messages.length,
+      messageCountRef: messageCountRef.current,
+      isThreadInteraction: isThreadInteractionRef.current
+    });
+    
+    // CRITICAL: If this is a thread interaction, NEVER scroll
+    if (isThreadInteractionRef.current) {
+      console.log('Thread interaction detected - NOT scrolling');
+      isThreadInteractionRef.current = false;
+      return; // Exit early - don't scroll at all
+    }
+    
+    // Only scroll when new messages are added, not when existing messages are updated
+    if (messages.length > messageCountRef.current) {
+      console.log('New message detected - scrolling to last assistant');
+      // Scroll to START of new assistant message instead of bottom
+      setTimeout(() => {
+        scrollToLastAssistant();
+      }, 100);
+      messageCountRef.current = messages.length;
+    } else {
+      console.log('No scroll condition met');
+    }
   }, [messages]);
 
   const handleStartSearch = () => {
@@ -178,8 +234,7 @@ function App() {
   const mapBackendToProtocolData = (
     title: string,
     hits: any[],
-    checklist: { step: number; text: string }[],
-    citations: string[]
+    checklist: { step: number; text: string }[]
   ): ProtocolData => {
     const best = hits?.[0]?.source || {};
     const region = String(best.region || 'Global');
@@ -271,9 +326,7 @@ function App() {
 
       // Update cache with latest messages
       conversationCache.current.set(currentConversationId, updatedMessages);
-
-      // Trigger sidebar refresh to show new conversation
-      setSidebarRefreshTrigger(prev => prev + 1);
+      // Note: Sidebar conversations will load once on mount, no need to refresh
     } catch (error) {
       console.error('Failed to save conversation:', error);
     }
@@ -337,8 +390,7 @@ CITATION REQUIREMENT:
       const protocolData: ProtocolData = mapBackendToProtocolData(
         content,
         searchRes.hits,
-        genRes.checklist,
-        genRes.citations
+        genRes.checklist
       );
 
       // Attach intent to protocol for persistence (used when saving/loading)
@@ -395,7 +447,7 @@ CITATION REQUIREMENT:
     }
   };
 
-  const handleNewSearch = () => {
+  const handleNewSearch = useCallback(() => {
     setMessages([]);
     setCurrentConversationId(`conv_${Date.now()}`); // Generate new conversation ID
 
@@ -404,9 +456,9 @@ CITATION REQUIREMENT:
       const entries = Array.from(conversationCache.current.entries());
       conversationCache.current = new Map(entries.slice(-20));
     }
-  };
+  }, []);
 
-  const handleRecentSearch = async (conversationId: string) => {
+  const handleRecentSearch = useCallback(async (conversationId: string) => {
     if (!currentUser) return;
 
     // Check if conversation is already cached
@@ -434,21 +486,73 @@ CITATION REQUIREMENT:
           protocolData: msg.protocol_data,
         }));
 
+        // Prevent auto-scroll by temporarily increasing message count
+        messageCountRef.current = loadedMessages.length;
         // Cache the loaded conversation
         conversationCache.current.set(conversationId, loadedMessages);
-
         // Set the messages and conversation ID
         setMessages(loadedMessages);
         setCurrentConversationId(conversationId);
+        
+        // Scroll to top after a brief delay
+        setTimeout(() => {
+          if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTop = 0;
+          }
+        }, 100);
       }
     } catch (error) {
       console.error('Failed to load conversation:', error);
     } finally {
       setIsLoading(false);
     }
+  }, [currentUser]);
+
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleProtocolUpdate = useCallback((updatedProtocol: ProtocolData) => {
+    // Set flag to indicate this is a thread interaction
+    isThreadInteractionRef.current = true;
+    
+    // Find the message with protocolData and update it
+    setMessages(prev => {
+      const updatedMessages = prev.map(msg => {
+        if (msg.protocolData && msg.protocolData.title === updatedProtocol.title) {
+          return {
+            ...msg,
+            protocolData: updatedProtocol
+          };
+        }
+        return msg;
+      });
+      
+      // Debounce conversation save to prevent too many updates
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      
+      saveTimeoutRef.current = setTimeout(() => {
+        const lastUserMessage = [...updatedMessages].reverse().find(m => m.type === 'user');
+        if (lastUserMessage && currentUser) {
+          saveCurrentConversation(updatedMessages, lastUserMessage.content);
+        }
+      }, 2000); // Save 2 seconds after last update
+      
+      return updatedMessages;
+    });
+  }, [currentUser, currentConversationId]);
+
+  const handleSaveToggle = useCallback(() => {
+    setSavedProtocolsRefreshTrigger(prev => prev + 1);
+  }, []);
+
+  // Helper function to determine if a message contains a saved protocol
+  const isSavedProtocolMessage = (message: Message): boolean => {
+    // Check if the message content starts with "Saved:" which indicates it's a saved protocol
+    return message.type === 'assistant' && message.content.startsWith('Saved:');
   };
 
-  const handleConversationDeleted = (conversationId: string) => {
+  const handleConversationDeleted = useCallback((conversationId: string) => {
     // Remove deleted conversation from cache
     conversationCache.current.delete(conversationId);
 
@@ -457,9 +561,9 @@ CITATION REQUIREMENT:
       setMessages([]);
       setCurrentConversationId(`conv_${Date.now()}`);
     }
-  };
+  }, [currentConversationId]);
 
-  const handleSavedProtocol = async (protocolId: string, protocolData: any) => {
+  const handleSavedProtocol = useCallback(async (protocolId: string, protocolData: any) => {
     // Clear current messages and start fresh
     setMessages([]);
     setCurrentConversationId(`conv_${Date.now()}`);
@@ -467,10 +571,12 @@ CITATION REQUIREMENT:
     try {
       let fullProtocol = protocolData;
 
+      // If protocolData is not provided, fetch it from the backend
       if (!fullProtocol && currentUser) {
-        const res = await getSavedProtocols(currentUser.uid, 100);
-        const found = res.success ? (res.protocols || []).find((p: any) => p.id === protocolId) : null;
-        fullProtocol = found?.protocol_data || null;
+        const res = await getSavedProtocol(currentUser.uid, protocolId);
+        if (res.success && res.protocol) {
+          fullProtocol = res.protocol.protocol_data;
+        }
       }
 
       const contentTitle = fullProtocol?.title ? `Saved: ${fullProtocol.title}` : `Here's your saved protocol:`;
@@ -484,7 +590,11 @@ CITATION REQUIREMENT:
       };
 
       setMessages([assistantMessage]);
+      
+      // Don't trigger sidebar refresh for saved protocols - they're already in the sidebar
+      // Only trigger refresh when protocols are saved/unsaved, not when loading them
     } catch (e) {
+      console.error('Error loading saved protocol:', e);
       const assistantMessage: Message = {
         id: Date.now().toString(),
         type: 'assistant',
@@ -493,7 +603,7 @@ CITATION REQUIREMENT:
       };
       setMessages([assistantMessage]);
     }
-  };
+  }, [currentUser]);
 
   const handleAuthSuccess = () => {
     const from = location.state?.from?.pathname || '/dashboard';
@@ -514,7 +624,6 @@ CITATION REQUIREMENT:
               onRecentSearch={handleRecentSearch}
               onSavedProtocol={handleSavedProtocol}
               onConversationDeleted={handleConversationDeleted}
-              refreshTrigger={sidebarRefreshTrigger}
               savedProtocolsRefreshTrigger={savedProtocolsRefreshTrigger}
             />
           </div>
@@ -544,7 +653,11 @@ CITATION REQUIREMENT:
             Back to Home
           </Button>
         </header>
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div 
+          ref={chatContainerRef}
+          className="flex-1 overflow-y-auto p-4 space-y-4 relative"
+          onScroll={handleScroll}
+        >
           {messages.length === 0 && (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
@@ -559,13 +672,24 @@ CITATION REQUIREMENT:
               </div>
             </div>
           )}
-          {messages.map((message) => (
-            <ChatMessage
-              key={message.id}
-              message={message}
-              onSaveToggle={() => setSavedProtocolsRefreshTrigger(prev => prev + 1)}
-            />
-          ))}
+          {messages.map((message, index) => {
+            const isLastAssistant = message.type === 'assistant' && index === messages.length - 1;
+            const isFirstUserMessage = message.type === 'user' && index === 0;
+            return (
+              <div 
+                key={message.id}
+                ref={isLastAssistant ? lastAssistantMessageRef : null}
+              >
+                <ChatMessage
+                  message={message}
+                  onSaveToggle={handleSaveToggle}
+                  onProtocolUpdate={handleProtocolUpdate}
+                  isFirstUserMessage={isFirstUserMessage}
+                  isProtocolAlreadySaved={isSavedProtocolMessage(message)}
+                />
+              </div>
+            );
+          })}
           {isLoading && (
             <div className="flex justify-start">
               <div className="max-w-[90%]">
@@ -600,6 +724,19 @@ CITATION REQUIREMENT:
             </div>
           )}
           <div ref={messagesEndRef} />
+          
+          {/* Scroll to Bottom Button */}
+          {showScrollButton && (
+            <button
+              onClick={scrollToBottom}
+              className="fixed bottom-24 right-8 bg-slate-700 hover:bg-slate-800 text-white rounded-full p-3 shadow-lg transition-all z-10 flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+              </svg>
+              <span className="text-sm font-medium">Scroll to Bottom</span>
+            </button>
+          )}
         </div>
         <ChatInput 
           onSendMessage={handleSendMessage}

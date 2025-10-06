@@ -14,6 +14,13 @@ export interface SearchMetadata {
   resultsFound: number;
 }
 
+export interface StepThreadMessage {
+  id: string;
+  type: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+}
+
 export interface ProtocolStep {
   id: number;
   step: string;
@@ -22,6 +29,7 @@ export interface ProtocolStep {
   citations: number[]; // Legacy support
   isNew?: boolean;
   changes?: string;
+  thread?: StepThreadMessage[];  // Step-level chat thread
 }
 
 export interface Citation {

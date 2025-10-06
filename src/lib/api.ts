@@ -1,3 +1,24 @@
+// Chat types
+export type ChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+export type StepThreadRequest = {
+  message: string;
+  step_id: number;
+  step_text: string;
+  step_citation?: number | null;
+  protocol_title: string;
+  protocol_citations: string[];
+  thread_history?: ChatMessage[];
+};
+
+export type ChatResponse = {
+  message: string;
+  updated_protocol?: any;
+};
+
 export type BackendSearchFilters = {
   region?: string[];
   year?: number[];
@@ -241,6 +262,15 @@ export async function getSavedProtocols(userId: string, limit: number = 20): Pro
   return res.json();
 }
 
+export async function getSavedProtocol(userId: string, protocolId: string): Promise<{ success: boolean; protocol?: SavedProtocol; error?: string }> {
+  const res = await fetch(`${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Get saved protocol failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
 export async function deleteSavedProtocol(userId: string, protocolId: string): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}`, {
     method: 'DELETE',
@@ -270,6 +300,20 @@ export async function isProtocolSaved(userId: string, protocolId: string): Promi
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Check protocol saved failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+// Step thread chat
+export async function stepThreadChat(request: StepThreadRequest): Promise<ChatResponse> {
+  const res = await fetch(`${API_BASE}/protocols/step-thread`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Step thread chat failed: ${res.status} ${text}`);
   }
   return res.json();
 }

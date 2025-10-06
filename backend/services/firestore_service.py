@@ -127,8 +127,8 @@ class FirestoreService:
                 }
             }
 
-            # Create unique document ID: user_id + conversation_id + created_at
-            doc_id = f"{user_id}_{conversation_id}_{created_timestamp}"
+            # Create unique document ID: user_id + conversation_id (without timestamp to allow updates)
+            doc_id = f"{user_id}_{conversation_id}"
             doc_ref = db.collection(FirestoreService.CONVERSATIONS_COLLECTION).document(doc_id)
             doc_ref.set(doc_data)
 

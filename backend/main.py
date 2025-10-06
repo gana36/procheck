@@ -14,6 +14,8 @@ from models.protocol_models import (
     ProtocolSearchHit,
     ProtocolGenerateRequest,
     ProtocolGenerateResponse,
+    StepThreadRequest,
+    ChatResponse,
 )
 from models.conversation_models import (
     ConversationSaveRequest,
@@ -31,7 +33,7 @@ from services.elasticsearch_service import (
     search_with_filters,
     hybrid_search,
 )
-from services.gemini_service import summarize_checklist
+from services.gemini_service import summarize_checklist, step_thread_chat
 from services.firestore_service import FirestoreService
 from services.embedding_service import generate_embedding, enhance_query_with_llm
 
@@ -213,6 +215,34 @@ async def protocols_generate(payload: ProtocolGenerateRequest):
         citations=result.get("citations", []),
     )
 
+# Step thread chat endpoint
+@app.post("/protocols/step-thread", response_model=ChatResponse)
+async def step_thread(payload: StepThreadRequest):
+    """Step-level thread chat for focused discussions"""
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY is not configured.")
+    
+    try:
+        # Convert pydantic models to dicts for service layer
+        history = [{"role": msg.role, "content": msg.content} for msg in payload.thread_history]
+        
+        result = step_thread_chat(
+            message=payload.message,
+            step_id=payload.step_id,
+            step_text=payload.step_text,
+            step_citation=payload.step_citation,
+            protocol_title=payload.protocol_title,
+            protocol_citations=payload.protocol_citations,
+            thread_history=history
+        )
+        
+        return ChatResponse(
+            message=result.get("message", ""),
+            updated_protocol=result.get("updated_protocol")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail={"error": "thread_error", "details": str(e)})
+
 # Conversation management endpoints
 @app.post("/conversations/save", response_model=ConversationResponse)
 async def save_conversation(user_id: str, payload: ConversationSaveRequest):
@@ -335,6 +365,24 @@ async def delete_saved_protocol_endpoint(user_id: str, protocol_id: str):
         raise HTTPException(status_code=400, detail="protocol_id is required")
 
     result = FirestoreService.delete_saved_protocol(user_id, protocol_id)
+
+    if not result.get("success"):
+        if result.get("error") == "not_found":
+            raise HTTPException(status_code=404, detail="Protocol not found")
+        status_code = 502 if "firestore" in result.get("error", "") else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return result
+
+@app.get("/protocols/saved/{user_id}/{protocol_id}")
+async def get_saved_protocol_endpoint(user_id: str, protocol_id: str):
+    """Get a single saved protocol with full data"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not protocol_id or not protocol_id.strip():
+        raise HTTPException(status_code=400, detail="protocol_id is required")
+
+    result = FirestoreService.get_saved_protocol(user_id, protocol_id)
 
     if not result.get("success"):
         if result.get("error") == "not_found":

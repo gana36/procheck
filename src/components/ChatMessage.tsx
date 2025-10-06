@@ -9,6 +9,9 @@ import ProtocolCard from './ProtocolCard';
 interface ChatMessageProps {
   message: Message;
   onSaveToggle?: () => void;
+  onProtocolUpdate?: (updatedProtocol: any) => void;
+  isFirstUserMessage?: boolean;
+  isProtocolAlreadySaved?: boolean;
 }
 
 // Detect query intent from message content
@@ -86,15 +89,11 @@ const intentThemes = {
   }
 };
 
-export default function ChatMessage({ message, onSaveToggle }: ChatMessageProps) {
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, isFirstUserMessage = false, isProtocolAlreadySaved = false }: ChatMessageProps) {
 
   if (message.type === 'user') {
     return (
-      <div className="flex justify-end mb-6">
+      <div className={`flex justify-end mb-6 ${isFirstUserMessage ? 'sticky top-0 z-30 bg-slate-50 pb-4 pt-4 border-b border-slate-200 shadow-sm' : ''}`}>
         <div className="max-w-[75%]">
           <div className="flex items-end justify-end space-x-3">
             <Card className="bg-slate-700 text-white border-0 shadow-md">
@@ -177,7 +176,9 @@ export default function ChatMessage({ message, onSaveToggle }: ChatMessageProps)
                 <ProtocolCard 
                   protocolData={message.protocolData} 
                   onSaveToggle={onSaveToggle}
+                  onProtocolUpdate={onProtocolUpdate}
                   intent={protocolIntent as 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general'}
+                  isAlreadySaved={isProtocolAlreadySaved}
                 />
               );
             })()}
