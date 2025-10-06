@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -26,11 +26,11 @@ interface SidebarProps {
   onRecentSearch: (conversationId: string) => void;
   onSavedProtocol: (protocolId: string, protocolData: any) => void;
   onConversationDeleted?: (conversationId: string) => void; // Notify parent when conversation is deleted
-  refreshTrigger?: number;
   savedProtocolsRefreshTrigger?: number;
 }
 
-export default function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, refreshTrigger, savedProtocolsRefreshTrigger }: SidebarProps) {
+const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, savedProtocolsRefreshTrigger }: SidebarProps) {
+  console.log('🔄 Sidebar component rendering');
   const { currentUser } = useAuth();
   const [recentConversations, setRecentConversations] = useState<ConversationListItem[]>([]);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
@@ -42,6 +42,13 @@ export default function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, 
   // Track if data has been loaded to prevent unnecessary refetches
   const [conversationsLoaded, setConversationsLoaded] = useState(false);
   const [savedProtocolsLoaded, setSavedProtocolsLoaded] = useState(false);
+  
+  // Use refs to track if data has been loaded to prevent re-loading on re-renders
+  const conversationsLoadedRef = useRef(false);
+  const savedProtocolsLoadedRef = useRef(false);
+  
+  // Track the last refresh trigger values to prevent unnecessary reloads
+  const [lastSavedProtocolsTrigger, setLastSavedProtocolsTrigger] = useState(0);
 
   // Track which conversation's menu is open and editing state
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -63,27 +70,33 @@ export default function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, 
     return () => document.removeEventListener('click', handleClickOutside);
   }, [openMenuId, openProtocolMenuId]);
 
-  // Fetch conversations when user changes or refreshTrigger updates
+  // Load conversations only once when user logs in
   useEffect(() => {
-    if (currentUser) {
-      // Only reload if not already loaded
-      if (!conversationsLoaded) {
-        loadConversations();
-      }
+    console.log('🔍 Conversations useEffect:', { 
+      currentUser: !!currentUser, 
+      conversationsLoadedRef: conversationsLoadedRef.current 
+    });
+    
+    if (currentUser && !conversationsLoadedRef.current) {
+      console.log('📞 Loading conversations...');
+      conversationsLoadedRef.current = true;
+      loadConversations();
     } else {
-      // Reset when user logs out
+      console.log('🚫 Skipping conversations load - already loaded');
+    }
+    
+    if (!currentUser) {
+      console.log('🔄 Resetting conversations - user logged out');
       setRecentConversations([]);
       setConversationsLoaded(false);
+      conversationsLoadedRef.current = false;
     }
-  }, [currentUser, refreshTrigger]);
+  }, [currentUser]);
 
-  // Fetch saved protocols only when savedProtocolsRefreshTrigger changes
+  // Load saved protocols only once when user logs in, or when explicitly refreshed
   useEffect(() => {
     const loadSaved = async () => {
       if (!currentUser) return;
-
-      // Prevent redundant fetches
-      if (isLoadingSaved) return;
 
       setIsLoadingSaved(true);
       setSavedError(null);
@@ -102,23 +115,36 @@ export default function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, 
       }
     };
 
-    if (currentUser) {
-      // Only load if not already loaded
-      if (!savedProtocolsLoaded) {
-        loadSaved();
-      }
+    console.log('🔍 Saved protocols useEffect:', { 
+      currentUser: !!currentUser, 
+      savedProtocolsLoadedRef: savedProtocolsLoadedRef.current,
+      savedProtocolsRefreshTrigger,
+      lastSavedProtocolsTrigger
+    });
+    
+    if (currentUser && !savedProtocolsLoadedRef.current) {
+      console.log('📞 Loading saved protocols...');
+      savedProtocolsLoadedRef.current = true; // Set ref BEFORE loading to prevent duplicates
+      loadSaved();
+    } else if (currentUser && savedProtocolsRefreshTrigger && savedProtocolsRefreshTrigger > lastSavedProtocolsTrigger) {
+      console.log('📞 Refresh trigger changed, reloading saved protocols...');
+      setLastSavedProtocolsTrigger(savedProtocolsRefreshTrigger);
+      loadSaved();
     } else {
-      // Reset when user logs out
+      console.log('🚫 Skipping saved protocols load - already loaded');
+    }
+    
+    if (!currentUser) {
+      console.log('🔄 Resetting saved protocols - user logged out');
       setSavedProtocols([]);
       setSavedProtocolsLoaded(false);
+      setLastSavedProtocolsTrigger(0);
+      savedProtocolsLoadedRef.current = false;
     }
   }, [currentUser, savedProtocolsRefreshTrigger]);
 
   const loadConversations = async () => {
     if (!currentUser) return;
-
-    // Prevent redundant fetches
-    if (isLoadingConversations) return;
 
     setIsLoadingConversations(true);
     setConversationsError(null);
@@ -597,4 +623,6 @@ export default function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, 
       </div>
     </div>
   );
-}
+});
+
+export default Sidebar;

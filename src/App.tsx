@@ -26,7 +26,6 @@ function App() {
   const [currentConversationId, setCurrentConversationId] = useState<string>(() =>
     `conv_${Date.now()}`
   );
-  const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0);
   const [savedProtocolsRefreshTrigger, setSavedProtocolsRefreshTrigger] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -327,8 +326,7 @@ function App() {
 
       // Update cache with latest messages
       conversationCache.current.set(currentConversationId, updatedMessages);
-      // Trigger sidebar refresh to show updated conversation
-      setSidebarRefreshTrigger(prev => prev + 1);
+      // Note: Sidebar conversations will load once on mount, no need to refresh
     } catch (error) {
       console.error('Failed to save conversation:', error);
     }
@@ -449,7 +447,7 @@ CITATION REQUIREMENT:
     }
   };
 
-  const handleNewSearch = () => {
+  const handleNewSearch = useCallback(() => {
     setMessages([]);
     setCurrentConversationId(`conv_${Date.now()}`); // Generate new conversation ID
 
@@ -458,9 +456,9 @@ CITATION REQUIREMENT:
       const entries = Array.from(conversationCache.current.entries());
       conversationCache.current = new Map(entries.slice(-20));
     }
-  };
+  }, []);
 
-  const handleRecentSearch = async (conversationId: string) => {
+  const handleRecentSearch = useCallback(async (conversationId: string) => {
     if (!currentUser) return;
 
     // Check if conversation is already cached
@@ -508,7 +506,7 @@ CITATION REQUIREMENT:
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser]);
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -548,7 +546,13 @@ CITATION REQUIREMENT:
     setSavedProtocolsRefreshTrigger(prev => prev + 1);
   }, []);
 
-  const handleConversationDeleted = (conversationId: string) => {
+  // Helper function to determine if a message contains a saved protocol
+  const isSavedProtocolMessage = (message: Message): boolean => {
+    // Check if the message content starts with "Saved:" which indicates it's a saved protocol
+    return message.type === 'assistant' && message.content.startsWith('Saved:');
+  };
+
+  const handleConversationDeleted = useCallback((conversationId: string) => {
     // Remove deleted conversation from cache
     conversationCache.current.delete(conversationId);
 
@@ -557,9 +561,9 @@ CITATION REQUIREMENT:
       setMessages([]);
       setCurrentConversationId(`conv_${Date.now()}`);
     }
-  };
+  }, [currentConversationId]);
 
-  const handleSavedProtocol = async (protocolId: string, protocolData: any) => {
+  const handleSavedProtocol = useCallback(async (protocolId: string, protocolData: any) => {
     // Clear current messages and start fresh
     setMessages([]);
     setCurrentConversationId(`conv_${Date.now()}`);
@@ -586,6 +590,9 @@ CITATION REQUIREMENT:
       };
 
       setMessages([assistantMessage]);
+      
+      // Don't trigger sidebar refresh for saved protocols - they're already in the sidebar
+      // Only trigger refresh when protocols are saved/unsaved, not when loading them
     } catch (e) {
       console.error('Error loading saved protocol:', e);
       const assistantMessage: Message = {
@@ -596,7 +603,7 @@ CITATION REQUIREMENT:
       };
       setMessages([assistantMessage]);
     }
-  };
+  }, [currentUser]);
 
   const handleAuthSuccess = () => {
     const from = location.state?.from?.pathname || '/dashboard';
@@ -617,7 +624,6 @@ CITATION REQUIREMENT:
               onRecentSearch={handleRecentSearch}
               onSavedProtocol={handleSavedProtocol}
               onConversationDeleted={handleConversationDeleted}
-              refreshTrigger={sidebarRefreshTrigger}
               savedProtocolsRefreshTrigger={savedProtocolsRefreshTrigger}
             />
           </div>
@@ -679,6 +685,7 @@ CITATION REQUIREMENT:
                   onSaveToggle={handleSaveToggle}
                   onProtocolUpdate={handleProtocolUpdate}
                   isFirstUserMessage={isFirstUserMessage}
+                  isProtocolAlreadySaved={isSavedProtocolMessage(message)}
                 />
               </div>
             );

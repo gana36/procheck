@@ -11,6 +11,7 @@ interface ChatMessageProps {
   onSaveToggle?: () => void;
   onProtocolUpdate?: (updatedProtocol: any) => void;
   isFirstUserMessage?: boolean;
+  isProtocolAlreadySaved?: boolean;
 }
 
 // Detect query intent from message content
@@ -88,11 +89,7 @@ const intentThemes = {
   }
 };
 
-export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, isFirstUserMessage = false }: ChatMessageProps) {
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, isFirstUserMessage = false, isProtocolAlreadySaved = false }: ChatMessageProps) {
 
   if (message.type === 'user') {
     return (
@@ -181,6 +178,7 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, i
                   onSaveToggle={onSaveToggle}
                   onProtocolUpdate={onProtocolUpdate}
                   intent={protocolIntent as 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general'}
+                  isAlreadySaved={isProtocolAlreadySaved}
                 />
               );
             })()}

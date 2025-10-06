@@ -37,6 +37,7 @@ interface ProtocolCardProps {
   onSaveToggle?: () => void; // Callback to refresh saved list in sidebar
   onProtocolUpdate?: (updatedProtocol: ProtocolData) => void; // Callback when protocol is updated via threads
   intent?: 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general';
+  isAlreadySaved?: boolean; // Pass this to avoid unnecessary API calls
 }
 
 // Professional theme configurations
@@ -121,7 +122,7 @@ const intentThemes = {
   }
 };
 
-const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, onProtocolUpdate, intent = 'general' }: ProtocolCardProps) {
+const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, onProtocolUpdate, intent = 'general', isAlreadySaved = false }: ProtocolCardProps) {
   const { currentUser } = useAuth();
   const theme = intentThemes[intent] || intentThemes.general;
   const ThemeIcon = theme.icon;
@@ -156,6 +157,12 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
 
   // Check if protocol is already saved when component mounts
   useEffect(() => {
+    // If we already know it's saved, don't make an API call
+    if (isAlreadySaved) {
+      setIsSaved(true);
+      return;
+    }
+
     const checkSaved = async () => {
       if (!currentUser) return;
 
@@ -170,7 +177,7 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
     };
 
     checkSaved();
-  }, [currentUser, protocolId]);
+  }, [currentUser, protocolId, isAlreadySaved]);
 
   const handleSave = async () => {
     if (!currentUser || isSaving) return;
