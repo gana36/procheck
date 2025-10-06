@@ -454,7 +454,7 @@ class FirestoreService:
     @staticmethod
     def get_saved_protocols(user_id: str, limit: int = 20) -> Dict[str, Any]:
         """
-        Get all saved protocols for a user
+        Get all saved protocols for a user (metadata only, no full protocol data)
         Uses user index document to avoid query limitations
 
         Args:
@@ -462,7 +462,7 @@ class FirestoreService:
             limit: Maximum number of protocols to return
 
         Returns:
-            Dict with saved protocols list
+            Dict with saved protocols list (metadata only)
         """
         try:
             db = FirestoreService._get_db()
@@ -486,33 +486,67 @@ class FirestoreService:
             # Limit results
             protocols = protocols_list[:limit]
 
-            # Fetch full protocol data for each protocol
-            full_protocols = []
+            # Return only metadata from index (no full protocol data fetch)
+            # This reduces from N+1 reads to just 1 read
+            metadata_protocols = []
             for protocol in protocols:
-                doc_id = protocol.get('document_id')
-                if doc_id:
-                    doc_ref = db.collection(FirestoreService.SAVED_PROTOCOLS_COLLECTION).document(doc_id)
-                    doc = doc_ref.get()
-                    if doc.exists:
-                        data = doc.to_dict()
-                        full_protocols.append({
-                            "id": data.get("protocol_id"),
-                            "title": data.get("title"),
-                            "saved_at": data.get("saved_at"),
-                            "region": data.get("region"),
-                            "year": data.get("year"),
-                            "organization": data.get("organization"),
-                            "protocol_data": data.get("protocol_data")
-                        })
+                metadata_protocols.append({
+                    "id": protocol.get("protocol_id"),
+                    "title": protocol.get("title"),
+                    "saved_at": protocol.get("saved_at"),
+                    "region": protocol.get("region"),
+                    "year": protocol.get("year"),
+                    "organization": protocol.get("organization"),
+                    "document_id": protocol.get("document_id")  # Keep for fetching later
+                })
 
             return {
                 "success": True,
-                "protocols": full_protocols,
-                "total": len(full_protocols)
+                "protocols": metadata_protocols,
+                "total": len(metadata_protocols)
             }
 
         except Exception as e:
             return {"success": False, "error": "get_protocols_error", "details": str(e)}
+
+    @staticmethod
+    def get_saved_protocol(user_id: str, protocol_id: str) -> Dict[str, Any]:
+        """
+        Get a single saved protocol with full data
+
+        Args:
+            user_id: Firebase Auth user ID
+            protocol_id: Protocol ID
+
+        Returns:
+            Dict with full protocol data
+        """
+        try:
+            db = FirestoreService._get_db()
+
+            doc_id = f"{user_id}_{protocol_id}"
+            doc_ref = db.collection(FirestoreService.SAVED_PROTOCOLS_COLLECTION).document(doc_id)
+            doc = doc_ref.get()
+
+            if not doc.exists:
+                return {"success": False, "error": "not_found", "details": "Protocol not found"}
+
+            data = doc.to_dict()
+            return {
+                "success": True,
+                "protocol": {
+                    "id": data.get("protocol_id"),
+                    "title": data.get("title"),
+                    "saved_at": data.get("saved_at"),
+                    "region": data.get("region"),
+                    "year": data.get("year"),
+                    "organization": data.get("organization"),
+                    "protocol_data": data.get("protocol_data")
+                }
+            }
+
+        except Exception as e:
+            return {"success": False, "error": "get_protocol_error", "details": str(e)}
 
     @staticmethod
     def delete_saved_protocol(user_id: str, protocol_id: str) -> Dict[str, Any]:
@@ -578,3 +612,49 @@ class FirestoreService:
 
         except Exception as e:
             return {"success": False, "error": "check_saved_error", "details": str(e)}
+
+    @staticmethod
+    def update_saved_protocol_title(user_id: str, protocol_id: str, new_title: str) -> Dict[str, Any]:
+        """
+        Update the title of a saved protocol
+
+        Args:
+            user_id: Firebase Auth user ID
+            protocol_id: Protocol ID
+            new_title: New title for the protocol
+
+        Returns:
+            Dict with success status
+        """
+        try:
+            db = FirestoreService._get_db()
+
+            doc_id = f"{user_id}_{protocol_id}"
+            doc_ref = db.collection(FirestoreService.SAVED_PROTOCOLS_COLLECTION).document(doc_id)
+
+            # Check if exists
+            doc = doc_ref.get()
+            if not doc.exists:
+                return {"success": False, "error": "not_found", "details": "Protocol not found"}
+
+            # Update the protocol document
+            doc_ref.update({
+                "title": new_title
+            })
+
+            # Update user protocols index
+            user_protocols_index_ref = db.collection(FirestoreService.USER_PROTOCOLS_INDEX_COLLECTION).document(user_id)
+            user_protocols_index_data = user_protocols_index_ref.get()
+
+            if user_protocols_index_data.exists:
+                protocols_list = user_protocols_index_data.to_dict().get('protocols', [])
+                for protocol in protocols_list:
+                    if protocol.get('protocol_id') == protocol_id:
+                        protocol['title'] = new_title
+                        break
+                user_protocols_index_ref.set({'protocols': protocols_list})
+
+            return {"success": True, "message": "Title updated successfully"}
+
+        except Exception as e:
+            return {"success": False, "error": "update_title_error", "details": str(e)}

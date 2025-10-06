@@ -13,7 +13,7 @@ import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { Message, ProtocolData, ProtocolStep, Citation, SearchMetadata } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocols, ConversationMessage } from '@/lib/api';
+import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocol, ConversationMessage } from '@/lib/api';
 
 function App() {
   const { currentUser } = useAuth();
@@ -34,6 +34,9 @@ function App() {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const lastAssistantMessageRef = useRef<HTMLDivElement>(null);
   const isThreadInteractionRef = useRef(false);
+
+  // Cache for loaded conversations to prevent redundant fetches
+  const conversationCache = useRef<Map<string, Message[]>>(new Map());
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -322,6 +325,8 @@ function App() {
         created_at: firstMessageTimestamp,
       });
 
+      // Update cache with latest messages
+      conversationCache.current.set(currentConversationId, updatedMessages);
       // Trigger sidebar refresh to show updated conversation
       setSidebarRefreshTrigger(prev => prev + 1);
     } catch (error) {
@@ -447,10 +452,25 @@ CITATION REQUIREMENT:
   const handleNewSearch = () => {
     setMessages([]);
     setCurrentConversationId(`conv_${Date.now()}`); // Generate new conversation ID
+
+    // Optional: Clear cache if it gets too large (keep last 20 conversations)
+    if (conversationCache.current.size > 20) {
+      const entries = Array.from(conversationCache.current.entries());
+      conversationCache.current = new Map(entries.slice(-20));
+    }
   };
 
   const handleRecentSearch = async (conversationId: string) => {
     if (!currentUser) return;
+
+    // Check if conversation is already cached
+    const cachedMessages = conversationCache.current.get(conversationId);
+    if (cachedMessages) {
+      // Use cached data instead of fetching from database
+      setMessages(cachedMessages);
+      setCurrentConversationId(conversationId);
+      return;
+    }
 
     try {
       setIsLoading(true);
@@ -470,7 +490,8 @@ CITATION REQUIREMENT:
 
         // Prevent auto-scroll by temporarily increasing message count
         messageCountRef.current = loadedMessages.length;
-        
+        // Cache the loaded conversation
+        conversationCache.current.set(conversationId, loadedMessages);
         // Set the messages and conversation ID
         setMessages(loadedMessages);
         setCurrentConversationId(conversationId);
@@ -527,6 +548,17 @@ CITATION REQUIREMENT:
     setSavedProtocolsRefreshTrigger(prev => prev + 1);
   }, []);
 
+  const handleConversationDeleted = (conversationId: string) => {
+    // Remove deleted conversation from cache
+    conversationCache.current.delete(conversationId);
+
+    // If currently viewing the deleted conversation, clear the chat
+    if (currentConversationId === conversationId) {
+      setMessages([]);
+      setCurrentConversationId(`conv_${Date.now()}`);
+    }
+  };
+
   const handleSavedProtocol = async (protocolId: string, protocolData: any) => {
     // Clear current messages and start fresh
     setMessages([]);
@@ -535,10 +567,12 @@ CITATION REQUIREMENT:
     try {
       let fullProtocol = protocolData;
 
+      // If protocolData is not provided, fetch it from the backend
       if (!fullProtocol && currentUser) {
-        const res = await getSavedProtocols(currentUser.uid, 100);
-        const found = res.success ? (res.protocols || []).find((p: any) => p.id === protocolId) : null;
-        fullProtocol = found?.protocol_data || null;
+        const res = await getSavedProtocol(currentUser.uid, protocolId);
+        if (res.success && res.protocol) {
+          fullProtocol = res.protocol.protocol_data;
+        }
       }
 
       const contentTitle = fullProtocol?.title ? `Saved: ${fullProtocol.title}` : `Here's your saved protocol:`;
@@ -553,6 +587,7 @@ CITATION REQUIREMENT:
 
       setMessages([assistantMessage]);
     } catch (e) {
+      console.error('Error loading saved protocol:', e);
       const assistantMessage: Message = {
         id: Date.now().toString(),
         type: 'assistant',
@@ -581,6 +616,7 @@ CITATION REQUIREMENT:
               onNewSearch={handleNewSearch}
               onRecentSearch={handleRecentSearch}
               onSavedProtocol={handleSavedProtocol}
+              onConversationDeleted={handleConversationDeleted}
               refreshTrigger={sidebarRefreshTrigger}
               savedProtocolsRefreshTrigger={savedProtocolsRefreshTrigger}
             />

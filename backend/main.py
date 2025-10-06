@@ -374,6 +374,24 @@ async def delete_saved_protocol_endpoint(user_id: str, protocol_id: str):
 
     return result
 
+@app.get("/protocols/saved/{user_id}/{protocol_id}")
+async def get_saved_protocol_endpoint(user_id: str, protocol_id: str):
+    """Get a single saved protocol with full data"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not protocol_id or not protocol_id.strip():
+        raise HTTPException(status_code=400, detail="protocol_id is required")
+
+    result = FirestoreService.get_saved_protocol(user_id, protocol_id)
+
+    if not result.get("success"):
+        if result.get("error") == "not_found":
+            raise HTTPException(status_code=404, detail="Protocol not found")
+        status_code = 502 if "firestore" in result.get("error", "") else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return result
+
 @app.get("/protocols/saved/{user_id}/{protocol_id}/check")
 async def check_protocol_saved_endpoint(user_id: str, protocol_id: str):
     """Check if a protocol is saved by the user"""
@@ -385,6 +403,28 @@ async def check_protocol_saved_endpoint(user_id: str, protocol_id: str):
     result = FirestoreService.is_protocol_saved(user_id, protocol_id)
 
     if not result.get("success"):
+        status_code = 502 if "firestore" in result.get("error", "") else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return result
+
+@app.put("/protocols/saved/{user_id}/{protocol_id}/title")
+async def update_saved_protocol_title_endpoint(user_id: str, protocol_id: str, payload: dict):
+    """Update the title of a saved protocol"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not protocol_id or not protocol_id.strip():
+        raise HTTPException(status_code=400, detail="protocol_id is required")
+
+    new_title = payload.get("title")
+    if not new_title or not new_title.strip():
+        raise HTTPException(status_code=400, detail="title is required")
+
+    result = FirestoreService.update_saved_protocol_title(user_id, protocol_id, new_title.strip())
+
+    if not result.get("success"):
+        if result.get("error") == "not_found":
+            raise HTTPException(status_code=404, detail="Protocol not found")
         status_code = 502 if "firestore" in result.get("error", "") else 500
         raise HTTPException(status_code=status_code, detail=result)
 
