@@ -108,9 +108,6 @@ export default function ChatMessage({ message, onSaveToggle }: ChatMessageProps)
               </div>
             </div>
           </div>
-          <p className="text-xs text-slate-500 mt-2 text-right">
-            {formatTime(message.timestamp)}
-          </p>
         </div>
       </div>
     );
@@ -132,14 +129,11 @@ export default function ChatMessage({ message, onSaveToggle }: ChatMessageProps)
           </div>
           <div className="flex-1 min-w-0">
             {/* Header with metadata */}
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-2">
-                <h4 className="font-semibold text-slate-900">ProCheck AI</h4>
-                <Badge className={`${theme.badge} text-white text-xs`}>
-                  {theme.badgeText}
-                </Badge>
-              </div>
-              <span className="text-xs text-slate-500">{formatTime(message.timestamp)}</span>
+            <div className="flex items-center space-x-2 mb-3">
+              <h4 className="font-semibold text-slate-900">ProCheck AI</h4>
+              <Badge className={`${theme.badge} text-white text-xs`}>
+                {theme.badgeText}
+              </Badge>
             </div>
             
             {/* Search Metadata */}

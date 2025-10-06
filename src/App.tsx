@@ -30,6 +30,9 @@ function App() {
   const [savedProtocolsRefreshTrigger, setSavedProtocolsRefreshTrigger] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Cache for loaded conversations to prevent redundant fetches
+  const conversationCache = useRef<Map<string, Message[]>>(new Map());
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -266,6 +269,9 @@ function App() {
         created_at: firstMessageTimestamp,
       });
 
+      // Update cache with latest messages
+      conversationCache.current.set(currentConversationId, updatedMessages);
+
       // Trigger sidebar refresh to show new conversation
       setSidebarRefreshTrigger(prev => prev + 1);
     } catch (error) {
@@ -392,10 +398,25 @@ CITATION REQUIREMENT:
   const handleNewSearch = () => {
     setMessages([]);
     setCurrentConversationId(`conv_${Date.now()}`); // Generate new conversation ID
+
+    // Optional: Clear cache if it gets too large (keep last 20 conversations)
+    if (conversationCache.current.size > 20) {
+      const entries = Array.from(conversationCache.current.entries());
+      conversationCache.current = new Map(entries.slice(-20));
+    }
   };
 
   const handleRecentSearch = async (conversationId: string) => {
     if (!currentUser) return;
+
+    // Check if conversation is already cached
+    const cachedMessages = conversationCache.current.get(conversationId);
+    if (cachedMessages) {
+      // Use cached data instead of fetching from database
+      setMessages(cachedMessages);
+      setCurrentConversationId(conversationId);
+      return;
+    }
 
     try {
       setIsLoading(true);
@@ -413,6 +434,9 @@ CITATION REQUIREMENT:
           protocolData: msg.protocol_data,
         }));
 
+        // Cache the loaded conversation
+        conversationCache.current.set(conversationId, loadedMessages);
+
         // Set the messages and conversation ID
         setMessages(loadedMessages);
         setCurrentConversationId(conversationId);
@@ -421,6 +445,17 @@ CITATION REQUIREMENT:
       console.error('Failed to load conversation:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleConversationDeleted = (conversationId: string) => {
+    // Remove deleted conversation from cache
+    conversationCache.current.delete(conversationId);
+
+    // If currently viewing the deleted conversation, clear the chat
+    if (currentConversationId === conversationId) {
+      setMessages([]);
+      setCurrentConversationId(`conv_${Date.now()}`);
     }
   };
 
@@ -478,6 +513,7 @@ CITATION REQUIREMENT:
               onNewSearch={handleNewSearch}
               onRecentSearch={handleRecentSearch}
               onSavedProtocol={handleSavedProtocol}
+              onConversationDeleted={handleConversationDeleted}
               refreshTrigger={sidebarRefreshTrigger}
               savedProtocolsRefreshTrigger={savedProtocolsRefreshTrigger}
             />

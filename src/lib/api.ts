@@ -186,6 +186,19 @@ export async function deleteConversation(userId: string, conversationId: string)
   return res.json();
 }
 
+export async function updateConversationTitle(userId: string, conversationId: string, newTitle: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(userId)}/${encodeURIComponent(conversationId)}/title`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: newTitle }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Update conversation title failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
 // ==================== Saved Protocols API ====================
 
 export type SavedProtocol = {
@@ -235,6 +248,19 @@ export async function deleteSavedProtocol(userId: string, protocolId: string): P
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Delete protocol failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+export async function updateSavedProtocolTitle(userId: string, protocolId: string, newTitle: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}/title`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: newTitle }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Update protocol title failed: ${res.status} ${text}`);
   }
   return res.json();
 }
