@@ -1,3 +1,8 @@
+export interface FollowUpQuestion {
+  text: string;
+  category?: 'dosage' | 'symptoms' | 'complications' | 'timing' | 'safety' | 'general';
+}
+
 export interface Message {
   id: string;
   type: 'user' | 'assistant';
@@ -5,6 +10,8 @@ export interface Message {
   timestamp: string;
   protocolData?: ProtocolData;
   searchMetadata?: SearchMetadata;
+  followUpQuestions?: FollowUpQuestion[];
+  isFollowUp?: boolean; // Indicates if this is a follow-up question to existing protocol
 }
 
 export interface SearchMetadata {

@@ -13,7 +13,7 @@ import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { Message, ProtocolData, ProtocolStep, Citation, SearchMetadata } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocol, ConversationMessage } from '@/lib/api';
+import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocol, ConversationMessage, protocolConversationChat } from '@/lib/api';
 
 function App() {
   const { currentUser } = useAuth();
@@ -336,6 +336,38 @@ function App() {
     }
   };
 
+  const handleFollowUpClick = (question: string) => {
+    handleSendMessage(question);
+  };
+
+  // Helper function to detect if this is a follow-up question
+  const isFollowUpQuestion = (content: string, messages: Message[]): { isFollowUp: boolean; lastProtocol?: ProtocolData } => {
+    // Find the most recent assistant message with protocol data
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.type === 'assistant' && msg.protocolData) {
+        // Check if this looks like a follow-up question
+        const followUpKeywords = [
+          'dosage', 'dose', 'how much', 'how often', 'when to',
+          'symptoms', 'signs', 'what to watch', 'monitor',
+          'side effects', 'complications', 'risks', 'contraindications',
+          'timing', 'duration', 'how long', 'frequency',
+          'safety', 'warnings', 'avoid', 'caution'
+        ];
+        
+        const contentLower = content.toLowerCase();
+        const hasFollowUpKeyword = followUpKeywords.some(keyword => contentLower.includes(keyword));
+        const isShortQuestion = content.length < 100; // Follow-ups are usually shorter
+        
+        if (hasFollowUpKeyword && isShortQuestion) {
+          return { isFollowUp: true, lastProtocol: msg.protocolData };
+        }
+        break; // Only check the most recent protocol
+      }
+    }
+    return { isFollowUp: false };
+  };
+
   const handleSendMessage = async (content: string) => {
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -348,6 +380,43 @@ function App() {
     setIsLoading(true);
 
     try {
+      // Check if this is a follow-up question
+      const followUpCheck = isFollowUpQuestion(content, messages);
+      
+      if (followUpCheck.isFollowUp && followUpCheck.lastProtocol) {
+        // Handle as protocol conversation
+        const conversationHistory = messages
+          .filter(msg => msg.type === 'user' || (msg.type === 'assistant' && !msg.protocolData))
+          .slice(-6) // Last 6 messages for context
+          .map(msg => ({
+            role: msg.type as 'user' | 'assistant',
+            content: msg.content
+          }));
+
+        const conversationRes = await protocolConversationChat({
+          message: content,
+          concept_title: followUpCheck.lastProtocol.title,
+          protocol_json: followUpCheck.lastProtocol,
+          citations_list: followUpCheck.lastProtocol.citations.map(c => c.excerpt || c.source),
+          conversation_history: conversationHistory
+        });
+
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: conversationRes.answer,
+          timestamp: getUserTimestamp(),
+          followUpQuestions: conversationRes.follow_up_questions,
+          isFollowUp: true,
+        };
+
+        setMessages(prev => {
+          const newMessages = [...prev, assistantMessage];
+          saveCurrentConversation(newMessages, content);
+          return newMessages;
+        });
+        return;
+      }
       const searchRes = await searchProtocols({
         query: content,
         size: 8,
@@ -418,6 +487,43 @@ CITATION REQUIREMENT:
         general: 'Medical Protocol - Key information:',
       };
 
+      // Generate follow-up questions based on intent
+      const generateFollowUpQuestions = (intent: string) => {
+        const baseQuestions = [
+          { text: "What are the recommended dosages?", category: "dosage" as const },
+          { text: "What symptoms should I monitor?", category: "symptoms" as const },
+          { text: "When should I seek immediate help?", category: "safety" as const },
+          { text: "What are potential complications?", category: "complications" as const },
+          { text: "How often should I check progress?", category: "timing" as const }
+        ];
+        
+        const intentSpecific = {
+          emergency: [
+            { text: "What are the critical warning signs?", category: "safety" as const },
+            { text: "How quickly should I act?", category: "timing" as const },
+            { text: "What should I avoid doing?", category: "safety" as const }
+          ],
+          treatment: [
+            { text: "What are the side effects to watch for?", category: "complications" as const },
+            { text: "How long does treatment take?", category: "timing" as const },
+            { text: "What if the treatment isn't working?", category: "complications" as const }
+          ],
+          symptoms: [
+            { text: "How do I differentiate mild vs severe symptoms?", category: "symptoms" as const },
+            { text: "What symptoms indicate worsening?", category: "complications" as const },
+            { text: "When do symptoms typically appear?", category: "timing" as const }
+          ],
+          diagnosis: [
+            { text: "What tests are most reliable?", category: "general" as const },
+            { text: "How accurate are these diagnostic methods?", category: "general" as const },
+            { text: "What if initial tests are negative?", category: "complications" as const }
+          ]
+        };
+        
+        const specific = intentSpecific[intent as keyof typeof intentSpecific] || [];
+        return [...specific, ...baseQuestions].slice(0, 5);
+      };
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
@@ -425,6 +531,7 @@ CITATION REQUIREMENT:
         timestamp: getUserTimestamp(),
         protocolData,
         searchMetadata,
+        followUpQuestions: generateFollowUpQuestions(intent),
       };
 
       setMessages(prev => {
@@ -701,6 +808,7 @@ CITATION REQUIREMENT:
                   message={message}
                   onSaveToggle={handleSaveToggle}
                   onProtocolUpdate={handleProtocolUpdate}
+                  onFollowUpClick={handleFollowUpClick}
                   isFirstUserMessage={isFirstUserMessage}
                   isProtocolAlreadySaved={isSavedProtocolMessage(message)}
                 />
@@ -758,6 +866,7 @@ CITATION REQUIREMENT:
         <ChatInput 
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
+          hasMessages={messages.length > 0}
         />
       </div>
     </div>

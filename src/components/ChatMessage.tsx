@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
-  User, Search, Clock, FileText
+  User, Search, Clock, FileText, Pill, Stethoscope, AlertTriangle, Timer, Shield, MessageSquare
 } from 'lucide-react';
 import { Message } from '@/types';
 import ProtocolCard from './ProtocolCard';
@@ -10,6 +10,7 @@ interface ChatMessageProps {
   message: Message;
   onSaveToggle?: () => void;
   onProtocolUpdate?: (updatedProtocol: any) => void;
+  onFollowUpClick?: (question: string) => void;
   isFirstUserMessage?: boolean;
   isProtocolAlreadySaved?: boolean;
 }
@@ -89,7 +90,17 @@ const intentThemes = {
   }
 };
 
-export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, isFirstUserMessage = false, isProtocolAlreadySaved = false }: ChatMessageProps) {
+
+const categoryIcons = {
+  dosage: Pill,
+  symptoms: Stethoscope,
+  complications: AlertTriangle,
+  timing: Timer,
+  safety: Shield,
+  general: MessageSquare
+};
+
+export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, onFollowUpClick, isFirstUserMessage = false, isProtocolAlreadySaved = false }: ChatMessageProps) {
 
   if (message.type === 'user') {
     return (
@@ -182,6 +193,30 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, i
                 />
               );
             })()}
+
+            {/* Follow-up Questions */}
+            {message.followUpQuestions && message.followUpQuestions.length > 0 && onFollowUpClick && (
+              <div className="mt-4">
+                <p className="text-xs font-medium text-slate-500 mb-3 uppercase tracking-wide">Continue discussion</p>
+                <div className="flex flex-wrap gap-2">
+                  {message.followUpQuestions.map((question, index) => {
+                    const category = question.category || 'general';
+                    const IconComponent = categoryIcons[category];
+                    
+                    return (
+                      <button
+                        key={index}
+                        onClick={() => onFollowUpClick(question.text)}
+                        className="protocol-followup-chip group"
+                      >
+                        <IconComponent className="protocol-followup-icon" />
+                        <span className="text-xs">{question.text}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

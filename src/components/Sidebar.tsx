@@ -83,8 +83,6 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     return () => document.removeEventListener('click', handleClickOutside);
   }, [openMenuId, openProtocolMenuId]);
 
-  // Use ref to track if initial load is in progress to prevent duplicate calls
-  const isInitialLoadingRef = useRef(false);
   const isMountedRef = useRef(true);
 
   // Track component mount status

@@ -435,3 +435,193 @@ Now provide a clear, well-formatted, helpful response:"""
             "message": "I had trouble processing that. Could you rephrase your question?",
             "updated_protocol": None
         }
+
+
+def protocol_conversation_chat(
+    message: str,
+    concept_title: str,
+    protocol_json: Dict[str, Any],
+    citations_list: List[str],
+    filters_json: Optional[Dict[str, Any]] = None,
+    conversation_history: Optional[List[Dict[str, str]]] = None
+) -> Dict[str, Any]:
+    """
+    Handle protocol-level conversational chat.
+    Users can ask follow-up questions about the entire protocol/concept.
+    """
+    _ensure_client()
+    
+    if conversation_history is None:
+        conversation_history = []
+    
+    # Build conversation history
+    history_text = ""
+    if conversation_history:
+        history_text = "\n".join([
+            f"{msg.get('role', 'user').upper()}: {msg.get('content', '')}"
+            for msg in conversation_history[-8:]  # Last 8 messages for context
+        ])
+    
+    # Format protocol data
+    protocol_text = f"Title: {protocol_json.get('title', concept_title)}\n"
+    if 'checklist' in protocol_json:
+        protocol_text += "Steps:\n"
+        for step in protocol_json['checklist'][:10]:  # Limit to 10 steps
+            step_num = step.get('step', 0)
+            step_text = step.get('text', '')
+            explanation = step.get('explanation', '')
+            citation = step.get('citation', 0)
+            protocol_text += f"{step_num}. {step_text}"
+            if explanation:
+                protocol_text += f" - {explanation[:100]}..."
+            if citation:
+                protocol_text += f" [Source {citation}]"
+            protocol_text += "\n"
+    
+    # Format citations
+    citations_text = ""
+    if citations_list:
+        citations_text = "\nAvailable Sources:\n"
+        for i, citation in enumerate(citations_list[:5], 1):
+            citations_text += f"[Source {i}] {citation[:200]}...\n"
+    
+    # Format filters if any
+    filters_text = ""
+    if filters_json:
+        filters_text = f"\nUser Filters: {filters_json}"
+
+    prompt = f"""You are ProCheck's clinical assistant. Continue the chat strictly within the original concept: "{concept_title}". Ground every answer in the current protocol snapshot and trusted sources. If evidence is limited or conflicting, say so explicitly.
+
+Context:
+- Protocol: {protocol_text}
+- Existing citations: {citations_text}
+- User filters (optional): {filters_text}
+
+{f"Conversation History:{chr(10)}{history_text}{chr(10)}" if history_text else ""}
+
+User follow-up:
+{message}
+
+Requirements:
+- Be concise, clinically useful, and stay on-topic to "{concept_title}".
+- Cite sources inline as [Source N] and list them at the end with titles/links.
+- If retrieval was needed, say "Used new sources".
+- If evidence is limited/conflicting, include a 1‑line uncertainty note.
+- Return 3–5 suggested follow-ups (short, relevant, diverse).
+
+Output format:
+Answer:
+<2–6 sentences with clear guidance and inline [Source N] where relevant>
+
+Uncertainty (omit if none):
+<one line>
+
+Sources:
+- [N] <title or org> — <url>
+
+Suggested follow-ups:
+- <chip 1>
+- <chip 2>
+- <chip 3>
+- <chip 4>
+- <chip 5>"""
+
+    try:
+        response = _model.generate_content(prompt)
+        answer_text = _extract_text(response)
+        
+        if not answer_text:
+            return _fallback_conversation_response(message, concept_title)
+        
+        # Parse the structured response
+        return _parse_conversation_response(answer_text, citations_list)
+        
+    except Exception as e:
+        return _fallback_conversation_response(message, concept_title)
+
+
+def _parse_conversation_response(response_text: str, citations_list: List[str]) -> Dict[str, Any]:
+    """Parse the structured conversation response from Gemini"""
+    lines = response_text.strip().split('\n')
+    
+    answer = ""
+    uncertainty = None
+    sources = []
+    follow_ups = []
+    
+    current_section = None
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        if line.startswith("Answer:"):
+            current_section = "answer"
+            continue
+        elif line.startswith("Uncertainty"):
+            current_section = "uncertainty"
+            continue
+        elif line.startswith("Sources:"):
+            current_section = "sources"
+            continue
+        elif line.startswith("Suggested follow-ups:"):
+            current_section = "follow_ups"
+            continue
+        
+        if current_section == "answer":
+            answer += line + " "
+        elif current_section == "uncertainty":
+            uncertainty = line
+        elif current_section == "sources" and line.startswith("- "):
+            sources.append(line[2:])  # Remove "- " prefix
+        elif current_section == "follow_ups" and line.startswith("- "):
+            follow_up_text = line[2:]  # Remove "- " prefix
+            if follow_up_text:
+                follow_ups.append({
+                    "text": follow_up_text,
+                    "category": _categorize_follow_up(follow_up_text)
+                })
+    
+    return {
+        "answer": answer.strip() or "I can help you with questions about this protocol.",
+        "uncertainty_note": uncertainty,
+        "sources": sources,
+        "used_new_sources": False,  # For now, we're using existing sources
+        "follow_up_questions": follow_ups[:5],  # Limit to 5
+        "updated_protocol": None
+    }
+
+
+def _categorize_follow_up(question_text: str) -> str:
+    """Categorize follow-up questions for better UX"""
+    text_lower = question_text.lower()
+    
+    if any(word in text_lower for word in ['dose', 'dosage', 'mg', 'ml', 'medication', 'drug']):
+        return "dosage"
+    elif any(word in text_lower for word in ['symptom', 'sign', 'mild', 'severe', 'presentation']):
+        return "symptoms"
+    elif any(word in text_lower for word in ['complication', 'risk', 'side effect', 'adverse']):
+        return "complications"
+    elif any(word in text_lower for word in ['when', 'timing', 'how long', 'duration']):
+        return "timing"
+    elif any(word in text_lower for word in ['contraindication', 'avoid', 'caution', 'warning']):
+        return "safety"
+    else:
+        return "general"
+
+
+def _fallback_conversation_response(message: str, concept_title: str) -> Dict[str, Any]:
+    """Fallback response when parsing fails"""
+    return {
+        "answer": f"I can help you with questions about {concept_title}. Could you please rephrase your question?",
+        "uncertainty_note": None,
+        "sources": [],
+        "used_new_sources": False,
+        "follow_up_questions": [
+            {"text": "What are the key symptoms to monitor?", "category": "symptoms"},
+            {"text": "What are the recommended dosages?", "category": "dosage"},
+            {"text": "When should I seek immediate medical attention?", "category": "safety"}
+        ],
+        "updated_protocol": None
+    }
