@@ -19,6 +19,9 @@ function App() {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // Extract stable userId to prevent callback recreation
+  const userId = currentUser?.uid || null;
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -324,9 +327,10 @@ function App() {
         created_at: firstMessageTimestamp,
       });
 
-      // Update cache with latest messages
+      // Update cache with latest messages - OPTIMIZATION: keep cache in sync
       conversationCache.current.set(currentConversationId, updatedMessages);
-      // Note: Sidebar conversations will load once on mount, no need to refresh
+      console.log('✅ Conversation saved and cached');
+      // Note: Sidebar will only reload on user login or explicit refresh trigger
     } catch (error) {
       console.error('Failed to save conversation:', error);
     }
@@ -459,20 +463,23 @@ CITATION REQUIREMENT:
   }, []);
 
   const handleRecentSearch = useCallback(async (conversationId: string) => {
-    if (!currentUser) return;
+    if (!userId) return;
 
-    // Check if conversation is already cached
+    // Check if conversation is already cached - OPTIMIZATION: avoid redundant API calls
     const cachedMessages = conversationCache.current.get(conversationId);
     if (cachedMessages) {
+      console.log('✅ Using cached conversation, no API call needed');
       // Use cached data instead of fetching from database
       setMessages(cachedMessages);
       setCurrentConversationId(conversationId);
       return;
     }
 
+    console.log('🔄 [API CALL] Fetching conversation from server (not in cache)...');
+
     try {
       setIsLoading(true);
-      const response = await getConversation(currentUser.uid, conversationId);
+      const response = await getConversation(userId, conversationId);
 
       if (response.success && response.conversation) {
         const conv = response.conversation;
@@ -506,7 +513,7 @@ CITATION REQUIREMENT:
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser]);
+  }, [userId]);
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -557,13 +564,18 @@ CITATION REQUIREMENT:
     conversationCache.current.delete(conversationId);
 
     // If currently viewing the deleted conversation, clear the chat
-    if (currentConversationId === conversationId) {
-      setMessages([]);
-      setCurrentConversationId(`conv_${Date.now()}`);
-    }
-  }, [currentConversationId]);
+    // Use functional update to get current value without dependency
+    setCurrentConversationId(currentId => {
+      if (currentId === conversationId) {
+        setMessages([]);
+        return `conv_${Date.now()}`;
+      }
+      return currentId;
+    });
+  }, []);
 
   const handleSavedProtocol = useCallback(async (protocolId: string, protocolData: any) => {
+    console.log('🎯 [APP] handleSavedProtocol called', { protocolId, hasProtocolData: !!protocolData });
     // Clear current messages and start fresh
     setMessages([]);
     setCurrentConversationId(`conv_${Date.now()}`);
@@ -572,8 +584,10 @@ CITATION REQUIREMENT:
       let fullProtocol = protocolData;
 
       // If protocolData is not provided, fetch it from the backend
-      if (!fullProtocol && currentUser) {
-        const res = await getSavedProtocol(currentUser.uid, protocolId);
+      if (!fullProtocol && userId) {
+        console.log('🔄 [API CALL] App: Fetching protocol data (fallback)...');
+        const res = await getSavedProtocol(userId, protocolId);
+        console.log('🔄 [API CALL] App: getSavedProtocol completed');
         if (res.success && res.protocol) {
           fullProtocol = res.protocol.protocol_data;
         }
@@ -603,7 +617,7 @@ CITATION REQUIREMENT:
       };
       setMessages([assistantMessage]);
     }
-  }, [currentUser]);
+  }, [userId]);
 
   const handleAuthSuccess = () => {
     const from = location.state?.from?.pathname || '/dashboard';
@@ -612,23 +626,26 @@ CITATION REQUIREMENT:
 
   const Dashboard = () => (
     <div className="h-screen flex bg-slate-50">
+      {/* Overlay - only show when sidebar is open on mobile */}
       {isSidebarOpen && (
-        <>
-          <div 
-            className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-            onClick={() => setIsSidebarOpen(false)}
-          />
-          <div className="fixed lg:relative lg:translate-x-0 inset-y-0 left-0 z-50 lg:z-auto">
-            <Sidebar
-              onNewSearch={handleNewSearch}
-              onRecentSearch={handleRecentSearch}
-              onSavedProtocol={handleSavedProtocol}
-              onConversationDeleted={handleConversationDeleted}
-              savedProtocolsRefreshTrigger={savedProtocolsRefreshTrigger}
-            />
-          </div>
-        </>
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
       )}
+      
+      {/* Sidebar - always mounted, visibility controlled by CSS */}
+      <div className={`fixed lg:relative lg:translate-x-0 inset-y-0 left-0 z-50 lg:z-auto transition-transform duration-300 ${
+        isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      }`}>
+        <Sidebar
+          onNewSearch={handleNewSearch}
+          onRecentSearch={handleRecentSearch}
+          onSavedProtocol={handleSavedProtocol}
+          onConversationDeleted={handleConversationDeleted}
+          savedProtocolsRefreshTrigger={savedProtocolsRefreshTrigger}
+        />
+      </div>
       <div className="flex-1 flex flex-col h-full">
         <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-3">
