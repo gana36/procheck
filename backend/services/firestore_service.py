@@ -658,3 +658,72 @@ class FirestoreService:
 
         except Exception as e:
             return {"success": False, "error": "update_title_error", "details": str(e)}
+
+    @staticmethod
+    def delete_user_data(user_id: str) -> Dict[str, Any]:
+        """
+        Delete all user data from Firestore (conversations and saved protocols)
+
+        Args:
+            user_id: Firebase Auth user ID
+
+        Returns:
+            Dict with success status and details of what was deleted
+        """
+        try:
+            db = FirestoreService._get_db()
+            deleted_items = {
+                "conversations": 0,
+                "saved_protocols": 0,
+                "user_conversations_index": False,
+                "user_protocols_index": False
+            }
+
+            # Delete all conversations for the user
+            user_conversations_ref = db.collection(FirestoreService.USER_INDEX_COLLECTION).document(user_id)
+            user_conversations_doc = user_conversations_ref.get()
+
+            if user_conversations_doc.exists:
+                conversations_list = user_conversations_doc.to_dict().get('conversations', [])
+
+                # Delete each conversation document
+                for conversation in conversations_list:
+                    conversation_id = conversation.get('id')
+                    if conversation_id:
+                        doc_id = f"{user_id}_{conversation_id}"
+                        conversation_doc_ref = db.collection(FirestoreService.CONVERSATIONS_COLLECTION).document(doc_id)
+                        conversation_doc_ref.delete()
+                        deleted_items["conversations"] += 1
+
+                # Delete user conversations index
+                user_conversations_ref.delete()
+                deleted_items["user_conversations_index"] = True
+
+            # Delete all saved protocols for the user
+            user_protocols_ref = db.collection(FirestoreService.USER_PROTOCOLS_INDEX_COLLECTION).document(user_id)
+            user_protocols_doc = user_protocols_ref.get()
+
+            if user_protocols_doc.exists:
+                protocols_list = user_protocols_doc.to_dict().get('protocols', [])
+
+                # Delete each saved protocol document
+                for protocol in protocols_list:
+                    protocol_id = protocol.get('protocol_id')
+                    if protocol_id:
+                        doc_id = f"{user_id}_{protocol_id}"
+                        protocol_doc_ref = db.collection(FirestoreService.SAVED_PROTOCOLS_COLLECTION).document(doc_id)
+                        protocol_doc_ref.delete()
+                        deleted_items["saved_protocols"] += 1
+
+                # Delete user protocols index
+                user_protocols_ref.delete()
+                deleted_items["user_protocols_index"] = True
+
+            return {
+                "success": True,
+                "message": "All user data deleted successfully",
+                "deleted_items": deleted_items
+            }
+
+        except Exception as e:
+            return {"success": False, "error": "delete_user_data_error", "details": str(e)}
