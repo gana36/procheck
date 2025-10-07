@@ -357,3 +357,32 @@ export async function protocolConversationChat(request: ProtocolConversationRequ
   }
   return res.json();
 }
+
+// User management
+export async function deleteUserData(userId: string): Promise<{ success: boolean; message: string; deleted_items: any }> {
+  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    let errorMessage = `Failed to delete user data: ${response.status} ${response.statusText}`;
+    try {
+      const errorData = await response.json();
+      if (typeof errorData === 'string') {
+        errorMessage = errorData;
+      } else if (errorData.detail) {
+        errorMessage = errorData.detail;
+      } else if (errorData.message) {
+        errorMessage = errorData.message;
+      } else {
+        errorMessage = JSON.stringify(errorData);
+      }
+    } catch (e) {
+      // If JSON parsing fails, use the status text
+      errorMessage = `Failed to delete user data: ${response.status} ${response.statusText}`;
+    }
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+}

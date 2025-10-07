@@ -9,17 +9,19 @@ import {
   Clock,
   MapPin,
   Calendar,
-  Settings,
   User,
   Plus,
   Loader2,
   MoreVertical,
   Trash2,
-  Edit2
+  Edit2,
+  LogOut,
+  UserX
 } from 'lucide-react';
 // import { mockSavedProtocols } from '@/data/mockData';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserConversations, getSavedProtocols, getSavedProtocol, deleteConversation, updateConversationTitle, deleteSavedProtocol, updateSavedProtocolTitle, ConversationListItem, SavedProtocol as ApiSavedProtocol } from '@/lib/api';
+import { getUserConversations, getSavedProtocols, getSavedProtocol, deleteConversation, updateConversationTitle, deleteSavedProtocol, updateSavedProtocolTitle, deleteUserData, ConversationListItem, SavedProtocol as ApiSavedProtocol } from '@/lib/api';
+import { updateProfile, deleteUser } from 'firebase/auth';
 
 interface SidebarProps {
   onNewSearch: () => void;
@@ -27,6 +29,8 @@ interface SidebarProps {
   onSavedProtocol: (protocolId: string, protocolData: any) => void;
   onConversationDeleted?: (conversationId: string) => void; // Notify parent when conversation is deleted
   savedProtocolsRefreshTrigger?: number;
+  onShowLogoutModal?: () => void;
+  onShowDeleteModal?: () => void;
 }
 
 // Global cache to persist data completely outside React
@@ -37,8 +41,8 @@ const globalDataCache = {
   isLoading: false
 };
 
-const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, savedProtocolsRefreshTrigger }: SidebarProps) {
-  const { currentUser } = useAuth();
+const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, savedProtocolsRefreshTrigger, onShowLogoutModal, onShowDeleteModal }: SidebarProps) {
+  const { currentUser, logout } = useAuth();
   
   // CRITICAL: Extract userId directly - this is stable because we'll control when effects run
   const userId = currentUser?.uid || null;
@@ -72,6 +76,25 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   const [openProtocolMenuId, setOpenProtocolMenuId] = useState<string | null>(null);
   const [editingProtocolId, setEditingProtocolId] = useState<string | null>(null);
   const [editProtocolTitle, setEditProtocolTitle] = useState('');
+
+  // Profile modal state
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [newDisplayName, setNewDisplayName] = useState('');
+
+  // Get Google profile image URL
+  const getProfileImageUrl = () => {
+    if (!currentUser) return null;
+
+    // First try to get from provider data (more reliable for Google Auth)
+    const googleProvider = currentUser.providerData.find(provider => provider.providerId === 'google.com');
+    if (googleProvider?.photoURL) {
+      return googleProvider.photoURL;
+    }
+
+    // Fallback to user photoURL
+    return currentUser.photoURL;
+  };
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -400,6 +423,46 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     }
   };
 
+  // Profile action handlers
+  const handleStartProfileRename = () => {
+    setIsRenaming(true);
+    setNewDisplayName(currentUser?.displayName || '');
+  };
+
+  const handleSaveProfileRename = async () => {
+    if (!currentUser || !newDisplayName.trim()) {
+      setIsRenaming(false);
+      return;
+    }
+
+    try {
+      await updateProfile(currentUser, { displayName: newDisplayName.trim() });
+      setIsRenaming(false);
+      alert('Name updated successfully!');
+    } catch (error) {
+      console.error('Failed to update name:', error);
+      alert('Failed to update name. Please try again.');
+    }
+  };
+
+  const handleCancelProfileRename = () => {
+    setIsRenaming(false);
+    setNewDisplayName('');
+  };
+
+  const handleLogout = () => {
+    if (onShowLogoutModal) {
+      onShowLogoutModal();
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    if (onShowDeleteModal) {
+      onShowDeleteModal();
+    }
+  };
+
+
   return (
     <div className="w-80 bg-white border-r border-slate-200 h-full flex flex-col overflow-hidden">
       {/* Header */}
@@ -692,17 +755,161 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
       {/* Footer */}
       <div className="p-6 border-t border-slate-200 flex-shrink-0">
-        <div className="space-y-2">
-          <Button variant="ghost" className="w-full justify-start">
-            <User className="h-4 w-4 mr-2" />
-            Profile
-          </Button>
-          <Button variant="ghost" className="w-full justify-start">
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          className="w-full justify-start"
+          onClick={() => setIsProfileOpen(true)}
+        >
+          <div className="h-8 w-8 bg-teal-100 rounded-full flex items-center justify-center mr-3">
+            {getProfileImageUrl() ? (
+              <img
+                src={getProfileImageUrl()!}
+                alt="Profile"
+                className="h-8 w-8 rounded-full object-cover"
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  // Hide image if it fails to load
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            ) : (
+              <User className="h-4 w-4 text-teal-600" />
+            )}
+          </div>
+          <div className="flex flex-col items-start">
+            <span className="text-sm font-medium text-slate-900">
+              {currentUser?.displayName || currentUser?.email || 'User'}
+            </span>
+            <span className="text-xs text-slate-500">View profile</span>
+          </div>
+        </Button>
       </div>
+
+      {/* Profile Modal */}
+      {isProfileOpen && (
+        <div className="absolute inset-0 bg-white z-50 flex flex-col">
+          {/* Profile Header */}
+          <div className="p-6 border-b border-slate-200">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-slate-900">Profile</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsProfileOpen(false)}
+                className="h-8 w-8 p-0"
+              >
+                ×
+              </Button>
+            </div>
+
+            {/* User Info */}
+            <div className="flex items-center space-x-4">
+              <div className="h-16 w-16 bg-teal-100 rounded-full flex items-center justify-center">
+                {getProfileImageUrl() ? (
+                  <img
+                    src={getProfileImageUrl()!}
+                    alt="Profile"
+                    className="h-16 w-16 rounded-full object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      // Hide image if it fails to load
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <User className="h-8 w-8 text-teal-600" />
+                )}
+              </div>
+              <div className="flex-1">
+                {isRenaming ? (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={newDisplayName}
+                      onChange={(e) => setNewDisplayName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveProfileRename();
+                        if (e.key === 'Escape') handleCancelProfileRename();
+                      }}
+                      className="text-lg font-semibold text-slate-900 border border-teal-500 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-teal-500"
+                      placeholder="Enter your name"
+                      autoFocus
+                    />
+                    <div className="flex space-x-2">
+                      <Button
+                        size="sm"
+                        onClick={handleSaveProfileRename}
+                        className="h-6 text-xs bg-teal-600 hover:bg-teal-700"
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCancelProfileRename}
+                        className="h-6 text-xs"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <h3 className="text-lg font-semibold text-slate-900">
+                      {currentUser?.displayName || 'User'}
+                    </h3>
+                    <p className="text-sm text-slate-600">{currentUser?.email}</p>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Profile Actions */}
+          <div className="flex-1 p-6">
+            <div className="space-y-3">
+              <Button
+                variant="ghost"
+                className="w-full justify-start text-left"
+                onClick={handleStartProfileRename}
+                disabled={isRenaming}
+              >
+                <Edit2 className="h-4 w-4 mr-3" />
+                <div>
+                  <div className="font-medium">Rename Account</div>
+                  <div className="text-xs text-slate-500">Change your display name</div>
+                </div>
+              </Button>
+
+              <Button
+                variant="ghost"
+                className="w-full justify-start text-left hover:bg-red-50 hover:text-red-600"
+                onClick={handleLogout}
+                disabled={isRenaming}
+              >
+                <LogOut className="h-4 w-4 mr-3" />
+                <div>
+                  <div className="font-medium">Log Out</div>
+                  <div className="text-xs text-slate-500">Sign out of your account</div>
+                </div>
+              </Button>
+
+              <Button
+                variant="ghost"
+                className="w-full justify-start text-left hover:bg-red-50 hover:text-red-600"
+                onClick={handleDeleteAccount}
+                disabled={isRenaming}
+              >
+                <UserX className="h-4 w-4 mr-3" />
+                <div>
+                  <div className="font-medium">Delete Account</div>
+                  <div className="text-xs text-slate-500">Permanently delete your account</div>
+                </div>
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

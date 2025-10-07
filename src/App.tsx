@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, LogOut, UserX } from 'lucide-react';
 import LandingScreen from '@/components/LandingScreen';
 import Sidebar from '@/components/Sidebar';
 import ChatInput from '@/components/ChatInput';
@@ -13,17 +13,20 @@ import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { Message, ProtocolData, ProtocolStep, Citation, SearchMetadata } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocol, ConversationMessage, protocolConversationChat } from '@/lib/api';
+import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocol, ConversationMessage, protocolConversationChat, deleteUserData } from '@/lib/api';
+import { deleteUser } from 'firebase/auth';
 
 function App() {
-  const { currentUser } = useAuth();
+  const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   // Extract stable userId to prevent callback recreation
   const userId = currentUser?.uid || null;
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentConversationId, setCurrentConversationId] = useState<string>(() =>
@@ -731,6 +734,50 @@ CITATION REQUIREMENT:
     navigate(from, { replace: true });
   };
 
+  // Modal handlers
+  const handleShowLogoutModal = () => {
+    setShowLogoutModal(true);
+  };
+
+  const handleShowDeleteModal = () => {
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmLogout = async () => {
+    try {
+      await logout();
+      setShowLogoutModal(false);
+    } catch (error) {
+      console.error('Failed to log out:', error);
+      alert('Failed to log out. Please try again.');
+    }
+  };
+
+  const handleConfirmDeleteAccount = async () => {
+    if (!currentUser) return;
+
+    try {
+      // First delete user data from backend
+      console.log('Deleting user data from backend...');
+      const backendResult = await deleteUserData(currentUser.uid);
+      console.log('Backend deletion result:', backendResult);
+
+      // Then delete Firebase Auth user account
+      console.log('Deleting Firebase Auth account...');
+      await deleteUser(currentUser);
+
+      setShowDeleteModal(false);
+      console.log('Account deleted successfully');
+    } catch (error: any) {
+      console.error('Failed to delete account:', error);
+      if (error.code === 'auth/requires-recent-login') {
+        alert('For security reasons, please log out and log back in before deleting your account.');
+      } else {
+        alert(`Failed to delete account: ${error.message || 'Unknown error'}. Please try again.`);
+      }
+    }
+  };
+
   const Dashboard = () => (
     <div className="h-screen flex bg-slate-50">
       {/* Overlay - only show when sidebar is open on mobile */}
@@ -751,6 +798,8 @@ CITATION REQUIREMENT:
           onSavedProtocol={handleSavedProtocol}
           onConversationDeleted={handleConversationDeleted}
           savedProtocolsRefreshTrigger={savedProtocolsRefreshTrigger}
+          onShowLogoutModal={handleShowLogoutModal}
+          onShowDeleteModal={handleShowDeleteModal}
         />
       </div>
       <div className="flex-1 flex flex-col h-full">
@@ -863,12 +912,92 @@ CITATION REQUIREMENT:
             </button>
           )}
         </div>
-        <ChatInput 
+        <ChatInput
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
           hasMessages={messages.length > 0}
         />
       </div>
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="h-10 w-10 bg-orange-100 rounded-full flex items-center justify-center">
+                <LogOut className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Log Out</h3>
+                <p className="text-sm text-slate-600">Are you sure you want to log out?</p>
+              </div>
+            </div>
+            <div className="flex space-x-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setShowLogoutModal(false)}
+                className="px-4 py-2"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmLogout}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white"
+              >
+                Log Out
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Account Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="h-10 w-10 bg-red-100 rounded-full flex items-center justify-center">
+                <UserX className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Delete Account</h3>
+                <p className="text-sm text-slate-600">This action cannot be undone. All your data will be permanently deleted.</p>
+              </div>
+            </div>
+            <div className="mb-4">
+              <p className="text-sm text-slate-700 mb-2">Type <span className="font-semibold">DELETE</span> to confirm:</p>
+              <input
+                type="text"
+                placeholder="Type DELETE here"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                id="deleteConfirmInput"
+              />
+            </div>
+            <div className="flex space-x-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  const input = document.getElementById('deleteConfirmInput') as HTMLInputElement;
+                  if (input?.value === 'DELETE') {
+                    handleConfirmDeleteAccount();
+                  } else {
+                    alert('Please type DELETE to confirm account deletion.');
+                  }
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white"
+              >
+                Delete Account
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 

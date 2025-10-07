@@ -466,6 +466,21 @@ async def update_saved_protocol_title_endpoint(user_id: str, protocol_id: str, p
 
     return result
 
+# User management endpoints
+@app.delete("/users/{user_id}")
+async def delete_user_data(user_id: str):
+    """Delete all user data from the backend"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+
+    result = FirestoreService.delete_user_data(user_id)
+
+    if not result.get("success"):
+        status_code = 502 if "firestore" in result.get("error", "") else 500
+        raise HTTPException(status_code=status_code, detail=result)
+
+    return result
+
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
