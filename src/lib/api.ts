@@ -19,6 +19,32 @@ export type ChatResponse = {
   updated_protocol?: any;
 };
 
+export type ProtocolConversationRequest = {
+  message: string;
+  concept_title: string;
+  protocol_json: any;
+  citations_list: string[];
+  filters_json?: any;
+  conversation_history?: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+  }>;
+};
+
+export type FollowUpQuestion = {
+  text: string;
+  category?: 'dosage' | 'symptoms' | 'complications' | 'timing' | 'safety' | 'general';
+};
+
+export type ProtocolConversationResponse = {
+  answer: string;
+  uncertainty_note?: string;
+  sources: string[];
+  used_new_sources: boolean;
+  follow_up_questions: FollowUpQuestion[];
+  updated_protocol?: any;
+};
+
 export type BackendSearchFilters = {
   region?: string[];
   year?: number[];
@@ -314,6 +340,20 @@ export async function stepThreadChat(request: StepThreadRequest): Promise<ChatRe
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Step thread chat failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+// Protocol conversation chat
+export async function protocolConversationChat(request: ProtocolConversationRequest): Promise<ProtocolConversationResponse> {
+  const res = await fetch(`${API_BASE}/protocols/conversation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Protocol conversation failed: ${res.status} ${text}`);
   }
   return res.json();
 }

@@ -12,9 +12,10 @@ import { sampleQueries } from '@/data/mockData';
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
   isLoading: boolean;
+  hasMessages?: boolean; // Whether there are existing messages in the conversation
 }
 
-export default function ChatInput({ onSendMessage, isLoading }: ChatInputProps) {
+export default function ChatInput({ onSendMessage, isLoading, hasMessages = false }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [showSampleQueries, setShowSampleQueries] = useState(true);
 
@@ -34,8 +35,8 @@ export default function ChatInput({ onSendMessage, isLoading }: ChatInputProps) 
 
   return (
     <div className="bg-white border-t border-slate-200 p-4">
-      {/* Sample Queries Bar */}
-      {showSampleQueries && message === '' && (
+      {/* Sample Queries Bar - Only show for new conversations */}
+      {!hasMessages && showSampleQueries && message === '' && (
         <div className="mb-4">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm text-slate-600">Try these sample queries:</p>
@@ -100,8 +101,8 @@ export default function ChatInput({ onSendMessage, isLoading }: ChatInputProps) 
         </div>
       </form>
 
-      {/* Show sample queries if input is empty */}
-      {message === '' && !showSampleQueries && (
+      {/* Show sample queries if input is empty and no messages exist */}
+      {!hasMessages && message === '' && !showSampleQueries && (
         <div className="mt-4">
           <Button
             variant="ghost"

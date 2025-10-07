@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, memo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -156,10 +156,28 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
   const activeStepThread = globalState.activeStepThread;
 
   // Check if protocol is already saved when component mounts
+  // Use ref to track if we've already checked to prevent duplicate calls
+  const hasCheckedRef = useRef(false);
+  const lastProtocolIdRef = useRef<string | null>(null);
+  const lastUserIdRef = useRef<string | null>(null);
+  
   useEffect(() => {
+    const userId = currentUser?.uid || null;
+    
     // If we already know it's saved, don't make an API call
     if (isAlreadySaved) {
       setIsSaved(true);
+      hasCheckedRef.current = true;
+      lastProtocolIdRef.current = protocolId;
+      lastUserIdRef.current = userId;
+      return;
+    }
+
+    // Skip if we've already checked this exact protocol for this user
+    if (hasCheckedRef.current && 
+        lastProtocolIdRef.current === protocolId && 
+        lastUserIdRef.current === userId) {
+      console.log('⏭️ Protocol save status already checked, skipping');
       return;
     }
 
@@ -167,9 +185,13 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
       if (!currentUser) return;
 
       try {
+        console.log('🔄 [API CALL] Checking if protocol is saved...');
         const result = await isProtocolSaved(currentUser.uid, protocolId);
         if (result.success) {
           setIsSaved(result.is_saved);
+          hasCheckedRef.current = true;
+          lastProtocolIdRef.current = protocolId;
+          lastUserIdRef.current = userId;
         }
       } catch (error) {
         console.error('Failed to check if protocol is saved:', error);

@@ -16,6 +16,8 @@ from models.protocol_models import (
     ProtocolGenerateResponse,
     StepThreadRequest,
     ChatResponse,
+    ProtocolConversationRequest,
+    ProtocolConversationResponse,
 )
 from models.conversation_models import (
     ConversationSaveRequest,
@@ -33,7 +35,7 @@ from services.elasticsearch_service import (
     search_with_filters,
     hybrid_search,
 )
-from services.gemini_service import summarize_checklist, step_thread_chat
+from services.gemini_service import summarize_checklist, step_thread_chat, protocol_conversation_chat
 from services.firestore_service import FirestoreService
 from services.embedding_service import generate_embedding, enhance_query_with_llm
 
@@ -242,6 +244,40 @@ async def step_thread(payload: StepThreadRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail={"error": "thread_error", "details": str(e)})
+
+# Protocol conversation chat endpoint
+@app.post("/protocols/conversation", response_model=ProtocolConversationResponse)
+async def protocol_conversation(payload: ProtocolConversationRequest):
+    """Protocol-level conversational chat for follow-up questions"""
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY is not configured.")
+    
+    try:
+        # Convert pydantic models to dicts for service layer
+        history = [{"role": msg.role, "content": msg.content} for msg in payload.conversation_history]
+        
+        result = protocol_conversation_chat(
+            message=payload.message,
+            concept_title=payload.concept_title,
+            protocol_json=payload.protocol_json,
+            citations_list=payload.citations_list,
+            filters_json=payload.filters_json,
+            conversation_history=history
+        )
+        
+        return ProtocolConversationResponse(
+            answer=result.get("answer", ""),
+            uncertainty_note=result.get("uncertainty_note"),
+            sources=result.get("sources", []),
+            used_new_sources=result.get("used_new_sources", False),
+            follow_up_questions=[
+                {"text": q["text"], "category": q.get("category")} 
+                for q in result.get("follow_up_questions", [])
+            ],
+            updated_protocol=result.get("updated_protocol")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail={"error": "conversation_error", "details": str(e)})
 
 # Conversation management endpoints
 @app.post("/conversations/save", response_model=ConversationResponse)

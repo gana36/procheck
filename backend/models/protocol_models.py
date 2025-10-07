@@ -60,3 +60,27 @@ class ChatResponse(BaseModel):
     """Response for step-level chat"""
     message: str
     updated_protocol: Optional[Dict[str, Any]] = None  # If protocol was modified
+
+# Protocol-level conversation models
+class ProtocolConversationRequest(BaseModel):
+    """Request for protocol-level conversation chat"""
+    message: str
+    concept_title: str  # The main protocol/concept being discussed
+    protocol_json: Dict[str, Any]  # Current protocol data
+    citations_list: List[str]  # Available citations
+    filters_json: Optional[Dict[str, Any]] = None  # User filters if any
+    conversation_history: Optional[List[ChatMessage]] = []  # Chat history
+
+class FollowUpQuestion(BaseModel):
+    """Individual follow-up question suggestion"""
+    text: str
+    category: Optional[str] = None  # e.g., "dosage", "symptoms", "complications"
+
+class ProtocolConversationResponse(BaseModel):
+    """Response for protocol-level conversation"""
+    answer: str
+    uncertainty_note: Optional[str] = None
+    sources: List[str] = []  # List of sources used
+    used_new_sources: bool = False  # Whether new retrieval was needed
+    follow_up_questions: List[FollowUpQuestion] = []
+    updated_protocol: Optional[Dict[str, Any]] = None

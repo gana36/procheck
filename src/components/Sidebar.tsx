@@ -1,4 +1,4 @@
-import { useState, useEffect, memo, useRef } from 'react';
+import { useState, useEffect, memo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -29,26 +29,39 @@ interface SidebarProps {
   savedProtocolsRefreshTrigger?: number;
 }
 
+// Global cache to persist data completely outside React
+const globalDataCache = {
+  userId: null as string | null,
+  conversations: [] as ConversationListItem[],
+  protocols: [] as ApiSavedProtocol[],
+  isLoading: false
+};
+
 const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, savedProtocolsRefreshTrigger }: SidebarProps) {
-  console.log('🔄 Sidebar component rendering');
   const { currentUser } = useAuth();
-  const [recentConversations, setRecentConversations] = useState<ConversationListItem[]>([]);
+  
+  // CRITICAL: Extract userId directly - this is stable because we'll control when effects run
+  const userId = currentUser?.uid || null;
+  
+  // Initialize state from global cache
+  const [recentConversations, setRecentConversations] = useState<ConversationListItem[]>(() => 
+    globalDataCache.userId === userId ? globalDataCache.conversations : []
+  );
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
-  const [savedProtocols, setSavedProtocols] = useState<ApiSavedProtocol[]>([]);
+  
+  const [savedProtocols, setSavedProtocols] = useState<ApiSavedProtocol[]>(() => 
+    globalDataCache.userId === userId ? globalDataCache.protocols : []
+  );
   const [isLoadingSaved, setIsLoadingSaved] = useState(false);
   const [savedError, setSavedError] = useState<string | null>(null);
 
-  // Track if data has been loaded to prevent unnecessary refetches
-  const [conversationsLoaded, setConversationsLoaded] = useState(false);
-  const [savedProtocolsLoaded, setSavedProtocolsLoaded] = useState(false);
-  
-  // Use refs to track if data has been loaded to prevent re-loading on re-renders
+  // Track if data has been loaded to prevent redundant API calls
+  // Using refs to avoid recreating callbacks when these change
   const conversationsLoadedRef = useRef(false);
   const savedProtocolsLoadedRef = useRef(false);
-  
-  // Track the last refresh trigger values to prevent unnecessary reloads
-  const [lastSavedProtocolsTrigger, setLastSavedProtocolsTrigger] = useState(0);
+  const isLoadingConversationsRef = useRef(false);
+  const isLoadingSavedRef = useRef(false);
 
   // Track which conversation's menu is open and editing state
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -70,100 +83,158 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     return () => document.removeEventListener('click', handleClickOutside);
   }, [openMenuId, openProtocolMenuId]);
 
-  // Load conversations only once when user logs in
-  useEffect(() => {
-    console.log('🔍 Conversations useEffect:', { 
-      currentUser: !!currentUser, 
-      conversationsLoadedRef: conversationsLoadedRef.current 
-    });
-    
-    if (currentUser && !conversationsLoadedRef.current) {
-      console.log('📞 Loading conversations...');
-      conversationsLoadedRef.current = true;
-      loadConversations();
-    } else {
-      console.log('🚫 Skipping conversations load - already loaded');
-    }
-    
-    if (!currentUser) {
-      console.log('🔄 Resetting conversations - user logged out');
-      setRecentConversations([]);
-      setConversationsLoaded(false);
-      conversationsLoadedRef.current = false;
-    }
-  }, [currentUser]);
+  const isMountedRef = useRef(true);
 
-  // Load saved protocols only once when user logs in, or when explicitly refreshed
+  // Track component mount status
   useEffect(() => {
-    const loadSaved = async () => {
-      if (!currentUser) return;
-
-      setIsLoadingSaved(true);
-      setSavedError(null);
-      try {
-        const res = await getSavedProtocols(currentUser.uid, 50);
-        if (res.success) {
-          setSavedProtocols(res.protocols || []);
-          setSavedProtocolsLoaded(true);
-        } else {
-          setSavedError(res.error || 'Failed to load saved checklists');
-        }
-      } catch (err: any) {
-        setSavedError(err.message || 'Failed to load saved checklists');
-      } finally {
-        setIsLoadingSaved(false);
-      }
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
     };
+  }, []);
 
-    console.log('🔍 Saved protocols useEffect:', { 
-      currentUser: !!currentUser, 
-      savedProtocolsLoadedRef: savedProtocolsLoadedRef.current,
-      savedProtocolsRefreshTrigger,
-      lastSavedProtocolsTrigger
-    });
+  // Wrap in useCallback with NO dependencies - use userId from closure
+  const loadConversations = useCallback(async (force: boolean = false) => {
     
-    if (currentUser && !savedProtocolsLoadedRef.current) {
-      console.log('📞 Loading saved protocols...');
-      savedProtocolsLoadedRef.current = true; // Set ref BEFORE loading to prevent duplicates
-      loadSaved();
-    } else if (currentUser && savedProtocolsRefreshTrigger && savedProtocolsRefreshTrigger > lastSavedProtocolsTrigger) {
-      console.log('📞 Refresh trigger changed, reloading saved protocols...');
-      setLastSavedProtocolsTrigger(savedProtocolsRefreshTrigger);
-      loadSaved();
-    } else {
-      console.log('🚫 Skipping saved protocols load - already loaded');
+    // Skip if already loaded and not forced
+    if (!force && conversationsLoadedRef.current) {
+      console.log('⏭️ Conversations already loaded, skipping API call');
+      return;
     }
-    
-    if (!currentUser) {
-      console.log('🔄 Resetting saved protocols - user logged out');
-      setSavedProtocols([]);
-      setSavedProtocolsLoaded(false);
-      setLastSavedProtocolsTrigger(0);
-      savedProtocolsLoadedRef.current = false;
+
+    if (!userId || isLoadingConversationsRef.current) {
+      console.log('⏭️ Skipping conversations load: no user or already loading');
+      return;
     }
-  }, [currentUser, savedProtocolsRefreshTrigger]);
 
-  const loadConversations = async () => {
-    if (!currentUser) return;
-
+    console.log('🔄 [API CALL] Starting getUserConversations...');
+    isLoadingConversationsRef.current = true;
     setIsLoadingConversations(true);
     setConversationsError(null);
 
     try {
-      const response = await getUserConversations(currentUser.uid, 10);
+      const response = await getUserConversations(userId, 10);
+      console.log('🔄 [API CALL] getUserConversations completed');
+      
+      // Only update state if component is still mounted
+      if (!isMountedRef.current) return;
+      
       if (response.success) {
         setRecentConversations(response.conversations);
-        setConversationsLoaded(true);
+        globalDataCache.conversations = response.conversations; // Save to global cache
+        conversationsLoadedRef.current = true;
+        console.log('✅ Conversations loaded successfully');
       } else {
         setConversationsError(response.error || 'Failed to load conversations');
       }
     } catch (error: any) {
-      console.error('Error loading conversations:', error);
-      setConversationsError(error.message || 'Failed to load conversations');
+      console.error('❌ Error loading conversations:', error);
+      if (isMountedRef.current) {
+        setConversationsError(error.message || 'Failed to load conversations');
+      }
     } finally {
-      setIsLoadingConversations(false);
+      isLoadingConversationsRef.current = false;
+      if (isMountedRef.current) {
+        setIsLoadingConversations(false);
+      }
     }
-  };
+  }, [userId]);
+
+  const loadSavedProtocols = useCallback(async (force: boolean = false) => {
+    // Skip if already loaded and not forced
+    if (!force && savedProtocolsLoadedRef.current) {
+      console.log('⏭️ Saved protocols already loaded, skipping API call');
+      return;
+    }
+
+    if (!userId || isLoadingSavedRef.current) {
+      console.log('⏭️ Skipping protocols load: no user or already loading');
+      return;
+    }
+
+    console.log('🔄 [API CALL] Starting getSavedProtocols...');
+    isLoadingSavedRef.current = true;
+    setIsLoadingSaved(true);
+    setSavedError(null);
+
+    try {
+      const res = await getSavedProtocols(userId, 50);
+      console.log('🔄 [API CALL] getSavedProtocols completed');
+      
+      // Only update state if component is still mounted
+      if (!isMountedRef.current) return;
+      
+      if (res.success) {
+        setSavedProtocols(res.protocols || []);
+        globalDataCache.protocols = res.protocols || []; // Save to global cache
+        savedProtocolsLoadedRef.current = true;
+        console.log('✅ Saved protocols loaded successfully');
+      } else {
+        setSavedError(res.error || 'Failed to load saved checklists');
+      }
+    } catch (err: any) {
+      console.error('❌ Error loading saved protocols:', err);
+      if (isMountedRef.current) {
+        setSavedError(err.message || 'Failed to load saved checklists');
+      }
+    } finally {
+      isLoadingSavedRef.current = false;
+      if (isMountedRef.current) {
+        setIsLoadingSaved(false);
+      }
+    }
+  }, [userId]);
+
+  // Load data when user logs in - simple and bulletproof
+  useEffect(() => {
+    // Load if: userId changed OR we have no data yet
+    const hasData = recentConversations.length > 0 || savedProtocols.length > 0;
+    const userChanged = globalDataCache.userId !== userId;
+    const shouldLoad = userChanged || (userId && !hasData);
+    
+    if (!shouldLoad || globalDataCache.isLoading) {
+      return;
+    }
+    
+    // Update global cache
+    globalDataCache.userId = userId;
+    
+    if (userId) {
+      globalDataCache.isLoading = true;
+      
+      Promise.all([
+        loadConversations(true),
+        loadSavedProtocols(true)
+      ]).finally(() => {
+        globalDataCache.isLoading = false;
+      });
+    } else {
+      // Clear on logout
+      setRecentConversations([]);
+      setSavedProtocols([]);
+      globalDataCache.conversations = [];
+      globalDataCache.protocols = [];
+      conversationsLoadedRef.current = false;
+      savedProtocolsLoadedRef.current = false;
+    }
+  }, [userId, loadConversations, loadSavedProtocols, recentConversations.length, savedProtocols.length]);
+
+  // Handle refresh trigger - only when trigger value changes
+  const lastRefreshTriggerRef = useRef(0);
+  useEffect(() => {
+    const triggerValue = savedProtocolsRefreshTrigger || 0;
+    // Refresh trigger effect
+    
+    // Only reload if trigger actually changed and is greater than 0
+    if (triggerValue > 0 && triggerValue !== lastRefreshTriggerRef.current) {
+      console.log('🔄 Refresh trigger detected, reloading saved protocols...');
+      lastRefreshTriggerRef.current = triggerValue;
+      // Force reload when explicitly triggered
+      loadSavedProtocols(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedProtocolsRefreshTrigger]); // Only depend on the trigger value
+
 
   const formatTimestamp = (timestamp: string) => {
     try {
@@ -193,9 +264,10 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
     try {
       await deleteConversation(currentUser.uid, conversationId);
-      // Remove from local state
+      // Remove from local state - no need to reload from server
       setRecentConversations(prev => prev.filter(c => c.id !== conversationId));
       setOpenMenuId(null);
+      console.log('✅ Conversation deleted locally, no API reload needed');
 
       // Notify parent to clear from cache
       if (onConversationDeleted) {
@@ -224,11 +296,12 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
     try {
       await updateConversationTitle(currentUser.uid, conversationId, editTitle.trim());
-      // Update local state
+      // Update local state - no need to reload from server
       setRecentConversations(prev =>
         prev.map(c => c.id === conversationId ? { ...c, title: editTitle.trim() } : c)
       );
       setEditingId(null);
+      console.log('✅ Conversation renamed locally, no API reload needed');
     } catch (error) {
       console.error('Failed to rename conversation:', error);
       alert('Failed to rename conversation');
@@ -250,9 +323,10 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
     try {
       await deleteSavedProtocol(currentUser.uid, protocolId);
-      // Remove from local state
+      // Remove from local state - no need to reload from server
       setSavedProtocols(prev => prev.filter(p => p.id !== protocolId));
       setOpenProtocolMenuId(null);
+      console.log('✅ Protocol deleted locally, no API reload needed');
     } catch (error) {
       console.error('Failed to delete protocol:', error);
       alert('Failed to delete protocol');
@@ -276,11 +350,12 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
     try {
       await updateSavedProtocolTitle(currentUser.uid, protocolId, editProtocolTitle.trim());
-      // Update local state
+      // Update local state - no need to reload from server
       setSavedProtocols(prev =>
         prev.map(p => p.id === protocolId ? { ...p, title: editProtocolTitle.trim() } : p)
       );
       setEditingProtocolId(null);
+      console.log('✅ Protocol renamed locally, no API reload needed');
     } catch (error) {
       console.error('Failed to rename protocol:', error);
       alert('Failed to rename protocol');
@@ -294,25 +369,32 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   };
 
   const handleSavedProtocolClick = async (protocolId: string) => {
+    console.log('🎯 [USER ACTION] Clicking saved protocol:', protocolId);
     if (!currentUser) return;
 
     try {
+      // Only call getSavedProtocol API - this is necessary to get full protocol data
+      console.log('🔄 [API CALL] Starting getSavedProtocol (required for protocol data)...');
       const response = await getSavedProtocol(currentUser.uid, protocolId);
+      console.log('🔄 [API CALL] getSavedProtocol completed');
       if (response.success && response.protocol) {
+        console.log('✅ Protocol data fetched, calling onSavedProtocol');
         onSavedProtocol(protocolId, response.protocol.protocol_data);
       } else {
-        console.error('Failed to load saved protocol:', response.error);
+        console.error('❌ Failed to load saved protocol:', response.error);
         // Fallback: try to find in the current list
         const protocol = savedProtocols.find(p => p.id === protocolId);
         if (protocol) {
+          console.log('🔄 Using fallback protocol data');
           onSavedProtocol(protocolId, null);
         }
       }
     } catch (error) {
-      console.error('Error loading saved protocol:', error);
+      console.error('❌ Error loading saved protocol:', error);
       // Fallback: try to find in the current list
       const protocol = savedProtocols.find(p => p.id === protocolId);
       if (protocol) {
+        console.log('🔄 Using fallback protocol data (error case)');
         onSavedProtocol(protocolId, null);
       }
     }
