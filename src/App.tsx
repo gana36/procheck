@@ -343,6 +343,23 @@ function App() {
     handleSendMessage(question);
   };
 
+  // Helper function to get current protocol being discussed
+  const getCurrentProtocol = (): { title: string; isInConversation: boolean } | null => {
+    // Find the most recent assistant message with protocol data (within last 10 messages)
+    const recentMessages = messages.slice(-10);
+    
+    for (let i = recentMessages.length - 1; i >= 0; i--) {
+      const msg = recentMessages[i];
+      if (msg.type === 'assistant' && msg.protocolData) {
+        return {
+          title: msg.protocolData.title,
+          isInConversation: true
+        };
+      }
+    }
+    return null;
+  };
+
   // Helper function to detect if this is a follow-up question
   const isFollowUpQuestion = (content: string, messages: Message[]): { isFollowUp: boolean; lastProtocol?: ProtocolData } => {
     // Find the most recent assistant message with protocol data
@@ -813,18 +830,44 @@ CITATION REQUIREMENT:
             >
               {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
-            <h1 className="text-lg font-semibold text-slate-900">ProCheck Protocol Assistant</h1>
-            <Badge className="bg-slate-700 text-white border-0 hidden sm:flex">
-              Hybrid Search
-            </Badge>
+            {(() => {
+              const currentProtocol = getCurrentProtocol();
+              return currentProtocol ? (
+                <>
+                  <h1 className="text-lg font-semibold text-slate-900">{currentProtocol.title}</h1>
+                  <Badge className="bg-teal-600 text-white border-0 hidden sm:flex">
+                    Discussion Mode
+                  </Badge>
+                </>
+              ) : (
+                <>
+                  <h1 className="text-lg font-semibold text-slate-900">ProCheck Protocol Assistant</h1>
+                  <Badge className="bg-slate-700 text-white border-0 hidden sm:flex">
+                    Hybrid Search
+                  </Badge>
+                </>
+              );
+            })()}
           </div>
-          <Button
-            variant="outline"
-            onClick={() => navigate('/')}
-            className="text-slate-600"
-          >
-            Back to Home
-          </Button>
+          <div className="flex items-center space-x-2">
+            {getCurrentProtocol() && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleNewSearch}
+                className="text-teal-700 border-teal-300 hover:bg-teal-100"
+              >
+                New Search
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => navigate('/')}
+              className="text-slate-600"
+            >
+              Back to Home
+            </Button>
+          </div>
         </header>
         <div 
           ref={chatContainerRef}
@@ -916,6 +959,8 @@ CITATION REQUIREMENT:
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
           hasMessages={messages.length > 0}
+          isInConversation={!!getCurrentProtocol()}
+          currentProtocolTitle={getCurrentProtocol()?.title}
         />
       </div>
 

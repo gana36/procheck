@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
@@ -13,11 +13,18 @@ interface ChatInputProps {
   onSendMessage: (message: string) => void;
   isLoading: boolean;
   hasMessages?: boolean; // Whether there are existing messages in the conversation
+  isInConversation?: boolean; // Whether user is in conversation mode with a protocol
+  currentProtocolTitle?: string; // Title of current protocol being discussed
 }
 
-export default function ChatInput({ onSendMessage, isLoading, hasMessages = false }: ChatInputProps) {
+export default function ChatInput({ onSendMessage, isLoading, hasMessages = false, isInConversation = false, currentProtocolTitle }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [showSampleQueries, setShowSampleQueries] = useState(true);
+  // Reset sample queries when conversation is cleared
+  useEffect(() => {
+    if (!hasMessages) {
+    }
+  }, [hasMessages]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,8 +78,14 @@ export default function ChatInput({ onSendMessage, isLoading, hasMessages = fals
           <Input
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Ask in natural language... Hybrid AI understands meaning, not just keywords"
-            className="min-h-[60px] resize-none rounded-xl border-slate-200 focus:border-teal-300 focus:ring-teal-200"
+            placeholder={
+              isInConversation 
+                ? `Continue discussing ${currentProtocolTitle || 'this protocol'}...`
+                : "Ask in natural language... Hybrid AI understands meaning, not just keywords"
+            }
+            className={`min-h-[60px] resize-none rounded-xl border-slate-200 focus:border-teal-300 focus:ring-teal-200 ${
+              isInConversation ? 'bg-teal-50/50' : ''
+            }`}
             disabled={isLoading}
           />
         </div>

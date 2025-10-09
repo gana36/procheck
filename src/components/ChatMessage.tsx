@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { Message } from '@/types';
 import ProtocolCard from './ProtocolCard';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ChatMessageProps {
   message: Message;
@@ -100,6 +102,18 @@ const categoryIcons = {
   general: MessageSquare
 };
 
+// Helper function to strip markdown formatting from text
+const stripMarkdown = (text: string): string => {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1') // Remove **bold**
+    .replace(/\*(.*?)\*/g, '$1')     // Remove *italic*
+    .replace(/`(.*?)`/g, '$1')       // Remove `code`
+    .replace(/#{1,6}\s/g, '')        // Remove # headers
+    .replace(/^\s*[-*+]\s/gm, '')    // Remove bullet points
+    .replace(/^\s*\d+\.\s/gm, '')    // Remove numbered lists
+    .trim();
+};
+
 export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, onFollowUpClick, isFirstUserMessage = false, isProtocolAlreadySaved = false }: ChatMessageProps) {
 
   if (message.type === 'user') {
@@ -172,9 +186,27 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, o
                       const IconComponent = theme.icon;
                       return <IconComponent className={`h-5 w-5 ${theme.iconColor} flex-shrink-0 mt-0.5`} />;
                     })()}
-                    <p className="text-sm leading-relaxed text-slate-800 font-medium">
-                      {message.content}
-                    </p>
+                    <div className="text-sm leading-relaxed text-slate-800 font-medium prose prose-sm prose-slate max-w-none">
+                      <ReactMarkdown 
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          // Style paragraphs
+                          p: ({children}) => <p className="mb-3 last:mb-0 text-slate-800">{children}</p>,
+                          // Style lists
+                          ul: ({children}) => <ul className="list-disc list-inside mb-3 space-y-1 text-slate-700">{children}</ul>,
+                          ol: ({children}) => <ol className="list-decimal list-inside mb-3 space-y-1 text-slate-700">{children}</ol>,
+                          li: ({children}) => <li className="text-slate-700">{children}</li>,
+                          // Style strong/bold - make them stand out more
+                          strong: ({children}) => <strong className="font-bold text-slate-900 bg-yellow-100 px-1 py-0.5 rounded border border-yellow-200">{children}</strong>,
+                          // Style emphasis/italic
+                          em: ({children}) => <em className="italic text-slate-700">{children}</em>,
+                          // Style code
+                          code: ({children}) => <code className="bg-slate-200 px-2 py-1 rounded text-xs font-mono text-slate-800">{children}</code>,
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -210,7 +242,7 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, o
                         className="protocol-followup-chip group"
                       >
                         <IconComponent className="protocol-followup-icon" />
-                        <span className="text-xs">{question.text}</span>
+                        <span className="text-xs">{stripMarkdown(question.text)}</span>
                       </button>
                     );
                   })}
