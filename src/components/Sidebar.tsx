@@ -2,6 +2,7 @@ import { useState, useEffect, memo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import {
   Stethoscope,
   Search,
@@ -81,6 +82,16 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
+
+  // Confirmation dialogs
+  const [showDeleteConversationDialog, setShowDeleteConversationDialog] = useState(false);
+  const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
+  const [showDeleteProtocolDialog, setShowDeleteProtocolDialog] = useState(false);
+  const [protocolToDelete, setProtocolToDelete] = useState<string | null>(null);
+  const [showErrorDialog, setShowErrorDialog] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   // Get Google profile image URL
   const getProfileImageUrl = () => {
@@ -279,26 +290,35 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     }
   };
 
-  const handleDeleteConversation = async (conversationId: string, e: React.MouseEvent) => {
+  const handleDeleteConversation = (conversationId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-
     if (!currentUser) return;
-    if (!confirm('Are you sure you want to delete this conversation?')) return;
+    setConversationToDelete(conversationId);
+    setShowDeleteConversationDialog(true);
+  };
 
+  const confirmDeleteConversation = async () => {
+    if (!currentUser || !conversationToDelete) return;
+    
     try {
-      await deleteConversation(currentUser.uid, conversationId);
+      await deleteConversation(currentUser.uid, conversationToDelete);
       // Remove from local state - no need to reload from server
-      setRecentConversations(prev => prev.filter(c => c.id !== conversationId));
+      setRecentConversations(prev => prev.filter(c => c.id !== conversationToDelete));
       setOpenMenuId(null);
       console.log('✅ Conversation deleted locally, no API reload needed');
 
       // Notify parent to clear from cache
       if (onConversationDeleted) {
-        onConversationDeleted(conversationId);
+        onConversationDeleted(conversationToDelete);
       }
+      
+      setShowDeleteConversationDialog(false);
+      setConversationToDelete(null);
     } catch (error) {
       console.error('Failed to delete conversation:', error);
-      alert('Failed to delete conversation');
+      setShowDeleteConversationDialog(false);
+      setErrorMessage('Failed to delete conversation');
+      setShowErrorDialog(true);
     }
   };
 
@@ -327,7 +347,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       console.log('✅ Conversation renamed locally, no API reload needed');
     } catch (error) {
       console.error('Failed to rename conversation:', error);
-      alert('Failed to rename conversation');
+      setErrorMessage('Failed to rename conversation');
+      setShowErrorDialog(true);
     }
   };
 
@@ -338,21 +359,30 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   };
 
   // Protocol handlers
-  const handleDeleteProtocol = async (protocolId: string, e: React.MouseEvent) => {
+  const handleDeleteProtocol = (protocolId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-
     if (!currentUser) return;
-    if (!confirm('Are you sure you want to delete this saved protocol?')) return;
+    setProtocolToDelete(protocolId);
+    setShowDeleteProtocolDialog(true);
+  };
 
+  const confirmDeleteProtocol = async () => {
+    if (!currentUser || !protocolToDelete) return;
+    
     try {
-      await deleteSavedProtocol(currentUser.uid, protocolId);
+      await deleteSavedProtocol(currentUser.uid, protocolToDelete);
       // Remove from local state - no need to reload from server
-      setSavedProtocols(prev => prev.filter(p => p.id !== protocolId));
+      setSavedProtocols(prev => prev.filter(p => p.id !== protocolToDelete));
       setOpenProtocolMenuId(null);
       console.log('✅ Protocol deleted locally, no API reload needed');
+      
+      setShowDeleteProtocolDialog(false);
+      setProtocolToDelete(null);
     } catch (error) {
       console.error('Failed to delete protocol:', error);
-      alert('Failed to delete protocol');
+      setShowDeleteProtocolDialog(false);
+      setErrorMessage('Failed to delete protocol');
+      setShowErrorDialog(true);
     }
   };
 
@@ -381,7 +411,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       console.log('✅ Protocol renamed locally, no API reload needed');
     } catch (error) {
       console.error('Failed to rename protocol:', error);
-      alert('Failed to rename protocol');
+      setErrorMessage('Failed to rename protocol');
+      setShowErrorDialog(true);
     }
   };
 
@@ -438,10 +469,12 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     try {
       await updateProfile(currentUser, { displayName: newDisplayName.trim() });
       setIsRenaming(false);
-      alert('Name updated successfully!');
+      setSuccessMessage('Name updated successfully!');
+      setShowSuccessDialog(true);
     } catch (error) {
       console.error('Failed to update name:', error);
-      alert('Failed to update name. Please try again.');
+      setErrorMessage('Failed to update name. Please try again.');
+      setShowErrorDialog(true);
     }
   };
 
@@ -910,6 +943,76 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
           </div>
         </div>
       )}
+
+      {/* Delete Conversation Confirmation Dialog */}
+      <AlertDialog open={showDeleteConversationDialog} onOpenChange={setShowDeleteConversationDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this conversation? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteConversation} className="bg-red-600 hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Protocol Confirmation Dialog */}
+      <AlertDialog open={showDeleteProtocolDialog} onOpenChange={setShowDeleteProtocolDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove from Saved?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove this protocol from your saved checklists?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteProtocol} className="bg-red-600 hover:bg-red-700">
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Error Dialog */}
+      <AlertDialog open={showErrorDialog} onOpenChange={setShowErrorDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Error</AlertDialogTitle>
+            <AlertDialogDescription>
+              {errorMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setShowErrorDialog(false)}>
+              OK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Success Dialog */}
+      <AlertDialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Success</AlertDialogTitle>
+            <AlertDialogDescription>
+              {successMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setShowSuccessDialog(false)} className="bg-teal-600 hover:bg-teal-700">
+              OK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 });

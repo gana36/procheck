@@ -17,22 +17,33 @@ interface ProtocolTabsProps {
 
 export default function ProtocolTabs({ tabs, onTabClick, onTabClose, onNewTab, onCloseAll }: ProtocolTabsProps) {
   return (
-    <div className="flex items-center bg-slate-50 border-b border-slate-200 px-4 py-2 overflow-x-auto">
-      <div className="flex items-center space-x-1 min-w-0 flex-1">
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.5rem', alignItems: 'center' }} className="bg-slate-50 border-b border-slate-200 px-4 py-2">
+      <div 
+        style={{ 
+          overflow: 'auto hidden', 
+          display: 'flex', 
+          gap: '0.25rem', 
+          alignItems: 'center',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+        }}
+        className="[&::-webkit-scrollbar]:hidden"
+      >
         {tabs.map((tab) => (
           <div
             key={tab.id}
             className={`
               flex items-center space-x-2 px-3 py-2 rounded-t-lg border-b-2 cursor-pointer
-              transition-all duration-200 min-w-0 max-w-xs group
+              transition-all duration-200 group
               ${tab.isActive 
                 ? 'bg-white border-teal-500 text-teal-700 shadow-sm' 
                 : 'bg-slate-100 border-transparent text-slate-600 hover:bg-slate-200'
               }
             `}
+            style={{ flexShrink: 0, maxWidth: '300px', whiteSpace: 'nowrap' }}
             onClick={() => onTabClick(tab.id)}
           >
-            <span className="text-sm font-medium truncate flex-1 min-w-0">
+            <span className="text-sm font-medium truncate" style={{ maxWidth: '200px' }}>
               {tab.title}
             </span>
             {tabs.length > 1 && (
@@ -55,6 +66,7 @@ export default function ProtocolTabs({ tabs, onTabClick, onTabClose, onNewTab, o
         ))}
       </div>
       
+      {/* Fixed action buttons */}
       <div className="flex items-center space-x-1 ml-2 flex-shrink-0">
         {/* Close All Tabs Button - only show if more than 1 tab */}
         {tabs.length > 1 && onCloseAll && (

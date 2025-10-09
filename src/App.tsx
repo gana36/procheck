@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Menu, X, LogOut, UserX, FileText, Plus } from 'lucide-react';
 import LandingScreen from '@/components/LandingScreen';
 import Sidebar from '@/components/Sidebar';
@@ -31,6 +32,9 @@ function App() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showNewTabDialog, setShowNewTabDialog] = useState(false);
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
+  const [showCloseAllDialog, setShowCloseAllDialog] = useState(false);
+  const [showErrorDialog, setShowErrorDialog] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Tab management state
   interface ConversationTab {
@@ -885,11 +889,13 @@ CITATION REQUIREMENT:
     }
   }, []);
 
-  const handleCloseAllTabs = useCallback(async () => {
-    if (!window.confirm('Are you sure you want to close all tabs? All conversations will be saved.')) {
-      return;
-    }
+  const handleCloseAllTabs = useCallback(() => {
+    setShowCloseAllDialog(true);
+  }, []);
 
+  const confirmCloseAllTabs = useCallback(async () => {
+    setShowCloseAllDialog(false);
+    
     // Save all tabs before closing
     if (userId) {
       for (const tab of tabs) {
@@ -1165,7 +1171,8 @@ CITATION REQUIREMENT:
       setShowLogoutModal(false);
     } catch (error) {
       console.error('Failed to log out:', error);
-      alert('Failed to log out. Please try again.');
+      setErrorMessage('Failed to log out. Please try again.');
+      setShowErrorDialog(true);
     }
   };
 
@@ -1187,10 +1194,11 @@ CITATION REQUIREMENT:
     } catch (error: any) {
       console.error('Failed to delete account:', error);
       if (error.code === 'auth/requires-recent-login') {
-        alert('For security reasons, please log out and log back in before deleting your account.');
+        setErrorMessage('For security reasons, please log out and log back in before deleting your account.');
       } else {
-        alert(`Failed to delete account: ${error.message || 'Unknown error'}. Please try again.`);
+        setErrorMessage(`Failed to delete account: ${error.message || 'Unknown error'}. Please try again.`);
       }
+      setShowErrorDialog(true);
     }
   };
 
@@ -1495,7 +1503,8 @@ CITATION REQUIREMENT:
                   if (input?.value === 'DELETE') {
                     handleConfirmDeleteAccount();
                   } else {
-                    alert('Please type DELETE to confirm account deletion.');
+                    setErrorMessage('Please type DELETE to confirm account deletion.');
+                    setShowErrorDialog(true);
                   }
                 }}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white"
@@ -1556,6 +1565,41 @@ CITATION REQUIREMENT:
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Close All Tabs Confirmation Dialog */}
+      <AlertDialog open={showCloseAllDialog} onOpenChange={setShowCloseAllDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close All Tabs?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to close all tabs? All conversations will be saved automatically before closing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmCloseAllTabs} className="bg-red-600 hover:bg-red-700">
+              Close All Tabs
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Error Dialog */}
+      <AlertDialog open={showErrorDialog} onOpenChange={setShowErrorDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Error</AlertDialogTitle>
+            <AlertDialogDescription>
+              {errorMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setShowErrorDialog(false)}>
+              OK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 
