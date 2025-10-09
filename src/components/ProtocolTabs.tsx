@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { X, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export interface ProtocolTab {
@@ -12,9 +12,10 @@ interface ProtocolTabsProps {
   onTabClick: (tabId: string) => void;
   onTabClose: (tabId: string) => void;
   onNewTab: () => void;
+  onCloseAll?: () => void;
 }
 
-export default function ProtocolTabs({ tabs, onTabClick, onTabClose, onNewTab }: ProtocolTabsProps) {
+export default function ProtocolTabs({ tabs, onTabClick, onTabClose, onNewTab, onCloseAll }: ProtocolTabsProps) {
   return (
     <div className="flex items-center bg-slate-50 border-b border-slate-200 px-4 py-2 overflow-x-auto">
       <div className="flex items-center space-x-1 min-w-0 flex-1">
@@ -54,15 +55,31 @@ export default function ProtocolTabs({ tabs, onTabClick, onTabClose, onNewTab }:
         ))}
       </div>
       
-      {/* New Tab Button */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onNewTab}
-        className="ml-2 text-slate-500 hover:text-slate-700 hover:bg-slate-200 flex-shrink-0"
-      >
-        <span className="text-lg font-light">+</span>
-      </Button>
+      <div className="flex items-center space-x-1 ml-2 flex-shrink-0">
+        {/* Close All Tabs Button - only show if more than 1 tab */}
+        {tabs.length > 1 && onCloseAll && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onCloseAll}
+            className="text-slate-500 hover:text-red-600 hover:bg-red-50 text-xs"
+            title="Close all tabs"
+          >
+            <XCircle className="h-4 w-4 mr-1" />
+            Close All
+          </Button>
+        )}
+        
+        {/* New Tab Button */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onNewTab}
+          className="text-slate-500 hover:text-slate-700 hover:bg-slate-200"
+        >
+          <span className="text-lg font-light">+</span>
+        </Button>
+      </div>
     </div>
   );
 }

@@ -368,11 +368,29 @@ function App() {
     return newTabId;
   };
 
-  const switchToTab = (tabId: string) => {
+  const switchToTab = async (tabId: string) => {
+    // Save current tab's conversation before switching
+    const currentTab = getActiveTab();
+    if (currentTab && currentTab.messages.length > 0 && userId) {
+      const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
+      if (lastUserMessage) {
+        await saveCurrentConversation(currentTab.messages, lastUserMessage.content);
+      }
+    }
+    
     setActiveTabId(tabId);
   };
 
-  const closeTab = (tabId: string) => {
+  const closeTab = async (tabId: string) => {
+    // Save the tab's conversation before closing
+    const tabToClose = tabs.find(tab => tab.id === tabId);
+    if (tabToClose && tabToClose.messages.length > 0 && userId) {
+      const lastUserMessage = [...tabToClose.messages].reverse().find(m => m.type === 'user');
+      if (lastUserMessage) {
+        await saveCurrentConversation(tabToClose.messages, lastUserMessage.content);
+      }
+    }
+    
     setTabs(prevTabs => {
       const newTabs = prevTabs.filter(tab => tab.id !== tabId);
 
@@ -867,26 +885,79 @@ CITATION REQUIREMENT:
     }
   }, []);
 
+  const handleCloseAllTabs = useCallback(async () => {
+    if (!window.confirm('Are you sure you want to close all tabs? All conversations will be saved.')) {
+      return;
+    }
+
+    // Save all tabs before closing
+    if (userId) {
+      for (const tab of tabs) {
+        if (tab.messages.length > 0) {
+          const lastUserMessage = [...tab.messages].reverse().find(m => m.type === 'user');
+          if (lastUserMessage) {
+            await saveCurrentConversation(tab.messages, lastUserMessage.content);
+          }
+        }
+      }
+    }
+
+    // Reset to a single empty tab
+    const defaultTab: ConversationTab = {
+      id: `tab-${Date.now()}`,
+      title: 'New Protocol',
+      messages: [],
+      conversationId: `conv_${Date.now()}`,
+      isLoading: false
+    };
+    
+    setTabs([defaultTab]);
+    setActiveTabId(defaultTab.id);
+  }, [tabs, userId]);
+
   const handleRecentSearch = useCallback(async (conversationId: string) => {
     if (!userId) return;
+
+    // Save current tab before opening new one
+    const currentTab = getActiveTab();
+    if (currentTab && currentTab.messages.length > 0) {
+      const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
+      if (lastUserMessage) {
+        await saveCurrentConversation(currentTab.messages, lastUserMessage.content);
+      }
+    }
+
+    // Create new tab for the recent search
+    const newTabId = createNewTab('Loading...');
 
     // Check if conversation is already cached - OPTIMIZATION: avoid redundant API calls
     const cachedMessages = conversationCache.current.get(conversationId);
     if (cachedMessages) {
       console.log('✅ Using cached conversation, no API call needed');
-      // Load in current tab instead of creating new tab
-      updateActiveTab({
-        messages: cachedMessages,
-        conversationId: conversationId,
-        title: cachedMessages[0]?.content.substring(0, 30) || 'Recent Search'
-      });
+      // Load in new tab
+      setTabs(prevTabs =>
+        prevTabs.map(tab =>
+          tab.id === newTabId
+            ? {
+                ...tab,
+                messages: cachedMessages,
+                conversationId: conversationId,
+                title: cachedMessages[0]?.content.substring(0, 30) || 'Recent Search'
+              }
+            : tab
+        )
+      );
       return;
     }
 
     console.log('🔄 [API CALL] Fetching conversation from server (not in cache)...');
 
-    // Load in current tab with loading state
-    updateActiveTab({ isLoading: true });
+    // Set loading state for new tab
+    setTabs(prevTabs =>
+      prevTabs.map(tab =>
+        tab.id === newTabId ? { ...tab, isLoading: true } : tab
+      )
+    );
 
     try {
       const response = await getConversation(userId, conversationId);
@@ -907,13 +978,20 @@ CITATION REQUIREMENT:
         messageCountRef.current = loadedMessages.length;
         // Cache the loaded conversation
         conversationCache.current.set(conversationId, loadedMessages);
-        // Update current tab with loaded messages
-        updateActiveTab({
-          messages: loadedMessages,
-          conversationId: conversationId,
-          title: conv.title || 'Recent Search',
-          isLoading: false
-        });
+        // Update new tab with loaded messages
+        setTabs(prevTabs =>
+          prevTabs.map(tab =>
+            tab.id === newTabId
+              ? {
+                  ...tab,
+                  messages: loadedMessages,
+                  conversationId: conversationId,
+                  title: conv.title || 'Recent Search',
+                  isLoading: false
+                }
+              : tab
+          )
+        );
         
         // Scroll to top after a brief delay
         setTimeout(() => {
@@ -924,7 +1002,11 @@ CITATION REQUIREMENT:
       }
     } catch (error) {
       console.error('Failed to load conversation:', error);
-      updateActiveTab({ isLoading: false });
+      setTabs(prevTabs =>
+        prevTabs.map(tab =>
+          tab.id === newTabId ? { ...tab, isLoading: false } : tab
+        )
+      );
     }
   }, [userId]);
 
@@ -983,8 +1065,24 @@ CITATION REQUIREMENT:
   const handleSavedProtocol = useCallback(async (protocolId: string, protocolData: any) => {
     console.log('🎯 [APP] handleSavedProtocol called', { protocolId, hasProtocolData: !!protocolData });
     
-    // Load in current tab instead of creating new tab
-    updateActiveTab({ isLoading: true });
+    // Save current tab before opening new one
+    const currentTab = getActiveTab();
+    if (currentTab && currentTab.messages.length > 0 && userId) {
+      const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
+      if (lastUserMessage) {
+        await saveCurrentConversation(currentTab.messages, lastUserMessage.content);
+      }
+    }
+
+    // Create new tab for the saved protocol
+    const newTabId = createNewTab('Loading...');
+    
+    // Set loading state for new tab
+    setTabs(prevTabs =>
+      prevTabs.map(tab =>
+        tab.id === newTabId ? { ...tab, isLoading: true } : tab
+      )
+    );
 
     try {
       let fullProtocol = protocolData;
@@ -1009,11 +1107,18 @@ CITATION REQUIREMENT:
         protocolData: fullProtocol || undefined,
       };
 
-      updateActiveTab({
-        messages: [assistantMessage],
-        title: fullProtocol?.title || 'Saved Protocol',
-        isLoading: false
-      });
+      setTabs(prevTabs =>
+        prevTabs.map(tab =>
+          tab.id === newTabId
+            ? {
+                ...tab,
+                messages: [assistantMessage],
+                title: fullProtocol?.title || 'Saved Protocol',
+                isLoading: false
+              }
+            : tab
+        )
+      );
       
       // Don't trigger sidebar refresh for saved protocols - they're already in the sidebar
       // Only trigger refresh when protocols are saved/unsaved, not when loading them
@@ -1025,11 +1130,18 @@ CITATION REQUIREMENT:
         content: `Couldn't load saved protocol.`,
         timestamp: getUserTimestamp(),
       };
-      updateActiveTab({
-        messages: [assistantMessage],
-        title: 'Error',
-        isLoading: false
-      });
+      setTabs(prevTabs =>
+        prevTabs.map(tab =>
+          tab.id === newTabId
+            ? {
+                ...tab,
+                messages: [assistantMessage],
+                title: 'Error',
+                isLoading: false
+              }
+            : tab
+        )
+      );
     }
   }, [userId]);
 
@@ -1217,6 +1329,7 @@ CITATION REQUIREMENT:
           onTabClick={switchToTab}
           onTabClose={closeTab}
           onNewTab={() => createNewTab()}
+          onCloseAll={handleCloseAllTabs}
         />
 
         <div 
