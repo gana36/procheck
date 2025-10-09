@@ -20,8 +20,8 @@ import {
 } from 'lucide-react';
 // import { mockSavedProtocols } from '@/data/mockData';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserConversations, getSavedProtocols, getSavedProtocol, deleteConversation, updateConversationTitle, deleteSavedProtocol, updateSavedProtocolTitle, deleteUserData, ConversationListItem, SavedProtocol as ApiSavedProtocol } from '@/lib/api';
-import { updateProfile, deleteUser } from 'firebase/auth';
+import { getUserConversations, getSavedProtocols, getSavedProtocol, deleteConversation, updateConversationTitle, deleteSavedProtocol, updateSavedProtocolTitle, ConversationListItem, SavedProtocol as ApiSavedProtocol } from '@/lib/api';
+import { updateProfile } from 'firebase/auth';
 
 interface SidebarProps {
   onNewSearch: () => void;
@@ -42,7 +42,7 @@ const globalDataCache = {
 };
 
 const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, savedProtocolsRefreshTrigger, onShowLogoutModal, onShowDeleteModal }: SidebarProps) {
-  const { currentUser, logout } = useAuth();
+  const { currentUser } = useAuth();
   
   // CRITICAL: Extract userId directly - this is stable because we'll control when effects run
   const userId = currentUser?.uid || null;
