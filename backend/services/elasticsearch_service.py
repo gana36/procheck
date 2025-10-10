@@ -62,11 +62,8 @@ def ensure_index(index_name: Optional[str] = None) -> Dict[str, Any]:
             return {"exists": True, "index": index}
         
         # Enhanced mapping with dense_vector for hybrid search
+        # Note: Serverless mode doesn't allow shard/replica settings
         body = {
-            "settings": {
-                "number_of_shards": 1,
-                "number_of_replicas": 1
-            },
             "mappings": {
                 "properties": {
                     # Medical document fields
@@ -392,7 +389,327 @@ def hybrid_search(
                 }
             )
             return resp
-            
+
+    except ApiError as e:
+        return {"error": "api_error", "details": str(e)}
+    except Exception as e:
+        return {"error": "unexpected_error", "details": str(e)}
+
+
+def index_user_protocols(protocols: list[Dict[str, Any]], user_id: str, index_name: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Index user-generated protocols into user-specific Elasticsearch index
+
+    Args:
+        protocols: List of protocol dictionaries with steps, citations, etc.
+        user_id: Firebase Auth user ID
+        index_name: Optional index name (defaults to user-specific index)
+
+    Returns:
+        Dict with indexing results
+    """
+    client = get_client()
+    # Use user-specific index instead of global index
+    index = index_name or get_user_index_name(user_id)
+    try:
+        # Ensure index exists
+        ensure_result = ensure_index(index)
+        if ensure_result.get("error"):
+            return ensure_result
+
+        # Prepare bulk indexing operations
+        bulk_operations = []
+        indexed_count = 0
+
+        for protocol in protocols:
+            try:
+                # Transform protocol to Elasticsearch document format
+                doc = transform_protocol_to_es_doc(protocol, user_id)
+
+                # Add bulk index operation
+                bulk_operations.extend([
+                    {"index": {"_index": index, "_id": protocol.get("protocol_id")}},
+                    doc
+                ])
+                indexed_count += 1
+
+            except Exception as e:
+                print(f"⚠️  Failed to prepare protocol {protocol.get('protocol_id', 'unknown')} for indexing: {str(e)}")
+                continue
+
+        if not bulk_operations:
+            return {"success": False, "error": "No valid protocols to index", "indexed_count": 0}
+
+        # Execute bulk indexing
+        response = client.bulk(operations=bulk_operations, refresh=True)
+
+        # Check for errors in bulk response
+        errors = []
+        successful_count = 0
+
+        if response.get("errors"):
+            for item in response.get("items", []):
+                if "index" in item and item["index"].get("error"):
+                    errors.append(item["index"]["error"])
+                else:
+                    successful_count += 1
+        else:
+            successful_count = indexed_count
+
+        return {
+            "success": True,
+            "indexed_count": successful_count,
+            "total_protocols": len(protocols),
+            "errors": errors,
+            "user_id": user_id,
+            "index": index
+        }
+
+    except ApiError as e:
+        return {"success": False, "error": "api_error", "details": str(e)}
+    except Exception as e:
+        print(f"❌ Unexpected Error: {str(e)}")
+        return {"success": False, "error": "unexpected_error", "details": str(e)}
+
+
+def transform_protocol_to_es_doc(protocol: Dict[str, Any], user_id: str) -> Dict[str, Any]:
+    """
+    Transform user protocol to Elasticsearch document format
+
+    Args:
+        protocol: Protocol dictionary from document processor
+        user_id: Firebase Auth user ID
+
+    Returns:
+        Elasticsearch document
+    """
+    # Extract protocol information
+    title = protocol.get("title", "Untitled Protocol")
+    steps = protocol.get("steps", [])
+    citations = protocol.get("citations", [])
+
+    # Create content from steps for searchability
+    content_parts = [title]
+    step_texts = []
+
+    for step in steps:
+        step_text = step.get("text", "")
+        explanation = step.get("explanation", "")
+        if step_text:
+            step_texts.append(step_text)
+            content_parts.append(step_text)
+        if explanation:
+            content_parts.append(explanation)
+
+    # Join all content for full-text search
+    full_content = " ".join(content_parts)
+
+    # Extract metadata
+    source_file = ""
+    if citations:
+        source_file = citations[0].get("source", "")
+
+    # Create Elasticsearch document
+    es_doc = {
+        # Core protocol fields
+        "title": title,
+        "body": full_content,
+        "content": full_content,  # Legacy field for compatibility
+        "section": "User Protocol",
+
+        # User-specific fields (user_id not needed since we're in user-specific index)
+        "source_type": protocol.get("source_type", "user"),
+        "protocol_id": protocol.get("protocol_id"),
+
+        # Medical metadata
+        "disease": "User Defined",
+        "region": protocol.get("region", "User Defined"),
+        "year": int(protocol.get("created_at", "2024")[:4]) if protocol.get("created_at") else 2024,
+        "organization": protocol.get("organization", "Custom Protocol"),
+
+        # Additional metadata
+        "tags": ["user-generated", protocol.get("intent", "general")],
+        "source_url": f"user://{user_id}/{protocol.get('protocol_id', 'unknown')}",
+        "source": source_file,
+        "last_reviewed": protocol.get("created_at"),
+
+        # Protocol-specific data
+        "steps_count": len(steps),
+        "citations_count": len(citations),
+        "step_details": step_texts
+    }
+
+    return es_doc
+
+
+def get_user_index_name(user_id: str) -> str:
+    """
+    Generate user-specific index name
+
+    Args:
+        user_id: Firebase Auth user ID
+
+    Returns:
+        User-specific index name (e.g., "user-abc123")
+    """
+    # Clean user_id to make it safe for Elasticsearch index names
+    # Index names must be lowercase, no special chars except hyphens/underscores
+    # Remove any non-alphanumeric characters and convert to lowercase
+    import re
+    safe_user_id = re.sub(r'[^a-zA-Z0-9]', '', user_id.lower())
+    # Ensure it doesn't start with underscore, hyphen, or plus
+    safe_user_id = safe_user_id.lstrip('_-+')
+    # Limit length to avoid issues
+    safe_user_id = safe_user_id[:50]
+    return f"user-{safe_user_id}"
+
+
+def search_user_protocols(user_id: str, query: Optional[str] = None, size: int = 10, index_name: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Search protocols specific to a user in their dedicated index
+
+    Args:
+        user_id: Firebase Auth user ID
+        query: Optional search query
+        size: Number of results to return
+        index_name: Optional index name
+
+    Returns:
+        Elasticsearch response with user protocols only
+    """
+    client = get_client()
+    # Use user-specific index
+    index = index_name or get_user_index_name(user_id)
+
+    try:
+        # Check if user index exists first
+        if not client.indices.exists(index=index):
+            return {
+                "hits": {"total": {"value": 0}, "hits": []},
+                "message": f"No protocols found for user {user_id}"
+            }
+
+        # Build query - no need to filter by user_id since we're in user-specific index
+        if query and query.strip():
+            es_query = {
+                "multi_match": {
+                    "query": query,
+                    "fields": ["title^3", "body^2", "content", "step_details"],
+                    "type": "best_fields"
+                }
+            }
+        else:
+            es_query = {"match_all": {}}
+
+        resp = client.search(
+            index=index,
+            body={
+                "size": size,
+                "query": es_query,
+                "sort": [{"_score": {"order": "desc"}}],
+                "highlight": {
+                    "fields": {
+                        "body": {"fragment_size": 150, "number_of_fragments": 3},
+                        "title": {}
+                    }
+                }
+            }
+        )
+        return resp
+
+    except ApiError as e:
+        return {"error": "api_error", "details": str(e)}
+    except Exception as e:
+        return {"error": "unexpected_error", "details": str(e)}
+
+
+def search_mixed_protocols(user_id: str, query: Optional[str] = None, size: int = 10, user_protocols_first: bool = True) -> Dict[str, Any]:
+    """
+    Search both user protocols and global protocols across separate indexes
+
+    Args:
+        user_id: Firebase Auth user ID
+        query: Optional search query
+        size: Number of results to return
+        user_protocols_first: Whether to boost user protocols in ranking
+
+    Returns:
+        Combined results from both global and user indexes
+    """
+    client = get_client()
+    global_index = settings.ELASTICSEARCH_INDEX_NAME
+    user_index = get_user_index_name(user_id)
+
+    try:
+        # Determine how to split the results
+        user_size = int(size * 0.6) if user_protocols_first else int(size * 0.4)
+        global_size = size - user_size
+
+        # Search user protocols
+        user_results = search_user_protocols(user_id, query, user_size)
+        user_hits = user_results.get("hits", {}).get("hits", [])
+
+        # Search global protocols
+        global_query = {
+            "multi_match": {
+                "query": query,
+                "fields": ["title^2", "body", "content", "tags"],
+                "type": "best_fields"
+            }
+        } if query and query.strip() else {"match_all": {}}
+
+        global_resp = client.search(
+            index=global_index,
+            body={
+                "size": global_size,
+                "query": global_query,
+                "highlight": {
+                    "fields": {
+                        "body": {"fragment_size": 150, "number_of_fragments": 3},
+                        "title": {}
+                    }
+                }
+            }
+        )
+        global_hits = global_resp.get("hits", {}).get("hits", [])
+
+        # Combine results and sort by relevance score for better topical matching
+        all_hits = []
+
+        # Add user protocols with small score boost if user_protocols_first is True
+        for hit in user_hits:
+            score_boost = 0.1 if user_protocols_first else 0
+            all_hits.append({
+                **hit,
+                "_score": hit.get("_score", 0) + score_boost,
+                "_source_type": "user"
+            })
+
+        # Add global protocols
+        for hit in global_hits:
+            all_hits.append({
+                **hit,
+                "_source_type": "global"
+            })
+
+        # Sort by relevance score (highest first) for better topical coherence
+        combined_hits = sorted(all_hits, key=lambda x: x.get("_score", 0), reverse=True)
+
+        # Create combined response
+        total_user = user_results.get("hits", {}).get("total", {}).get("value", 0)
+        total_global = global_resp.get("hits", {}).get("total", {}).get("value", 0)
+
+        combined_response = {
+            "hits": {
+                "total": {"value": total_user + total_global},
+                "hits": combined_hits[:size]  # Limit to requested size
+            },
+            "user_protocols_count": total_user,
+            "global_protocols_count": total_global
+        }
+
+        return combined_response
+
     except ApiError as e:
         return {"error": "api_error", "details": str(e)}
     except Exception as e:
