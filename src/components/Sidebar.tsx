@@ -16,12 +16,15 @@ import {
   Trash2,
   Edit2,
   LogOut,
-  UserX
+  UserX,
+  Upload,
+  FileText,
+  Sparkles
 } from 'lucide-react';
 // import { mockSavedProtocols } from '@/data/mockData';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserConversations, getSavedProtocols, getSavedProtocol, deleteConversation, updateConversationTitle, deleteSavedProtocol, updateSavedProtocolTitle, deleteUserData, ConversationListItem, SavedProtocol as ApiSavedProtocol } from '@/lib/api';
-import { updateProfile, deleteUser } from 'firebase/auth';
+import { getUserConversations, getSavedProtocols, getSavedProtocol, deleteConversation, updateConversationTitle, deleteSavedProtocol, updateSavedProtocolTitle, uploadDocuments, getUploadStatus, getUserUploadedProtocols, regenerateProtocol, deleteUserProtocol, updateUserProtocolTitle, getUploadPreview, approveAndIndexUpload, cancelUpload, ConversationListItem, SavedProtocol as ApiSavedProtocol } from '@/lib/api';
+import { updateProfile } from 'firebase/auth';
 
 interface SidebarProps {
   onNewSearch: () => void;
@@ -31,6 +34,26 @@ interface SidebarProps {
   savedProtocolsRefreshTrigger?: number;
   onShowLogoutModal?: () => void;
   onShowDeleteModal?: () => void;
+  onShowProtocolPreview?: (uploadId: string, protocols: any[]) => void; // Show preview in main content area
+  onShowUserProtocolsIndex?: () => void; // Show user's protocol index in main content area
+  onShowGeneratedProtocols?: (uploadId: string, protocols: any[]) => void; // Show generated protocols view
+  generatedProtocols?: any[]; // Currently generated protocols
+  generatedUploadId?: string | null; // Upload ID for generated protocols
+  onNotifyUploadReady?: (notification: {
+    type: 'upload_ready' | 'query_ready';
+    title: string;
+    message: string;
+    uploadId?: string;
+    protocols?: any[];
+  }) => void; // Send notification for upload completion
+  onShowConfirmation?: (data: {
+    title: string;
+    message: string;
+    confirmText: string;
+    confirmAction: () => void;
+    dangerous?: boolean;
+  }) => void; // Show custom confirmation modal
+  onClearProtocolCache?: (clearCacheFunction: () => void) => void; // Register cache clearing function
 }
 
 // Global cache to persist data completely outside React
@@ -41,8 +64,54 @@ const globalDataCache = {
   isLoading: false
 };
 
-const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, savedProtocolsRefreshTrigger, onShowLogoutModal, onShowDeleteModal }: SidebarProps) {
-  const { currentUser, logout } = useAuth();
+// Helper functions for local storage caching (outside component to avoid recreation)
+const getCacheKey = (userId: string) => `user_protocols_${userId}`;
+
+const getCachedProtocols = (userId: string) => {
+  try {
+    const cached = localStorage.getItem(getCacheKey(userId));
+    if (cached) {
+      const { data, timestamp, expires } = JSON.parse(cached);
+      if (Date.now() < expires) {
+        console.log('✅ Using cached user protocols');
+        return data;
+      } else {
+        console.log('⏰ Cache expired, will fetch fresh data');
+        localStorage.removeItem(getCacheKey(userId));
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error reading cached protocols:', error);
+    localStorage.removeItem(getCacheKey(userId));
+  }
+  return null;
+};
+
+const cacheProtocols = (userId: string, protocols: any[]) => {
+  try {
+    const cacheData = {
+      data: protocols,
+      timestamp: Date.now(),
+      expires: Date.now() + (24 * 60 * 60 * 1000) // 24 hours
+    };
+    localStorage.setItem(getCacheKey(userId), JSON.stringify(cacheData));
+    console.log(`💾 Cached ${protocols.length} user protocols`);
+  } catch (error) {
+    console.error('❌ Error caching protocols:', error);
+  }
+};
+
+const clearProtocolCache = (userId: string) => {
+  try {
+    localStorage.removeItem(getCacheKey(userId));
+    console.log('🗑️ Cleared user protocol cache');
+  } catch (error) {
+    console.error('❌ Error clearing protocol cache:', error);
+  }
+};
+
+const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, savedProtocolsRefreshTrigger, onShowLogoutModal, onShowDeleteModal, onShowProtocolPreview, onShowUserProtocolsIndex, onShowGeneratedProtocols, generatedProtocols = [], generatedUploadId = null, onNotifyUploadReady, onShowConfirmation, onClearProtocolCache }: SidebarProps) {
+  const { currentUser } = useAuth();
   
   // CRITICAL: Extract userId directly - this is stable because we'll control when effects run
   const userId = currentUser?.uid || null;
@@ -54,11 +123,25 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
   
-  const [savedProtocols, setSavedProtocols] = useState<ApiSavedProtocol[]>(() => 
+  const [savedProtocols, setSavedProtocols] = useState<ApiSavedProtocol[]>(() =>
     globalDataCache.userId === userId ? globalDataCache.protocols : []
   );
   const [isLoadingSaved, setIsLoadingSaved] = useState(false);
   const [savedError, setSavedError] = useState<string | null>(null);
+
+  // State for uploaded protocols (from Elasticsearch) - initialize from cache if available
+  const [uploadedProtocols, setUploadedProtocols] = useState<any[]>(() => {
+    if (userId) {
+      const cached = getCachedProtocols(userId);
+      if (cached) {
+        console.log(`🚀 Initializing with ${cached.length} cached protocols`);
+        return cached;
+      }
+    }
+    return [];
+  });
+  const [isLoadingUploaded, setIsLoadingUploaded] = useState(false);
+  const [uploadedError, setUploadedError] = useState<string | null>(null);
 
   // Track if data has been loaded to prevent redundant API calls
   // Using refs to avoid recreating callbacks when these change
@@ -77,10 +160,64 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   const [editingProtocolId, setEditingProtocolId] = useState<string | null>(null);
   const [editProtocolTitle, setEditProtocolTitle] = useState('');
 
+  // Generated protocols are now passed as props
+
   // Profile modal state
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [activeProfileTab, setActiveProfileTab] = useState<'profile' | 'protocols'>('profile');
+
+  // Upload state
+  const [isUploading, setIsUploading] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<{
+    status: string;
+    filename?: string;
+    upload_id?: string;
+    progress?: number;
+    protocols_extracted?: number;
+    protocols_indexed?: number;
+    error?: string;
+  } | null>(null);
+  const [uploadCancelled, setUploadCancelled] = useState(false);
+  const [currentUploadId, setCurrentUploadId] = useState<string | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const uploadAbortController = useRef<AbortController | null>(null);
+
+  // Regeneration state
+  const [regeneratingProtocolId, setRegeneratingProtocolId] = useState<string | null>(null);
+  const [regenerationPrompt, setRegenerationPrompt] = useState('');
+  const [showRegenerateModal, setShowRegenerateModal] = useState(false);
+  const [protocolToRegenerate, setProtocolToRegenerate] = useState<string | null>(null);
+
+
+  // Combine saved protocols and uploaded protocols
+  const userProtocols = [
+    // Saved protocols (bookmarked from searches)
+    ...savedProtocols.map(protocol => ({
+      id: `saved_${protocol.id}`,
+      title: protocol.title,
+      created_at: protocol.saved_at,
+      source: protocol.organization,
+      protocol_count: protocol.protocol_data?.checklist?.length || 0,
+      status: 'saved',
+      type: 'SAVED',
+      protocol_data: protocol.protocol_data
+    })),
+    // Uploaded protocols (from document processing)
+    ...uploadedProtocols.map(protocol => ({
+      id: `uploaded_${protocol.id}`,
+      title: protocol.title,
+      created_at: protocol.created_at || new Date().toISOString(),
+      source: protocol.source_file || protocol.organization,
+      protocol_count: protocol.steps_count || 0,
+      status: 'processed',
+      type: 'YOUR',
+      protocol_data: protocol.protocol_data
+    }))
+  ];
 
   // Get Google profile image URL
   const getProfileImageUrl = () => {
@@ -115,6 +252,23 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       isMountedRef.current = false;
     };
   }, []);
+
+  // Create a function that the parent can call to clear cache
+  const handleClearCache = useCallback(() => {
+    if (userId) {
+      clearProtocolCache(userId);
+      // Also clear the component's local state
+      setUploadedProtocols([]); // Clear uploaded protocols state to update count display
+      setSavedProtocols([]); // Clear saved protocols as well
+    }
+  }, [userId]);
+
+  // Expose the cache clearing function to parent component
+  useEffect(() => {
+    if (onClearProtocolCache) {
+      onClearProtocolCache(handleClearCache);
+    }
+  }, [onClearProtocolCache, handleClearCache]);
 
   // Wrap in useCallback with NO dependencies - use userId from closure
   const loadConversations = useCallback(async (force: boolean = false) => {
@@ -208,39 +362,109 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     }
   }, [userId]);
 
-  // Load data when user logs in - simple and bulletproof
-  useEffect(() => {
-    // Load if: userId changed OR we have no data yet
-    const hasData = recentConversations.length > 0 || savedProtocols.length > 0;
-    const userChanged = globalDataCache.userId !== userId;
-    const shouldLoad = userChanged || (userId && !hasData);
-    
-    if (!shouldLoad || globalDataCache.isLoading) {
+
+  // Load uploaded protocols from Elasticsearch with caching
+  const loadUploadedProtocols = useCallback(async (forceRefresh = false) => {
+    if (!userId || isLoadingUploaded) {
+      console.log(`⏭️ Skipping loadUploadedProtocols: userId=${!!userId}, isLoading=${isLoadingUploaded}`);
       return;
     }
-    
-    // Update global cache
-    globalDataCache.userId = userId;
-    
-    if (userId) {
-      globalDataCache.isLoading = true;
-      
-      Promise.all([
-        loadConversations(true),
-        loadSavedProtocols(true)
-      ]).finally(() => {
-        globalDataCache.isLoading = false;
-      });
+
+    // Try cache first unless forcing refresh
+    if (!forceRefresh) {
+      const cachedProtocols = getCachedProtocols(userId);
+      if (cachedProtocols) {
+        console.log(`💾 Using cached protocols: ${cachedProtocols.length} protocols found`);
+        setUploadedProtocols(cachedProtocols);
+        return; // Use cached data, skip API call
+      } else {
+        console.log('🔍 No cached protocols found, will fetch from API');
+      }
     } else {
+      console.log('🔄 Force refresh requested, skipping cache');
+    }
+
+    console.log('🔄 [API CALL] Starting getUserUploadedProtocols...');
+    setIsLoadingUploaded(true);
+    setUploadedError(null);
+
+    try {
+      const res = await getUserUploadedProtocols(userId, 20);
+      console.log('🔄 [API CALL] getUserUploadedProtocols completed');
+
+      if (!isMountedRef.current) return;
+
+      if (res.success) {
+        const protocols = res.protocols || [];
+        setUploadedProtocols(protocols);
+        cacheProtocols(userId, protocols); // Cache the fresh data
+        console.log(`✅ Uploaded protocols loaded: ${protocols.length} protocols`);
+        if (res.error) {
+          console.log(`⚠️ Note: ${res.error}`);
+        }
+      } else {
+        setUploadedError(res.error || 'Failed to load uploaded protocols');
+      }
+    } catch (err: any) {
+      console.error('❌ Error loading uploaded protocols:', err);
+      if (isMountedRef.current) {
+        setUploadedError(err.message || 'Failed to load uploaded protocols');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoadingUploaded(false);
+      }
+    }
+  }, [userId]);
+
+  // Load data when user logs in - simple and bulletproof
+  useEffect(() => {
+    // Only reload on user change or initial load - don't force reload on navigation
+    const userChanged = globalDataCache.userId !== userId;
+
+    if (!userId) {
       // Clear on logout
       setRecentConversations([]);
       setSavedProtocols([]);
+      setUploadedProtocols([]);
       globalDataCache.conversations = [];
       globalDataCache.protocols = [];
       conversationsLoadedRef.current = false;
       savedProtocolsLoadedRef.current = false;
+
+      // Clear protocol cache on logout
+      if (globalDataCache.userId) {
+        clearProtocolCache(globalDataCache.userId);
+      }
+      globalDataCache.userId = null;
+      return;
     }
-  }, [userId, loadConversations, loadSavedProtocols, recentConversations.length, savedProtocols.length]);
+
+    // Only load if user changed or we're loading for the first time
+    if (!userChanged && globalDataCache.userId === userId) {
+      console.log('⏭️ User unchanged, skipping reload - preserving existing data');
+      return;
+    }
+
+    if (globalDataCache.isLoading) {
+      console.log('⏭️ Already loading, skipping duplicate load');
+      return;
+    }
+
+    console.log('🔄 Loading data for user:', userId, 'userChanged:', userChanged);
+
+    // Update global cache
+    globalDataCache.userId = userId;
+    globalDataCache.isLoading = true;
+
+    Promise.all([
+      loadConversations(true),
+      loadSavedProtocols(true),
+      loadUploadedProtocols() // This will use cache if available
+    ]).finally(() => {
+      globalDataCache.isLoading = false;
+    });
+  }, [userId, loadConversations, loadSavedProtocols, loadUploadedProtocols]);
 
   // Handle refresh trigger - only when trigger value changes
   const lastRefreshTriggerRef = useRef(0);
@@ -254,6 +478,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       lastRefreshTriggerRef.current = triggerValue;
       // Force reload when explicitly triggered
       loadSavedProtocols(true);
+      loadUploadedProtocols(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedProtocolsRefreshTrigger]); // Only depend on the trigger value
@@ -283,22 +508,35 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     e.stopPropagation();
 
     if (!currentUser) return;
-    if (!confirm('Are you sure you want to delete this conversation?')) return;
 
-    try {
-      await deleteConversation(currentUser.uid, conversationId);
-      // Remove from local state - no need to reload from server
-      setRecentConversations(prev => prev.filter(c => c.id !== conversationId));
-      setOpenMenuId(null);
-      console.log('✅ Conversation deleted locally, no API reload needed');
+    // Find conversation title for the confirmation message
+    const conversation = recentConversations.find(c => c.id === conversationId);
+    const conversationTitle = conversation?.title || 'this conversation';
 
-      // Notify parent to clear from cache
-      if (onConversationDeleted) {
-        onConversationDeleted(conversationId);
-      }
-    } catch (error) {
-      console.error('Failed to delete conversation:', error);
-      alert('Failed to delete conversation');
+    if (onShowConfirmation) {
+      onShowConfirmation({
+        title: 'Delete Conversation',
+        message: `Are you sure you want to delete "${conversationTitle}"? This action cannot be undone.`,
+        confirmText: 'Delete Conversation',
+        dangerous: true,
+        confirmAction: async () => {
+          try {
+            await deleteConversation(currentUser.uid, conversationId);
+            // Remove from local state - no need to reload from server
+            setRecentConversations(prev => prev.filter(c => c.id !== conversationId));
+            setOpenMenuId(null);
+            console.log('✅ Conversation deleted locally, no API reload needed');
+
+            // Notify parent to clear from cache
+            if (onConversationDeleted) {
+              onConversationDeleted(conversationId);
+            }
+          } catch (error) {
+            console.error('Failed to delete conversation:', error);
+            alert('Failed to delete conversation');
+          }
+        }
+      });
     }
   };
 
@@ -342,17 +580,30 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     e.stopPropagation();
 
     if (!currentUser) return;
-    if (!confirm('Are you sure you want to delete this saved protocol?')) return;
 
-    try {
-      await deleteSavedProtocol(currentUser.uid, protocolId);
-      // Remove from local state - no need to reload from server
-      setSavedProtocols(prev => prev.filter(p => p.id !== protocolId));
-      setOpenProtocolMenuId(null);
-      console.log('✅ Protocol deleted locally, no API reload needed');
-    } catch (error) {
-      console.error('Failed to delete protocol:', error);
-      alert('Failed to delete protocol');
+    // Find protocol title for the confirmation message
+    const protocol = savedProtocols.find(p => p.id === protocolId);
+    const protocolTitle = protocol?.title || 'this saved protocol';
+
+    if (onShowConfirmation) {
+      onShowConfirmation({
+        title: 'Remove from Saved',
+        message: `Are you sure you want to remove "${protocolTitle}" from your saved protocols?`,
+        confirmText: 'Remove from Saved',
+        dangerous: true,
+        confirmAction: async () => {
+          try {
+            await deleteSavedProtocol(currentUser.uid, protocolId);
+            // Remove from local state - no need to reload from server
+            setSavedProtocols(prev => prev.filter(p => p.id !== protocolId));
+            setOpenProtocolMenuId(null);
+            console.log('✅ Protocol deleted locally, no API reload needed');
+          } catch (error) {
+            console.error('Failed to delete protocol:', error);
+            alert('Failed to delete protocol');
+          }
+        }
+      });
     }
   };
 
@@ -462,6 +713,373 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     }
   };
 
+  // Upload handling functions
+  const handleFileUpload = async (file: File) => {
+    if (!currentUser) {
+      alert('Please log in to upload files');
+      return;
+    }
+
+    // Prevent multiple simultaneous uploads
+    if (isUploading) {
+      alert('Please wait for the current upload to complete before starting a new one');
+      return;
+    }
+
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      alert('Please select a ZIP file');
+      return;
+    }
+
+    if (file.size > 100 * 1024 * 1024) { // 100MB limit
+      alert('File size exceeds 100MB limit');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadCancelled(false);
+    setCurrentUploadId(null); // Reset upload ID
+    setUploadProgress({
+      status: 'uploading',
+      filename: file.name,
+      progress: 0
+    });
+
+    // Create abort controller for upload cancellation
+    uploadAbortController.current = new AbortController();
+
+    try {
+      console.log('🔄 Starting file upload:', file.name);
+      console.log('📝 Custom prompt:', customPrompt || 'None provided');
+      const result = await uploadDocuments(currentUser.uid, file, customPrompt, uploadAbortController.current.signal);
+
+      // Check if upload was cancelled during the request
+      if (uploadCancelled) {
+        console.log('🚫 Upload was cancelled during request');
+        return;
+      }
+
+      console.log('✅ Upload initiated:', result);
+      setCurrentUploadId(result.upload_id);
+      setUploadProgress({
+        status: 'processing',
+        filename: result.filename,
+        upload_id: result.upload_id,
+        progress: 25
+      });
+
+      // Start polling for status updates
+      pollUploadStatus(result.upload_id);
+    } catch (error) {
+      console.error('❌ Upload failed:', error);
+
+      // Check if it was aborted by user
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('🚫 Upload aborted by user');
+        setUploadProgress(null);
+        setIsUploading(false);
+        setUploadCancelled(true);
+        setCurrentUploadId(null);
+      } else {
+        setUploadProgress({
+          status: 'error',
+          filename: file.name,
+          error: error instanceof Error ? error.message : 'Upload failed'
+        });
+        setIsUploading(false);
+        setUploadCancelled(false);
+      }
+    }
+  };
+
+  const pollUploadStatus = async (uploadId: string) => {
+    if (!currentUser) return;
+
+    const poll = async () => {
+      // Check if upload was cancelled
+      if (uploadCancelled) {
+        console.log('🚫 Polling stopped due to cancellation');
+        if (pollingRef.current) {
+          clearTimeout(pollingRef.current);
+          pollingRef.current = null;
+        }
+        return;
+      }
+
+      try {
+        const status = await getUploadStatus(currentUser.uid, uploadId);
+        console.log('📊 Upload status:', status);
+
+        // Calculate progress based on status
+        let calculatedProgress = 25; // Start at 25% after upload
+        if (status.status === 'processing') {
+          calculatedProgress = 25 + (status.progress || 0) * 0.6; // 25% to 85%
+        } else if (status.status === 'awaiting_approval' || status.status === 'completed') {
+          calculatedProgress = 100;
+        }
+
+        setUploadProgress({
+          status: status.status,
+          upload_id: uploadId,
+          progress: calculatedProgress,
+          protocols_extracted: status.protocols_extracted,
+          protocols_indexed: status.protocols_indexed
+        });
+
+        if (status.status === 'completed') {
+          console.log('✅ Upload processing completed');
+          setIsUploading(false);
+          setUploadCancelled(false);
+          // Refresh user protocols list with fresh data
+          loadUploadedProtocols(true);
+          setTimeout(() => {
+            setUploadProgress(null);
+          }, 3000); // Show success for 3 seconds
+        } else if (status.status === 'awaiting_approval') {
+          console.log('⏳ Upload processing completed, awaiting user approval');
+          setIsUploading(false);
+          setUploadCancelled(false);
+          // Show preview modal
+          await showProtocolPreview(uploadId);
+        } else if (status.status === 'failed') {
+          console.log('❌ Upload processing failed');
+          setUploadProgress(prev => prev ? { ...prev, status: 'error', error: 'Processing failed' } : null);
+          setIsUploading(false);
+          setUploadCancelled(false);
+        } else {
+          // Continue polling
+          pollingRef.current = setTimeout(poll, 2000); // Poll every 2 seconds
+        }
+      } catch (error) {
+        console.error('❌ Status polling failed:', error);
+        setUploadProgress(prev => prev ? { ...prev, status: 'error', error: 'Status check failed' } : null);
+        setIsUploading(false);
+        setUploadCancelled(false);
+      }
+    };
+
+    poll();
+  };
+
+  const handleUploadDocuments = () => {
+    setShowUploadModal(true);
+    setCustomPrompt(''); // Reset custom prompt when opening modal
+  };
+
+  const handleCancelUpload = async () => {
+    console.log('🎯 Cancel button clicked!', {
+      isUploading,
+      currentUploadId,
+      currentUser: !!currentUser,
+      uploadProgress: uploadProgress?.status
+    });
+
+    if (!isUploading || !currentUser) {
+      console.log('⏭️ Nothing to cancel');
+      return;
+    }
+
+    try {
+      // If we have an upload_id, it means we're in processing phase - call backend cancel API
+      if (currentUploadId) {
+        console.log('🚫 Cancelling processing phase with upload_id:', currentUploadId);
+        const result = await cancelUpload(currentUser.uid, currentUploadId);
+        console.log('✅ Upload cancellation result:', result);
+      }
+      // If we don't have upload_id yet, we're still in upload phase - abort the fetch request
+      else if (uploadAbortController.current) {
+        console.log('🚫 Aborting upload request');
+        uploadAbortController.current.abort();
+      }
+
+      // Clean up state regardless of which phase we cancelled
+      setUploadCancelled(true);
+      setIsUploading(false);
+      setUploadProgress(null);
+      setCurrentUploadId(null);
+
+      // Clear any pending polling
+      if (pollingRef.current) {
+        clearTimeout(pollingRef.current);
+        pollingRef.current = null;
+      }
+
+      console.log('🚫 Upload cancelled by user');
+    } catch (error) {
+      console.error('❌ Failed to cancel upload:', error);
+
+      // Still cancel locally even if API call fails
+      setUploadCancelled(true);
+      setIsUploading(false);
+      setUploadProgress(null);
+      setCurrentUploadId(null);
+
+      // Clear any pending polling
+      if (pollingRef.current) {
+        clearTimeout(pollingRef.current);
+        pollingRef.current = null;
+      }
+    }
+  };
+
+  // Cleanup polling on component unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearTimeout(pollingRef.current);
+      }
+    };
+  }, []);
+
+  const handleRegenerateProtocol = async (protocolId: string) => {
+    if (!currentUser) {
+      alert('Please log in to regenerate protocols');
+      return;
+    }
+
+    // Show the regenerate modal instead of window.prompt
+    setProtocolToRegenerate(protocolId);
+    setRegenerationPrompt('Focus on specific aspects like pediatric considerations, emergency protocols, or detailed contraindications');
+    setShowRegenerateModal(true);
+  };
+
+  const handleConfirmRegenerate = async () => {
+    if (!currentUser || !protocolToRegenerate) return;
+
+    try {
+      setRegeneratingProtocolId(protocolToRegenerate);
+      setShowRegenerateModal(false);
+      console.log('🔄 Starting protocol regeneration:', protocolToRegenerate);
+
+      // Remove the uploaded_ prefix if present to get the actual protocol ID
+      const actualProtocolId = protocolToRegenerate.replace('uploaded_', '');
+
+      const result = await regenerateProtocol(currentUser.uid, actualProtocolId, regenerationPrompt);
+
+      console.log('✅ Protocol regeneration initiated:', result);
+      alert(`Protocol regeneration started! ${result.message}`);
+
+      // Refresh the uploaded protocols list with fresh data
+      setTimeout(() => {
+        loadUploadedProtocols(true);
+      }, 2000);
+
+    } catch (error) {
+      console.error('❌ Protocol regeneration failed:', error);
+      alert(`Failed to regenerate protocol: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setRegeneratingProtocolId(null);
+      setProtocolToRegenerate(null);
+      setRegenerationPrompt('');
+    }
+  };
+
+  const handleCancelRegenerate = () => {
+    setShowRegenerateModal(false);
+    setProtocolToRegenerate(null);
+    setRegenerationPrompt('');
+  };
+
+  const handleDeleteUserProtocol = async (protocolId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (!currentUser) return;
+
+    // Find protocol title for the confirmation message
+    const actualProtocolId = protocolId.replace('uploaded_', '');
+    const protocol = uploadedProtocols.find(p => p.id === actualProtocolId);
+    const protocolTitle = protocol?.title || 'this uploaded protocol';
+
+    if (onShowConfirmation) {
+      onShowConfirmation({
+        title: 'Delete Uploaded Protocol',
+        message: `Are you sure you want to delete "${protocolTitle}"? This action cannot be undone and will permanently remove this protocol from your index.`,
+        confirmText: 'Delete Protocol',
+        dangerous: true,
+        confirmAction: async () => {
+          try {
+            await deleteUserProtocol(currentUser.uid, actualProtocolId);
+
+            // Remove from local state and clear cache
+            setUploadedProtocols(prev => prev.filter(p => p.id !== actualProtocolId));
+            setOpenProtocolMenuId(null);
+            // Clear cache since data has changed
+            clearProtocolCache(currentUser.uid);
+            console.log('✅ User protocol deleted locally, cache cleared');
+          } catch (error) {
+            console.error('Failed to delete user protocol:', error);
+            alert('Failed to delete protocol');
+          }
+        }
+      });
+    }
+  };
+
+  const handleSaveUserProtocolRename = async (protocolId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    if (!currentUser || !editProtocolTitle.trim()) {
+      setEditingProtocolId(null);
+      return;
+    }
+
+    try {
+      // Remove the uploaded_ prefix if present to get the actual protocol ID
+      const actualProtocolId = protocolId.replace('uploaded_', '');
+
+      await updateUserProtocolTitle(currentUser.uid, actualProtocolId, editProtocolTitle.trim());
+
+      // Update local state - no need to reload from server
+      setUploadedProtocols(prev =>
+        prev.map(p => p.id === actualProtocolId ? { ...p, title: editProtocolTitle.trim() } : p)
+      );
+      setEditingProtocolId(null);
+      console.log('✅ User protocol renamed locally, no API reload needed');
+    } catch (error) {
+      console.error('Failed to rename user protocol:', error);
+      alert('Failed to rename protocol');
+    }
+  };
+
+  const showProtocolPreview = async (uploadId: string, forceShow = false) => {
+    try {
+      if (!currentUser) return;
+
+      const preview = await getUploadPreview(currentUser.uid, uploadId);
+
+      if (forceShow) {
+        // Directly show generated protocols view when clicked from sidebar (after notification was dismissed)
+        if (onShowGeneratedProtocols) {
+          onShowGeneratedProtocols(uploadId, preview.protocols);
+        }
+      } else {
+        // Send notification for automatic upload completion
+        if (onNotifyUploadReady) {
+          onNotifyUploadReady({
+            type: 'upload_ready',
+            title: '🎉 Protocols Ready!',
+            message: `Your ${preview.protocols.length} protocol${preview.protocols.length === 1 ? '' : 's'} have been generated and are ready for review.`,
+            uploadId,
+            protocols: preview.protocols
+          });
+        }
+
+        // IMMEDIATELY set generated protocols state for sidebar card visibility
+        if (onShowGeneratedProtocols) {
+          onShowGeneratedProtocols(uploadId, preview.protocols);
+        }
+      }
+
+      // Clear upload progress since protocols are ready
+      setUploadProgress(null);
+
+    } catch (error) {
+      console.error('❌ Failed to get protocol preview:', error);
+      alert('Failed to load protocol preview');
+    }
+  };
+
+
 
   return (
     <div className="w-80 bg-white border-r border-slate-200 h-full flex flex-col overflow-hidden">
@@ -487,9 +1105,9 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         </Button>
       </div>
 
-      {/* Content Area - Split into two scrollable sections */}
+      {/* Content Area - Split into three scrollable sections */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Saved Protocols Section - Takes up half */}
+        {/* Saved Protocols Section - Takes up one third */}
         <div className="flex-1 min-h-0 border-b border-slate-200 flex flex-col">
           <div className="px-6 pt-6 pb-3 flex-shrink-0">
             <div className="flex items-center space-x-2 mb-4">
@@ -618,7 +1236,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
           </div>
         </div>
 
-        {/* Recent Searches Section - Takes up half */}
+        {/* Recent Searches Section - Takes up more space now */}
         <div className="flex-1 min-h-0 flex flex-col">
           <div className="px-6 pt-6 pb-3 flex-shrink-0">
             <div className="flex items-center justify-between mb-4">
@@ -788,123 +1406,679 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       {/* Profile Modal */}
       {isProfileOpen && (
         <div className="absolute inset-0 bg-white z-50 flex flex-col">
-          {/* Profile Header */}
+          {/* Modal Header */}
           <div className="p-6 border-b border-slate-200">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-900">Profile</h2>
+              <h2 className="text-lg font-bold text-slate-900">Account & Protocols</h2>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setIsProfileOpen(false)}
+                onClick={() => {
+                  setIsProfileOpen(false);
+                  setActiveProfileTab('profile');
+                }}
                 className="h-8 w-8 p-0"
               >
                 ×
               </Button>
             </div>
 
-            {/* User Info */}
-            <div className="flex items-center space-x-4">
-              <div className="h-16 w-16 bg-teal-100 rounded-full flex items-center justify-center">
-                {getProfileImageUrl() ? (
-                  <img
-                    src={getProfileImageUrl()!}
-                    alt="Profile"
-                    className="h-16 w-16 rounded-full object-cover"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      // Hide image if it fails to load
-                      e.currentTarget.style.display = 'none';
-                    }}
-                  />
-                ) : (
-                  <User className="h-8 w-8 text-teal-600" />
-                )}
-              </div>
-              <div className="flex-1">
-                {isRenaming ? (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      value={newDisplayName}
-                      onChange={(e) => setNewDisplayName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSaveProfileRename();
-                        if (e.key === 'Escape') handleCancelProfileRename();
-                      }}
-                      className="text-lg font-semibold text-slate-900 border border-teal-500 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-teal-500"
-                      placeholder="Enter your name"
-                      autoFocus
-                    />
-                    <div className="flex space-x-2">
-                      <Button
-                        size="sm"
-                        onClick={handleSaveProfileRename}
-                        className="h-6 text-xs bg-teal-600 hover:bg-teal-700"
-                      >
-                        Save
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleCancelProfileRename}
-                        className="h-6 text-xs"
-                      >
-                        Cancel
-                      </Button>
+            {/* Tab Navigation */}
+            <div className="flex space-x-1 bg-slate-100 rounded-lg p-1">
+              <Button
+                variant={activeProfileTab === 'profile' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveProfileTab('profile')}
+                className={`flex-1 text-sm ${activeProfileTab === 'profile' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}
+              >
+                <User className="h-4 w-4 mr-2" />
+                Profile
+              </Button>
+              <Button
+                variant={activeProfileTab === 'protocols' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveProfileTab('protocols')}
+                className={`flex-1 text-sm ${activeProfileTab === 'protocols' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                My Protocols ({userProtocols.length})
+              </Button>
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          <div className="flex-1 overflow-hidden">
+            {activeProfileTab === 'profile' ? (
+              /* Profile Tab */
+              <div className="h-full flex flex-col">
+                {/* User Info */}
+                <div className="p-6 border-b border-slate-200">
+                  <div className="flex items-center space-x-4">
+                    <div className="h-16 w-16 bg-teal-100 rounded-full flex items-center justify-center">
+                      {getProfileImageUrl() ? (
+                        <img
+                          src={getProfileImageUrl()!}
+                          alt="Profile"
+                          className="h-16 w-16 rounded-full object-cover"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            // Hide image if it fails to load
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <User className="h-8 w-8 text-teal-600" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      {isRenaming ? (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={newDisplayName}
+                            onChange={(e) => setNewDisplayName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveProfileRename();
+                              if (e.key === 'Escape') handleCancelProfileRename();
+                            }}
+                            className="text-lg font-semibold text-slate-900 border border-teal-500 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-teal-500"
+                            placeholder="Enter your name"
+                            autoFocus
+                          />
+                          <div className="flex space-x-2">
+                            <Button
+                              size="sm"
+                              onClick={handleSaveProfileRename}
+                              className="h-6 text-xs bg-teal-600 hover:bg-teal-700"
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleCancelProfileRename}
+                              className="h-6 text-xs"
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <h3 className="text-lg font-semibold text-slate-900">
+                            {currentUser?.displayName || 'User'}
+                          </h3>
+                          <p className="text-sm text-slate-600">{currentUser?.email}</p>
+                        </>
+                      )}
                     </div>
                   </div>
+                </div>
+
+                {/* Profile Actions */}
+                <div className="flex-1 p-6">
+                  <div className="space-y-3">
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start text-left"
+                      onClick={handleStartProfileRename}
+                      disabled={isRenaming}
+                    >
+                      <Edit2 className="h-4 w-4 mr-3" />
+                      <div>
+                        <div className="font-medium">Rename Account</div>
+                        <div className="text-xs text-slate-500">Change your display name</div>
+                      </div>
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start text-left"
+                      onClick={handleUploadDocuments}
+                      disabled={isRenaming}
+                    >
+                      {isUploading ? (
+                        <Loader2 className="h-4 w-4 mr-3 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4 mr-3" />
+                      )}
+                      <div>
+                        <div className="font-medium">
+                          {isUploading ? 'Upload in Progress...' : 'Upload Medical Documents'}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {isUploading
+                            ? `${uploadProgress?.status === 'uploading' ? 'Uploading file...' : 'Processing documents...'}`
+                            : 'Add your own protocols from PDFs'
+                          }
+                        </div>
+                      </div>
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start text-left hover:bg-red-50 hover:text-red-600"
+                      onClick={handleLogout}
+                      disabled={isRenaming}
+                    >
+                      <LogOut className="h-4 w-4 mr-3" />
+                      <div>
+                        <div className="font-medium">Log Out</div>
+                        <div className="text-xs text-slate-500">Sign out of your account</div>
+                      </div>
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start text-left hover:bg-red-50 hover:text-red-600"
+                      onClick={handleDeleteAccount}
+                      disabled={isRenaming}
+                    >
+                      <UserX className="h-4 w-4 mr-3" />
+                      <div>
+                        <div className="font-medium">Delete Account</div>
+                        <div className="text-xs text-slate-500">Permanently delete your account</div>
+                      </div>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Protocols Tab */
+              <div className="h-full flex flex-col">
+                {/* Protocols Header */}
+                <div className="p-6 border-b border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">My Protocols</h3>
+                      <p className="text-sm text-slate-600">
+                        Saved and uploaded protocols ({userProtocols.length} total)
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleUploadDocuments}
+                      className="flex items-center space-x-2"
+                      disabled={isUploading}
+                    >
+                      {isUploading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4" />
+                      )}
+                      <span>{isUploading ? 'Uploading...' : 'Upload'}</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Protocols List */}
+                <div className="flex-1 overflow-y-auto p-6">
+                  {(isLoadingSaved || isLoadingUploaded) ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 text-teal-600 animate-spin" />
+                    </div>
+                  ) : (savedError || uploadedError) ? (
+                    <div className="text-xs text-red-600 mb-3 p-2 bg-red-50 rounded">
+                      {savedError || uploadedError}
+                    </div>
+                  ) : userProtocols.length === 0 && !isUploading && uploadedProtocols.length === 0 && generatedProtocols.length === 0 ? (
+                    <div className="text-center py-12">
+                      <FileText className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+                      <h4 className="text-lg font-medium text-slate-900 mb-2">No protocols yet</h4>
+                      <p className="text-sm text-slate-600 mb-6">
+                        Upload medical documents or save protocols from searches to see them here
+                      </p>
+                      <Button
+                        onClick={handleUploadDocuments}
+                        className="bg-teal-600 hover:bg-teal-700"
+                        disabled={isUploading}
+                      >
+                        {isUploading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Upload className="h-4 w-4 mr-2" />
+                        )}
+                        {isUploading ? 'Upload in Progress...' : 'Upload Documents'}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* User's Protocol Index - Always show when user has protocols or is uploading */}
+                      {(uploadedProtocols.length > 0 || isUploading || userProtocols.length > 0) && (
+                        <Card
+                          className="cursor-pointer hover:shadow-md transition-all duration-200 hover:border-teal-200 border-blue-200 bg-blue-50"
+                          onClick={(e) => {
+                            console.log('🎯 Protocol Index clicked!', { isUploading, uploadProgress: uploadProgress?.status });
+                            e.preventDefault();
+                            e.stopPropagation();
+                            // Always allow access to protocol index, even during uploads
+                            // Don't change sidebar tab - just switch main content view
+                            onShowUserProtocolsIndex?.();
+                          }}
+                          style={{
+                            pointerEvents: 'auto',
+                            position: 'relative',
+                            zIndex: 1000
+                          }} // Ensure always clickable and on top
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-3">
+                                <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                  <FileText className="h-5 w-5 text-blue-600" />
+                                </div>
+                                <div>
+                                  <h4 className="text-sm font-medium text-slate-900">
+                                    Your Protocol Index
+                                  </h4>
+                                  <p className="text-xs text-slate-600">
+                                    {uploadedProtocols.length} protocols uploaded
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-xl font-bold text-blue-600">
+                                {uploadedProtocols.length}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Generated Protocols Summary - shown when protocols have been generated */}
+                      {generatedProtocols.length > 0 && (
+                        <Card
+                          className="border-purple-200 bg-purple-50 cursor-pointer hover:bg-purple-100 transition-colors"
+                          onClick={(e) => {
+                            console.log('🎯 Generated Protocols clicked!');
+                            e.preventDefault();
+                            e.stopPropagation();
+                            // Don't change sidebar tab - just switch main content view
+                            // Show the generated protocols
+                            if (generatedUploadId && generatedProtocols.length > 0) {
+                              onShowGeneratedProtocols?.(generatedUploadId, generatedProtocols);
+                            }
+                          }}
+                          style={{
+                            pointerEvents: 'auto',
+                            position: 'relative',
+                            zIndex: 1000
+                          }}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-3">
+                                <div className="h-10 w-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                                  <Sparkles className="h-5 w-5 text-purple-600" />
+                                </div>
+                                <div>
+                                  <h4 className="text-sm font-medium text-slate-900">
+                                    Generated Protocols
+                                  </h4>
+                                  <p className="text-xs text-slate-600">
+                                    {generatedProtocols.length} protocols generated
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-xl font-bold text-purple-600">
+                                {generatedProtocols.length}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Saved Protocols Summary */}
+                      {savedProtocols.length > 0 && (
+                        <Card className="border-teal-200 bg-teal-50">
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-3">
+                                <div className="h-10 w-10 bg-teal-100 rounded-lg flex items-center justify-center">
+                                  <Star className="h-5 w-5 text-teal-600" />
+                                </div>
+                                <div>
+                                  <h4 className="text-sm font-medium text-slate-900">
+                                    Saved Protocols
+                                  </h4>
+                                  <p className="text-xs text-slate-600">
+                                    {savedProtocols.length} protocols saved
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-xl font-bold text-teal-600">
+                                {savedProtocols.length}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Quick Actions */}
+                      <div className="border-t border-slate-200 pt-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleUploadDocuments}
+                          className="w-full flex items-center justify-center space-x-2"
+                          disabled={isUploading}
+                        >
+                          {isUploading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Upload className="h-4 w-4" />
+                          )}
+                          <span>{isUploading ? 'Uploading...' : 'Upload Documents'}</span>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Upload Documents Modal */}
+      {showUploadModal && (
+        <div className="absolute inset-0 bg-white z-50 flex flex-col">
+          {/* Upload Header */}
+          <div className="p-6 border-b border-slate-200">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-slate-900">Upload Medical Documents</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowUploadModal(false)}
+                className="h-8 w-8 p-0"
+              >
+                ×
+              </Button>
+            </div>
+            <p className="text-sm text-slate-600">
+              Upload ZIP files containing medical PDFs to create your personalized protocols
+            </p>
+          </div>
+
+          {/* Upload Content */}
+          <div className="flex-1 p-6 overflow-y-auto">
+            <div className="space-y-6">
+              {/* Custom Prompt Input */}
+              <div className="space-y-3">
+                <div>
+                  <label htmlFor="custom-prompt" className="block text-sm font-medium text-slate-900 mb-2">
+                    Custom Processing Instructions (Optional)
+                  </label>
+                  <textarea
+                    id="custom-prompt"
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    placeholder="e.g., 'Focus on emergency protocols and include detailed contraindications' or 'Extract pediatric dosages and age-specific considerations'"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none text-sm"
+                    rows={3}
+                    disabled={isUploading}
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Provide specific instructions for how the AI should process and structure your medical documents into protocols.
+                  </p>
+                </div>
+              </div>
+
+              {/* File Upload Area */}
+              <div
+                className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:border-teal-400 transition-colors"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.add('border-teal-400', 'bg-teal-50');
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.remove('border-teal-400', 'bg-teal-50');
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.remove('border-teal-400', 'bg-teal-50');
+                  const file = e.dataTransfer.files[0];
+                  if (file) {
+                    handleFileUpload(file);
+                  }
+                }}
+              >
+                <Upload className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-slate-900 mb-2">
+                  Drop your ZIP file here
+                </h3>
+                <p className="text-sm text-slate-600 mb-4">
+                  or click to browse files
+                </p>
+                <input
+                  type="file"
+                  accept=".zip"
+                  className="hidden"
+                  id="file-upload"
+                  disabled={isUploading}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file && !isUploading) {
+                      handleFileUpload(file);
+                      // Reset input value so same file can be selected again
+                      e.target.value = '';
+                    }
+                  }}
+                />
+                <label
+                  htmlFor="file-upload"
+                  className={`inline-flex items-center px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 cursor-pointer ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  style={{ pointerEvents: isUploading ? 'none' : 'auto' }}
+                >
+                  {isUploading ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4 mr-2" />
+                  )}
+                  {isUploading ? 'Upload in Progress...' : 'Choose ZIP File'}
+                </label>
+              </div>
+
+              {/* Upload Requirements */}
+              <div className="bg-slate-50 rounded-lg p-4">
+                <h4 className="font-medium text-slate-900 mb-2">Requirements:</h4>
+                <ul className="text-sm text-slate-600 space-y-1">
+                  <li>• ZIP file containing PDF documents only</li>
+                  <li>• Maximum file size: 100MB</li>
+                  <li>• PDFs should contain medical protocols or guidelines</li>
+                  <li>• Processing may take 2-5 minutes depending on file size</li>
+                </ul>
+              </div>
+
+              {/* Processing Status */}
+              <div className="space-y-3">
+                <h4 className="font-medium text-slate-900">Processing Status</h4>
+                {uploadProgress ? (
+                  <div className="bg-white border border-slate-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-medium text-slate-700">{uploadProgress.filename}</span>
+                      <div className="flex items-center space-x-2">
+                        <Badge
+                          variant={
+                            uploadProgress.status === 'completed' || uploadProgress.status === 'awaiting_approval' ? 'default' :
+                            uploadProgress.status === 'error' ? 'destructive' :
+                            'secondary'
+                          }
+                          className={
+                            uploadProgress.status === 'completed' || uploadProgress.status === 'awaiting_approval' ? 'bg-green-600' :
+                            uploadProgress.status === 'error' ? 'bg-red-600' :
+                            'bg-blue-600'
+                          }
+                        >
+                          {uploadProgress.status === 'uploading' ? 'Uploading' :
+                           uploadProgress.status === 'processing' ? 'Processing' :
+                           uploadProgress.status === 'awaiting_approval' ? 'Ready for Review' :
+                           uploadProgress.status === 'completed' ? 'Completed' :
+                           uploadProgress.status === 'error' ? 'Error' :
+                           uploadProgress.status}
+                        </Badge>
+                        {(uploadProgress.status === 'uploading' || uploadProgress.status === 'processing') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleCancelUpload}
+                            className="h-6 text-xs text-red-600 border-red-200 hover:bg-red-50"
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    {(uploadProgress.status === 'uploading' || uploadProgress.status === 'processing') && (
+                      <div className="space-y-2 mb-3">
+                        <div className="flex items-center justify-between text-xs text-slate-600">
+                          <span>Progress</span>
+                          <span>{Math.round(uploadProgress.progress || 0)}%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div
+                            className="bg-teal-600 h-2 rounded-full transition-all duration-300 ease-out"
+                            style={{ width: `${uploadProgress.progress || 0}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {(uploadProgress.status === 'uploading' || uploadProgress.status === 'processing') && (
+                      <div className="space-y-2">
+                        <div className="flex items-center text-sm text-slate-600">
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          {uploadProgress.status === 'uploading' ? 'Uploading file...' : 'Processing documents and generating protocols...'}
+                        </div>
+                        {uploadProgress.protocols_extracted !== undefined && (
+                          <div className="text-xs text-slate-500">
+                            Protocols extracted: {uploadProgress.protocols_extracted}
+                          </div>
+                        )}
+                        {uploadProgress.protocols_indexed !== undefined && (
+                          <div className="text-xs text-slate-500">
+                            Protocols indexed: {uploadProgress.protocols_indexed}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {(uploadProgress.status === 'completed' || uploadProgress.status === 'awaiting_approval') && (
+                      <div className="flex items-center text-sm text-green-600">
+                        <div className="h-2 w-2 bg-green-500 rounded-full mr-2"></div>
+                        {uploadProgress.status === 'awaiting_approval'
+                          ? `Ready for review! ${uploadProgress.protocols_extracted || 0} protocols generated`
+                          : `Successfully processed ${uploadProgress.protocols_extracted || 0} protocols`
+                        }
+                      </div>
+                    )}
+
+                    {uploadProgress.status === 'error' && uploadProgress.error && (
+                      <div className="text-sm text-red-600 mt-2">
+                        Error: {uploadProgress.error}
+                      </div>
+                    )}
+                  </div>
                 ) : (
-                  <>
-                    <h3 className="text-lg font-semibold text-slate-900">
-                      {currentUser?.displayName || 'User'}
-                    </h3>
-                    <p className="text-sm text-slate-600">{currentUser?.email}</p>
-                  </>
+                  <div className="text-sm text-slate-500">
+                    No files uploaded yet
+                  </div>
                 )}
               </div>
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Profile Actions */}
+
+      {/* Protocol Regeneration Modal */}
+      {showRegenerateModal && (
+        <div className="absolute inset-0 bg-white z-50 flex flex-col">
+          {/* Regenerate Header */}
+          <div className="p-6 border-b border-slate-200">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-slate-900">Regenerate Protocol</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCancelRegenerate}
+                className="h-8 w-8 p-0"
+              >
+                ×
+              </Button>
+            </div>
+            <p className="text-sm text-slate-600">
+              Provide custom instructions to regenerate this protocol with different focus or requirements.
+            </p>
+          </div>
+
+          {/* Regenerate Content */}
           <div className="flex-1 p-6">
-            <div className="space-y-3">
-              <Button
-                variant="ghost"
-                className="w-full justify-start text-left"
-                onClick={handleStartProfileRename}
-                disabled={isRenaming}
-              >
-                <Edit2 className="h-4 w-4 mr-3" />
-                <div>
-                  <div className="font-medium">Rename Account</div>
-                  <div className="text-xs text-slate-500">Change your display name</div>
-                </div>
-              </Button>
+            <div className="space-y-6">
+              <div>
+                <label htmlFor="regeneration-prompt" className="block text-sm font-medium text-slate-900 mb-2">
+                  Custom Instructions
+                </label>
+                <textarea
+                  id="regeneration-prompt"
+                  value={regenerationPrompt}
+                  onChange={(e) => setRegenerationPrompt(e.target.value)}
+                  placeholder="e.g., 'Focus on emergency protocols and include detailed contraindications' or 'Extract pediatric dosages and age-specific considerations'"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none text-sm"
+                  rows={4}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Specify how you want the protocol to be regenerated. The AI will use these instructions to create a new version.
+                </p>
+              </div>
 
-              <Button
-                variant="ghost"
-                className="w-full justify-start text-left hover:bg-red-50 hover:text-red-600"
-                onClick={handleLogout}
-                disabled={isRenaming}
-              >
-                <LogOut className="h-4 w-4 mr-3" />
-                <div>
-                  <div className="font-medium">Log Out</div>
-                  <div className="text-xs text-slate-500">Sign out of your account</div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <span className="text-yellow-600">⚠️</span>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-yellow-800">
+                      Protocol Regeneration
+                    </h3>
+                    <div className="mt-2 text-sm text-yellow-700">
+                      <p>This will create a new version of the protocol based on your instructions. The original will be replaced.</p>
+                    </div>
+                  </div>
                 </div>
-              </Button>
+              </div>
+            </div>
+          </div>
 
+          {/* Regenerate Actions */}
+          <div className="p-6 border-t border-slate-200 bg-slate-50">
+            <div className="flex space-x-3">
               <Button
-                variant="ghost"
-                className="w-full justify-start text-left hover:bg-red-50 hover:text-red-600"
-                onClick={handleDeleteAccount}
-                disabled={isRenaming}
+                onClick={handleCancelRegenerate}
+                variant="outline"
+                className="flex-1"
               >
-                <UserX className="h-4 w-4 mr-3" />
-                <div>
-                  <div className="font-medium">Delete Account</div>
-                  <div className="text-xs text-slate-500">Permanently delete your account</div>
-                </div>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmRegenerate}
+                className="flex-1 bg-teal-600 hover:bg-teal-700 text-white"
+                disabled={!regenerationPrompt.trim()}
+              >
+                {regeneratingProtocolId ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Regenerating...
+                  </>
+                ) : (
+                  <>
+                    🔄 Regenerate Protocol
+                  </>
+                )}
               </Button>
             </div>
           </div>

@@ -148,18 +148,33 @@ export type ConversationListResponse = {
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 export async function searchProtocols(
-  req: BackendSearchRequest, 
+  req: BackendSearchRequest,
   options?: {
     useHybrid?: boolean;
     enhanceQuery?: boolean;
+    userId?: string;
+    searchMode?: 'mixed' | 'user_only' | 'global_only';
   }
 ): Promise<BackendSearchResponse> {
   // Default to hybrid search enabled for better results!
   const useHybrid = options?.useHybrid !== undefined ? options.useHybrid : true;
   const enhanceQuery = options?.enhanceQuery || false;
-  
-  const url = `${API_BASE}/protocols/search?use_hybrid=${useHybrid}&enhance_query=${enhanceQuery}`;
-  
+  const userId = options?.userId;
+  const searchMode = options?.searchMode || 'mixed';
+
+  // Build URL with query parameters
+  const params = new URLSearchParams({
+    use_hybrid: useHybrid.toString(),
+    enhance_query: enhanceQuery.toString()
+  });
+
+  if (userId) {
+    params.append('user_id', userId);
+    params.append('search_mode', searchMode);
+  }
+
+  const url = `${API_BASE}/protocols/search?${params.toString()}`;
+
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -382,6 +397,257 @@ export async function deleteUserData(userId: string): Promise<{ success: boolean
       errorMessage = `Failed to delete user data: ${response.status} ${response.statusText}`;
     }
     throw new Error(errorMessage);
+  }
+
+  return response.json();
+}
+
+// Document upload functions
+export async function uploadDocuments(userId: string, file: File, customPrompt?: string, signal?: AbortSignal): Promise<{
+  success: boolean;
+  upload_id: string;
+  filename: string;
+  size: number;
+  status: string;
+  message: string;
+}> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  if (customPrompt && customPrompt.trim()) {
+    formData.append('custom_prompt', customPrompt.trim());
+  }
+
+  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/upload-documents`, {
+    method: 'POST',
+    body: formData,
+    signal,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to upload documents');
+  }
+
+  return response.json();
+}
+
+export async function getUserUploadedProtocols(userId: string, size: number = 20): Promise<{
+  success: boolean;
+  protocols: Array<{
+    id: string;
+    title: string;
+    organization: string;
+    region: string;
+    year: number;
+    created_at: string;
+    steps_count: number;
+    citations_count: number;
+    source_file: string;
+    protocol_data: any;
+  }>;
+  total: number;
+  error?: string;
+}> {
+  try {
+    const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/protocols?size=${size}`);
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        // Handle 404 as empty protocols list
+        console.log('ℹ️ User protocols endpoint not found, returning empty list');
+        return {
+          success: true,
+          protocols: [],
+          total: 0,
+          error: 'No protocols found (user index may not exist yet)'
+        };
+      }
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Failed to get uploaded protocols');
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('❌ Error in getUserUploadedProtocols:', error);
+    // Return a successful empty response instead of throwing
+    return {
+      success: true,
+      protocols: [],
+      total: 0,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+}
+
+export async function getUploadStatus(userId: string, uploadId: string): Promise<{
+  upload_id: string;
+  status: string;
+  progress: number;
+  protocols_extracted: number;
+  protocols_indexed: number;
+  processing_time: string;
+  created_at: string;
+}> {
+  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/upload-status/${encodeURIComponent(uploadId)}`);
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to get upload status');
+  }
+
+  return response.json();
+}
+
+export async function regenerateProtocol(userId: string, protocolId: string, customPrompt?: string): Promise<{
+  success: boolean;
+  regeneration_id: string;
+  protocol_id: string;
+  status: string;
+  message: string;
+}> {
+  const formData = new FormData();
+
+  if (customPrompt && customPrompt.trim()) {
+    formData.append('custom_prompt', customPrompt.trim());
+  }
+
+  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/protocols/${encodeURIComponent(protocolId)}/regenerate`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to regenerate protocol');
+  }
+
+  return response.json();
+}
+
+export async function regenerateUploadProtocols(userId: string, uploadId: string, customPrompt?: string): Promise<{
+  success: boolean;
+  regeneration_id: string;
+  upload_id: string;
+  status: string;
+  message: string;
+}> {
+  const formData = new FormData();
+
+  if (customPrompt && customPrompt.trim()) {
+    formData.append('custom_prompt', customPrompt.trim());
+  }
+
+  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/upload-regenerate/${encodeURIComponent(uploadId)}`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to regenerate upload protocols');
+  }
+
+  return response.json();
+}
+
+export async function deleteUserProtocol(userId: string, protocolId: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/protocols/${encodeURIComponent(protocolId)}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to delete protocol');
+  }
+
+  return response.json();
+}
+
+export async function deleteAllUserProtocols(userId: string): Promise<{
+  success: boolean;
+  message: string;
+  deleted_count: number;
+}> {
+  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/protocols/all`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to delete all protocols');
+  }
+
+  return response.json();
+}
+
+export async function updateUserProtocolTitle(userId: string, protocolId: string, newTitle: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/protocols/${encodeURIComponent(protocolId)}/title`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: newTitle }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to update protocol title');
+  }
+
+  return response.json();
+}
+
+export async function getUploadPreview(userId: string, uploadId: string): Promise<{
+  success: boolean;
+  upload_id: string;
+  protocols: any[];
+  total: number;
+}> {
+  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/upload-preview/${encodeURIComponent(uploadId)}`);
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to get upload preview');
+  }
+
+  return response.json();
+}
+
+export async function approveAndIndexUpload(userId: string, uploadId: string): Promise<{
+  success: boolean;
+  upload_id: string;
+  status: string;
+  message: string;
+}> {
+  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/upload-approve/${encodeURIComponent(uploadId)}`, {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to approve upload');
+  }
+
+  return response.json();
+}
+
+export async function cancelUpload(userId: string, uploadId: string): Promise<{
+  success: boolean;
+  upload_id: string;
+  message: string;
+}> {
+  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/upload-cancel/${encodeURIComponent(uploadId)}`, {
+    method: 'POST'
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: 'Failed to cancel upload' }));
+    throw new Error(errorData.detail || 'Failed to cancel upload');
   }
 
   return response.json();
