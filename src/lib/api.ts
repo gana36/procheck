@@ -1,3 +1,6 @@
+import { fetchWithRetry, RequestOptions } from './request-utils';
+import { logError } from './error-handler';
+
 // Chat types
 export type ChatMessage = {
   role: 'user' | 'assistant';
@@ -147,11 +150,19 @@ export type ConversationListResponse = {
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
+// Default request options
+const DEFAULT_REQUEST_OPTIONS: RequestOptions = {
+  timeout: 30000, // 30 seconds
+  retries: 2,
+  retryDelay: 1000,
+};
+
 export async function searchProtocols(
   req: BackendSearchRequest,
   options?: {
     useHybrid?: boolean;
     enhanceQuery?: boolean;
+    signal?: AbortSignal;
     userId?: string;
     searchMode?: 'mixed' | 'user_only' | 'global_only';
   }
@@ -174,17 +185,26 @@ export async function searchProtocols(
   }
 
   const url = `${API_BASE}/protocols/search?${params.toString()}`;
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Search failed: ${res.status} ${text}`);
+  
+  try {
+    const res = await fetchWithRetry(url, {
+      ...DEFAULT_REQUEST_OPTIONS,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+      signal: options?.signal,
+    });
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Search failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'searchProtocols', req });
+    throw error;
   }
-  return res.json();
 }
 
 // Backward compatibility: hybridSearchProtocols now just calls searchProtocols
@@ -192,73 +212,183 @@ export async function hybridSearchProtocols(req: BackendSearchRequest): Promise<
   return searchProtocols(req, { useHybrid: true, enhanceQuery: false });
 }
 
-export async function generateProtocol(req: BackendGenerateRequest): Promise<BackendGenerateResponse> {
-  const res = await fetch(`${API_BASE}/protocols/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Generate failed: ${res.status} ${text}`);
+export async function generateProtocol(
+  req: BackendGenerateRequest,
+  signal?: AbortSignal
+): Promise<BackendGenerateResponse> {
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/protocols/generate`, {
+      ...DEFAULT_REQUEST_OPTIONS,
+      timeout: 45000, // Longer timeout for generation
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+      signal,
+    });
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Generate failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'generateProtocol', req });
+    throw error;
   }
-  return res.json();
 }
 
 // Conversation API functions
-export async function saveConversation(userId: string, conversation: ConversationSaveRequest): Promise<ConversationResponse> {
-  const res = await fetch(`${API_BASE}/conversations/save?user_id=${encodeURIComponent(userId)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(conversation),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Save conversation failed: ${res.status} ${text}`);
+export async function saveConversation(
+  userId: string,
+  conversation: ConversationSaveRequest,
+  signal?: AbortSignal
+): Promise<ConversationResponse> {
+  if (!userId || !userId.trim()) {
+    throw new Error('User ID is required');
   }
-  return res.json();
+  
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/conversations/save?user_id=${encodeURIComponent(userId)}`, {
+      ...DEFAULT_REQUEST_OPTIONS,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(conversation),
+      signal,
+    });
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Save conversation failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'saveConversation', userId });
+    throw error;
+  }
 }
 
-export async function getUserConversations(userId: string, limit: number = 20): Promise<ConversationListResponse> {
-  const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(userId)}?limit=${limit}`);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Get conversations failed: ${res.status} ${text}`);
+export async function getUserConversations(
+  userId: string,
+  limit: number = 20,
+  signal?: AbortSignal
+): Promise<ConversationListResponse> {
+  if (!userId || !userId.trim()) {
+    throw new Error('User ID is required');
   }
-  return res.json();
+  
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/conversations/${encodeURIComponent(userId)}?limit=${limit}`, {
+      ...DEFAULT_REQUEST_OPTIONS,
+      signal,
+    });
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Get conversations failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'getUserConversations', userId });
+    throw error;
+  }
 }
 
-export async function getConversation(userId: string, conversationId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(userId)}/${encodeURIComponent(conversationId)}`);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Get conversation failed: ${res.status} ${text}`);
+export async function getConversation(
+  userId: string,
+  conversationId: string,
+  signal?: AbortSignal
+): Promise<any> {
+  if (!userId || !userId.trim() || !conversationId || !conversationId.trim()) {
+    throw new Error('User ID and Conversation ID are required');
   }
-  return res.json();
+  
+  try {
+    const res = await fetchWithRetry(
+      `${API_BASE}/conversations/${encodeURIComponent(userId)}/${encodeURIComponent(conversationId)}`,
+      { ...DEFAULT_REQUEST_OPTIONS, signal }
+    );
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Get conversation failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'getConversation', userId, conversationId });
+    throw error;
+  }
 }
 
-export async function deleteConversation(userId: string, conversationId: string): Promise<{ success: boolean; message: string }> {
-  const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(userId)}/${encodeURIComponent(conversationId)}`, {
-    method: 'DELETE',
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Delete conversation failed: ${res.status} ${text}`);
+export async function deleteConversation(
+  userId: string,
+  conversationId: string,
+  signal?: AbortSignal
+): Promise<{ success: boolean; message: string }> {
+  if (!userId || !userId.trim() || !conversationId || !conversationId.trim()) {
+    throw new Error('User ID and Conversation ID are required');
   }
-  return res.json();
+  
+  try {
+    const res = await fetchWithRetry(
+      `${API_BASE}/conversations/${encodeURIComponent(userId)}/${encodeURIComponent(conversationId)}`,
+      {
+        ...DEFAULT_REQUEST_OPTIONS,
+        method: 'DELETE',
+        signal,
+      }
+    );
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Delete conversation failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'deleteConversation', userId, conversationId });
+    throw error;
+  }
 }
 
-export async function updateConversationTitle(userId: string, conversationId: string, newTitle: string): Promise<{ success: boolean; message: string }> {
-  const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(userId)}/${encodeURIComponent(conversationId)}/title`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: newTitle }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Update conversation title failed: ${res.status} ${text}`);
+export async function updateConversationTitle(
+  userId: string,
+  conversationId: string,
+  newTitle: string,
+  signal?: AbortSignal
+): Promise<{ success: boolean; message: string }> {
+  if (!userId || !userId.trim() || !conversationId || !conversationId.trim()) {
+    throw new Error('User ID and Conversation ID are required');
   }
-  return res.json();
+  if (!newTitle || !newTitle.trim()) {
+    throw new Error('Title is required');
+  }
+  
+  try {
+    const res = await fetchWithRetry(
+      `${API_BASE}/conversations/${encodeURIComponent(userId)}/${encodeURIComponent(conversationId)}/title`,
+      {
+        ...DEFAULT_REQUEST_OPTIONS,
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle }),
+        signal,
+      }
+    );
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Update conversation title failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'updateConversationTitle', userId, conversationId });
+    throw error;
+  }
 }
 
 // ==================== Saved Protocols API ====================
@@ -281,125 +411,283 @@ export type SavedProtocolsResponse = {
   details?: string;
 };
 
-export async function saveProtocol(userId: string, protocolData: any): Promise<{ success: boolean; protocol_id: string; document_id: string }> {
-  const res = await fetch(`${API_BASE}/protocols/save?user_id=${encodeURIComponent(userId)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(protocolData),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Save protocol failed: ${res.status} ${text}`);
+export async function saveProtocol(
+  userId: string,
+  protocolData: any,
+  signal?: AbortSignal
+): Promise<{ success: boolean; protocol_id: string; document_id: string }> {
+  if (!userId || !userId.trim()) {
+    throw new Error('User ID is required');
   }
-  return res.json();
+  
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/protocols/save?user_id=${encodeURIComponent(userId)}`, {
+      ...DEFAULT_REQUEST_OPTIONS,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(protocolData),
+      signal,
+    });
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Save protocol failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'saveProtocol', userId });
+    throw error;
+  }
 }
 
-export async function getSavedProtocols(userId: string, limit: number = 20): Promise<SavedProtocolsResponse> {
-  const res = await fetch(`${API_BASE}/protocols/saved/${encodeURIComponent(userId)}?limit=${limit}`);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Get saved protocols failed: ${res.status} ${text}`);
+export async function getSavedProtocols(
+  userId: string,
+  limit: number = 20,
+  signal?: AbortSignal
+): Promise<SavedProtocolsResponse> {
+  if (!userId || !userId.trim()) {
+    throw new Error('User ID is required');
   }
-  return res.json();
+  
+  try {
+    const res = await fetchWithRetry(
+      `${API_BASE}/protocols/saved/${encodeURIComponent(userId)}?limit=${limit}`,
+      { ...DEFAULT_REQUEST_OPTIONS, signal }
+    );
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Get saved protocols failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'getSavedProtocols', userId });
+    throw error;
+  }
 }
 
-export async function getSavedProtocol(userId: string, protocolId: string): Promise<{ success: boolean; protocol?: SavedProtocol; error?: string }> {
-  const res = await fetch(`${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}`);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Get saved protocol failed: ${res.status} ${text}`);
+export async function getSavedProtocol(
+  userId: string,
+  protocolId: string,
+  signal?: AbortSignal
+): Promise<{ success: boolean; protocol?: SavedProtocol; error?: string }> {
+  if (!userId || !userId.trim() || !protocolId || !protocolId.trim()) {
+    throw new Error('User ID and Protocol ID are required');
   }
-  return res.json();
+  
+  try {
+    const res = await fetchWithRetry(
+      `${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}`,
+      { ...DEFAULT_REQUEST_OPTIONS, signal }
+    );
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Get saved protocol failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'getSavedProtocol', userId, protocolId });
+    throw error;
+  }
 }
 
-export async function deleteSavedProtocol(userId: string, protocolId: string): Promise<{ success: boolean; message: string }> {
-  const res = await fetch(`${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}`, {
-    method: 'DELETE',
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Delete protocol failed: ${res.status} ${text}`);
+export async function deleteSavedProtocol(
+  userId: string,
+  protocolId: string,
+  signal?: AbortSignal
+): Promise<{ success: boolean; message: string }> {
+  if (!userId || !userId.trim() || !protocolId || !protocolId.trim()) {
+    throw new Error('User ID and Protocol ID are required');
   }
-  return res.json();
+  
+  try {
+    const res = await fetchWithRetry(
+      `${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}`,
+      {
+        ...DEFAULT_REQUEST_OPTIONS,
+        method: 'DELETE',
+        signal,
+      }
+    );
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Delete protocol failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'deleteSavedProtocol', userId, protocolId });
+    throw error;
+  }
 }
 
-export async function updateSavedProtocolTitle(userId: string, protocolId: string, newTitle: string): Promise<{ success: boolean; message: string }> {
-  const res = await fetch(`${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}/title`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: newTitle }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Update protocol title failed: ${res.status} ${text}`);
+export async function updateSavedProtocolTitle(
+  userId: string,
+  protocolId: string,
+  newTitle: string,
+  signal?: AbortSignal
+): Promise<{ success: boolean; message: string }> {
+  if (!userId || !userId.trim() || !protocolId || !protocolId.trim()) {
+    throw new Error('User ID and Protocol ID are required');
   }
-  return res.json();
+  if (!newTitle || !newTitle.trim()) {
+    throw new Error('Title is required');
+  }
+  
+  try {
+    const res = await fetchWithRetry(
+      `${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}/title`,
+      {
+        ...DEFAULT_REQUEST_OPTIONS,
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle }),
+        signal,
+      }
+    );
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Update protocol title failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'updateSavedProtocolTitle', userId, protocolId });
+    throw error;
+  }
 }
 
-export async function isProtocolSaved(userId: string, protocolId: string): Promise<{ success: boolean; is_saved: boolean }> {
-  const res = await fetch(`${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}/check`);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Check protocol saved failed: ${res.status} ${text}`);
+export async function isProtocolSaved(
+  userId: string,
+  protocolId: string,
+  signal?: AbortSignal
+): Promise<{ success: boolean; is_saved: boolean }> {
+  if (!userId || !userId.trim() || !protocolId || !protocolId.trim()) {
+    throw new Error('User ID and Protocol ID are required');
   }
-  return res.json();
+  
+  try {
+    const res = await fetchWithRetry(
+      `${API_BASE}/protocols/saved/${encodeURIComponent(userId)}/${encodeURIComponent(protocolId)}/check`,
+      { ...DEFAULT_REQUEST_OPTIONS, signal }
+    );
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Check protocol saved failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'isProtocolSaved', userId, protocolId });
+    throw error;
+  }
 }
 
 // Step thread chat
-export async function stepThreadChat(request: StepThreadRequest): Promise<ChatResponse> {
-  const res = await fetch(`${API_BASE}/protocols/step-thread`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Step thread chat failed: ${res.status} ${text}`);
+export async function stepThreadChat(
+  request: StepThreadRequest,
+  signal?: AbortSignal
+): Promise<ChatResponse> {
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/protocols/step-thread`, {
+      ...DEFAULT_REQUEST_OPTIONS,
+      timeout: 45000, // Longer timeout for AI responses
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      signal,
+    });
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Step thread chat failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'stepThreadChat' });
+    throw error;
   }
-  return res.json();
 }
 
 // Protocol conversation chat
-export async function protocolConversationChat(request: ProtocolConversationRequest): Promise<ProtocolConversationResponse> {
-  const res = await fetch(`${API_BASE}/protocols/conversation`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Protocol conversation failed: ${res.status} ${text}`);
+export async function protocolConversationChat(
+  request: ProtocolConversationRequest,
+  signal?: AbortSignal
+): Promise<ProtocolConversationResponse> {
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/protocols/conversation`, {
+      ...DEFAULT_REQUEST_OPTIONS,
+      timeout: 45000, // Longer timeout for AI responses
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      signal,
+    });
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Protocol conversation failed: ${res.status} ${text}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    logError(error, { function: 'protocolConversationChat' });
+    throw error;
   }
-  return res.json();
 }
 
 // User management
-export async function deleteUserData(userId: string): Promise<{ success: boolean; message: string; deleted_items: any }> {
-  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}`, {
-    method: 'DELETE',
-  });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to delete user data: ${response.status} ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      if (typeof errorData === 'string') {
-        errorMessage = errorData;
-      } else if (errorData.detail) {
-        errorMessage = errorData.detail;
-      } else if (errorData.message) {
-        errorMessage = errorData.message;
-      } else {
-        errorMessage = JSON.stringify(errorData);
-      }
-    } catch (e) {
-      // If JSON parsing fails, use the status text
-      errorMessage = `Failed to delete user data: ${response.status} ${response.statusText}`;
-    }
-    throw new Error(errorMessage);
+export async function deleteUserData(
+  userId: string,
+  signal?: AbortSignal
+): Promise<{ success: boolean; message: string; deleted_items: any }> {
+  if (!userId || !userId.trim()) {
+    throw new Error('User ID is required');
   }
+  
+  try {
+    const response = await fetchWithRetry(
+      `${API_BASE}/users/${encodeURIComponent(userId)}`,
+      {
+        ...DEFAULT_REQUEST_OPTIONS,
+        method: 'DELETE',
+        signal,
+      }
+    );
 
-  return response.json();
+    if (!response.ok) {
+      let errorMessage = `Failed to delete user data: ${response.status} ${response.statusText}`;
+      try {
+        const errorData = await response.json();
+        if (typeof errorData === 'string') {
+          errorMessage = errorData;
+        } else if (errorData.detail) {
+          errorMessage = errorData.detail;
+        } else if (errorData.message) {
+          errorMessage = errorData.message;
+        } else {
+          errorMessage = JSON.stringify(errorData);
+        }
+      } catch (e) {
+        // If JSON parsing fails, use the status text
+        errorMessage = `Failed to delete user data: ${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.json();
+  } catch (error) {
+    logError(error, { function: 'deleteUserData', userId });
+    throw error;
+  }
 }
 
 // Document upload functions

@@ -2,6 +2,7 @@ import { useState, useEffect, memo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import {
   Stethoscope,
   Search,
@@ -504,9 +505,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     }
   };
 
-  const handleDeleteConversation = async (conversationId: string, e: React.MouseEvent) => {
+  const handleDeleteConversation = (conversationId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-
     if (!currentUser) return;
 
     // Find conversation title for the confirmation message
@@ -576,9 +576,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   };
 
   // Protocol handlers
-  const handleDeleteProtocol = async (protocolId: string, e: React.MouseEvent) => {
+  const handleDeleteProtocol = (protocolId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-
     if (!currentUser) return;
 
     // Find protocol title for the confirmation message

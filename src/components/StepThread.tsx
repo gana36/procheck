@@ -11,12 +11,15 @@ interface StepThreadProps {
   isLoading: boolean;
 }
 
+const MAX_INPUT_LENGTH = 1000; // Maximum characters for step thread input
+
 export default function StepThread({ messages, onSendMessage, isLoading }: StepThreadProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const threadContainerRef = useRef<HTMLDivElement>(null);
   const lastScrollMessageCountRef = useRef(0);
+  const remainingChars = MAX_INPUT_LENGTH - input.length;
 
   // Auto-scroll to START of thread when messages change (not to last message)
   useEffect(() => {
@@ -113,23 +116,36 @@ export default function StepThread({ messages, onSendMessage, isLoading }: StepT
       </div>
 
       {/* Input form */}
-      <form onSubmit={handleSubmit} className="flex gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask about this step..."
-          disabled={isLoading}
-          className="flex-1 text-sm px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 transition-all"
-        />
-        <Button
-          type="submit"
-          size="sm"
-          disabled={!input.trim() || isLoading}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4"
-        >
-          <Send className="h-4 w-4" />
-        </Button>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              if (newValue.length <= MAX_INPUT_LENGTH) {
+                setInput(newValue);
+              }
+            }}
+            placeholder="Ask about this step..."
+            disabled={isLoading}
+            maxLength={MAX_INPUT_LENGTH}
+            className="flex-1 text-sm px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 transition-all"
+          />
+          <Button
+            type="submit"
+            size="sm"
+            disabled={!input.trim() || isLoading}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
+        {input.length > MAX_INPUT_LENGTH * 0.8 && (
+          <p className={`text-xs ${remainingChars < 50 ? 'text-red-600' : 'text-slate-500'}`}>
+            {remainingChars} characters remaining
+          </p>
+        )}
       </form>
     </div>
   );

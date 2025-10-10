@@ -490,28 +490,55 @@ def protocol_conversation_chat(
     if filters_json:
         filters_text = f"\nUser Filters: {filters_json}"
 
-    prompt = f"""You are ProCheck's clinical assistant. Continue the chat strictly within the original concept: "{concept_title}". Ground every answer in the current protocol snapshot and trusted sources. If evidence is limited or conflicting, say so explicitly.
+    prompt = f"""You are ProCheck's clinical assistant. You have a current protocol context: "{concept_title}".
 
-Context:
+CRITICAL DECISION: Analyze the user's message and determine:
+1. If they're asking about the SAME medical condition/protocol → Continue conversation
+2. If they're asking about a COMPLETELY DIFFERENT condition → Respond with "NEW_SEARCH_NEEDED"
+
+Current Protocol Context:
 - Protocol: {protocol_text}
 - Existing citations: {citations_text}
 - User filters (optional): {filters_text}
 
 {f"Conversation History:{chr(10)}{history_text}{chr(10)}" if history_text else ""}
 
-User follow-up:
+User message:
 {message}
+
+DECISION LOGIC:
+- If asking about "{concept_title}" or related aspects → Continue conversation with normal format
+- If asking about DIFFERENT disease/condition (e.g., "heart attack" when current is "dengue") → Return ONLY "NEW_SEARCH_NEEDED"
+- Examples of different conditions: heart attack vs dengue, diabetes vs stroke, pneumonia vs asthma
+- If unclear, default to continuing conversation
+
+IMPORTANT: If you determine a new search is needed, respond with ONLY the text "NEW_SEARCH_NEEDED" and nothing else.
 
 Requirements:
 - Be concise, clinically useful, and stay on-topic to "{concept_title}".
+- **CRITICAL**: You MUST format your response using Markdown syntax
+- **ALWAYS** use **bold text** for medical terms, symptoms, medications, and warnings
+- Use bullet points (- ) for lists of symptoms, steps, or recommendations
 - Cite sources inline as [Source N] and list them at the end with titles/links.
 - If retrieval was needed, say "Used new sources".
 - If evidence is limited/conflicting, include a 1‑line uncertainty note.
-- Return 3–5 suggested follow-ups (short, relevant, diverse).
+- Generate 3–5 SMART follow-up questions that are contextually relevant and avoid repetition.
+
+SMART FOLLOW-UP GENERATION:
+- Analyze what the user just asked and avoid similar questions
+- Look for gaps in the protocol that haven't been discussed
+- Consider the medical condition's key aspects (symptoms, treatment, complications, etc.)
+- Make questions specific to the current protocol, not generic
+- Prioritize clinically important topics that users typically need to know
+
+MARKDOWN FORMATTING EXAMPLES:
+- Medical terms: **fever**, **dengue symptoms**, **warning signs**
+- Lists: Use "- " for bullet points
+- Emphasis: Use **bold** for important terms, *italic* for emphasis
 
 Output format:
 Answer:
-<2–6 sentences with clear guidance and inline [Source N] where relevant>
+<2–6 sentences with **bold medical terms** and proper markdown formatting, with inline [Source N] citations>
 
 Uncertainty (omit if none):
 <one line>
@@ -519,12 +546,17 @@ Uncertainty (omit if none):
 Sources:
 - [N] <title or org> — <url>
 
-Suggested follow-ups:
-- <chip 1>
-- <chip 2>
-- <chip 3>
-- <chip 4>
-- <chip 5>"""
+Suggested follow-ups (plain text, no markdown):
+Generate 3-5 contextually relevant questions that:
+1. Don't repeat what was just asked
+2. Address important gaps in the current discussion
+3. Are specific to "{concept_title}" (not generic medical questions)
+4. Cover different aspects: symptoms, treatment, complications, timing, special populations
+- <specific question about this protocol>
+- <different aspect question>
+- <clinically important follow-up>
+- <protocol-specific question>
+- <practical application question>"""
 
     try:
         response = _model.generate_content(prompt)
@@ -542,7 +574,20 @@ Suggested follow-ups:
 
 def _parse_conversation_response(response_text: str, citations_list: List[str]) -> Dict[str, Any]:
     """Parse the structured conversation response from Gemini"""
-    lines = response_text.strip().split('\n')
+    response_text = response_text.strip()
+    
+    # Check for special NEW_SEARCH_NEEDED response first
+    if "NEW_SEARCH_NEEDED" in response_text:
+        return {
+            "answer": "NEW_SEARCH_NEEDED",
+            "uncertainty_note": None,
+            "sources": [],
+            "used_new_sources": False,
+            "follow_up_questions": [],
+            "updated_protocol": None
+        }
+    
+    lines = response_text.split('\n')
     
     answer = ""
     uncertainty = None
