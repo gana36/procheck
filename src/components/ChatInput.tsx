@@ -17,9 +17,12 @@ interface ChatInputProps {
   currentProtocolTitle?: string; // Title of current protocol being discussed
 }
 
+const MAX_MESSAGE_LENGTH = 2000; // Maximum characters for a message
+
 export default function ChatInput({ onSendMessage, isLoading, hasMessages = false, isInConversation = false, currentProtocolTitle }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [showSampleQueries, setShowSampleQueries] = useState(true);
+  const remainingChars = MAX_MESSAGE_LENGTH - message.length;
   // Reset sample queries when conversation is cleared
   useEffect(() => {
     if (!hasMessages) {
@@ -77,7 +80,12 @@ export default function ChatInput({ onSendMessage, isLoading, hasMessages = fals
         <div className="flex-1">
           <Input
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              if (newValue.length <= MAX_MESSAGE_LENGTH) {
+                setMessage(newValue);
+              }
+            }}
             placeholder={
               isInConversation 
                 ? `Continue discussing ${currentProtocolTitle || 'this protocol'}...`
@@ -87,7 +95,13 @@ export default function ChatInput({ onSendMessage, isLoading, hasMessages = fals
               isInConversation ? 'bg-teal-50/50' : ''
             }`}
             disabled={isLoading}
+            maxLength={MAX_MESSAGE_LENGTH}
           />
+          {message.length > MAX_MESSAGE_LENGTH * 0.9 && (
+            <p className={`text-xs mt-1 ${remainingChars < 100 ? 'text-red-600' : 'text-slate-500'}`}>
+              {remainingChars} characters remaining
+            </p>
+          )}
         </div>
         <div className="flex items-center space-x-2">
           <Button

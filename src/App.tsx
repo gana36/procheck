@@ -14,10 +14,13 @@ import LoginPage from '@/components/auth/LoginPage';
 import SignupPage from '@/components/auth/SignupPage';
 import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import NetworkStatusBanner from '@/components/NetworkStatusBanner';
 import { Message, ProtocolData, ProtocolStep, Citation, SearchMetadata } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocol, ConversationMessage, protocolConversationChat, deleteUserData } from '@/lib/api';
 import { deleteUser } from 'firebase/auth';
+import { generateMessageId, generateConversationId, generateTabId } from '@/lib/id-generator';
+import { formatErrorMessage } from '@/lib/error-handler';
 
 function App() {
   const { currentUser, logout } = useAuth();
@@ -46,13 +49,13 @@ function App() {
   }
 
   const [tabs, setTabs] = useState<ConversationTab[]>([{
-    id: 'tab-1',
+    id: generateTabId(),
     title: 'New Protocol',
     messages: [],
-    conversationId: `conv_${Date.now()}`,
+    conversationId: generateConversationId(),
     isLoading: false
   }]);
-  const [activeTabId, setActiveTabId] = useState('tab-1');
+  const [activeTabId, setActiveTabId] = useState(tabs[0]?.id || generateTabId());
   const [savedProtocolsRefreshTrigger, setSavedProtocolsRefreshTrigger] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -63,6 +66,9 @@ function App() {
 
   // Cache for loaded conversations to prevent redundant fetches
   const conversationCache = useRef<Map<string, Message[]>>(new Map());
+  
+  // Abort controller for managing in-flight requests
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -354,16 +360,16 @@ function App() {
   const activeTab = getActiveTab();
   const messages = activeTab?.messages || [];
   const isLoading = activeTab?.isLoading || false;
-  const currentConversationId = activeTab?.conversationId || `conv_${Date.now()}`;
+  const currentConversationId = activeTab?.conversationId || generateConversationId();
 
   // Tab management functions
   const createNewTab = (title: string = 'New Protocol'): string => {
-    const newTabId = `tab-${Date.now()}`;
+    const newTabId = generateTabId();
     const newTab: ConversationTab = {
       id: newTabId,
       title,
       messages: [],
-      conversationId: `conv_${Date.now()}`,
+      conversationId: generateConversationId(),
       isLoading: false
     };
 
@@ -373,6 +379,12 @@ function App() {
   };
 
   const switchToTab = async (tabId: string) => {
+    // Cancel any in-flight requests before switching
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    
     // Save current tab's conversation before switching
     const currentTab = getActiveTab();
     if (currentTab && currentTab.messages.length > 0 && userId) {
@@ -409,7 +421,7 @@ function App() {
           id: 'tab-default',
           title: 'New Protocol',
           messages: [],
-          conversationId: `conv_${Date.now()}`,
+          conversationId: generateConversationId(),
           isLoading: false
         };
         setActiveTabId('tab-default');
@@ -514,7 +526,7 @@ function App() {
     }
     
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: generateMessageId(),
       type: 'user',
       content,
       timestamp: getUserTimestamp(),
@@ -546,7 +558,7 @@ function App() {
         });
 
         const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
+          id: generateMessageId(),
           type: 'assistant',
           content: conversationRes.answer,
           timestamp: getUserTimestamp(),
@@ -672,7 +684,7 @@ CITATION REQUIREMENT:
       };
 
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: generateMessageId(),
         type: 'assistant',
         content: intentMessages[intent] || 'Here\'s the comprehensive protocol:',
         timestamp: getUserTimestamp(),
@@ -693,9 +705,9 @@ CITATION REQUIREMENT:
       saveCurrentConversation(newMessages, content);
     } catch (err: any) {
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: generateMessageId(),
         type: 'assistant',
-        content: `Sorry, I couldn't process that request. ${err?.message || ''}`.trim(),
+        content: formatErrorMessage(err),
         timestamp: getUserTimestamp(),
       };
       
@@ -817,7 +829,7 @@ CITATION REQUIREMENT:
       };
 
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: generateMessageId(),
         type: 'assistant',
         content: intentMessages[intent] || 'Here\'s the comprehensive protocol:',
         timestamp: getUserTimestamp(),
@@ -862,9 +874,9 @@ CITATION REQUIREMENT:
       }
     } catch (err: any) {
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: generateMessageId(),
         type: 'assistant',
-        content: `Sorry, I couldn't process that request. ${err?.message || ''}`.trim(),
+        content: formatErrorMessage(err),
         timestamp: getUserTimestamp(),
       };
 
@@ -910,10 +922,10 @@ CITATION REQUIREMENT:
 
     // Reset to a single empty tab
     const defaultTab: ConversationTab = {
-      id: `tab-${Date.now()}`,
+      id: generateTabId(),
       title: 'New Protocol',
       messages: [],
-      conversationId: `conv_${Date.now()}`,
+      conversationId: generateConversationId(),
       isLoading: false
     };
     
@@ -1106,7 +1118,7 @@ CITATION REQUIREMENT:
       const contentTitle = fullProtocol?.title ? `Saved: ${fullProtocol.title}` : `Here's your saved protocol:`;
 
       const assistantMessage: Message = {
-        id: Date.now().toString(),
+        id: generateMessageId(),
         type: 'assistant',
         content: contentTitle,
         timestamp: getUserTimestamp(),
@@ -1131,9 +1143,9 @@ CITATION REQUIREMENT:
     } catch (e) {
       console.error('Error loading saved protocol:', e);
       const assistantMessage: Message = {
-        id: Date.now().toString(),
+        id: generateMessageId(),
         type: 'assistant',
-        content: `Couldn't load saved protocol.`,
+        content: formatErrorMessage(e),
         timestamp: getUserTimestamp(),
       };
       setTabs(prevTabs =>
@@ -1226,7 +1238,7 @@ CITATION REQUIREMENT:
       // Send message in the NEW tab by directly updating it
       // We need to use setTabs to ensure we're working with the new tab
       const userMessage: Message = {
-        id: Date.now().toString(),
+        id: generateMessageId(),
         type: 'user',
         content,
         timestamp: getUserTimestamp(),
@@ -1254,6 +1266,9 @@ CITATION REQUIREMENT:
 
   const Dashboard = () => (
     <div className="h-screen flex bg-slate-50">
+      {/* Network Status Banner */}
+      <NetworkStatusBanner />
+      
       {/* Overlay - only show when sidebar is open on mobile */}
       {isSidebarOpen && (
         <div 
