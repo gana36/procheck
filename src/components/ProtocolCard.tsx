@@ -25,7 +25,9 @@ import {
   Building,
   AlertCircle,
   Clock,
-  TrendingUp
+  TrendingUp,
+  Globe,
+  User
 } from 'lucide-react';
 import { ProtocolData } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,6 +40,7 @@ interface ProtocolCardProps {
   onProtocolUpdate?: (updatedProtocol: ProtocolData) => void; // Callback when protocol is updated via threads
   intent?: 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general';
   isAlreadySaved?: boolean; // Pass this to avoid unnecessary API calls
+  protocolSource?: 'global' | 'user'; // NEW: Indicates if this is a user's custom protocol or global
 }
 
 // Professional theme configurations
@@ -122,7 +125,7 @@ const intentThemes = {
   }
 };
 
-const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, onProtocolUpdate, intent = 'general', isAlreadySaved = false }: ProtocolCardProps) {
+const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, onProtocolUpdate, intent = 'general', isAlreadySaved = false, protocolSource = 'global' }: ProtocolCardProps) {
   const { currentUser } = useAuth();
   const theme = intentThemes[intent] || intentThemes.general;
   const ThemeIcon = theme.icon;
@@ -232,7 +235,7 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
   };
 
   const handleCopy = () => {
-    const stepsText = protocolData.steps
+    const stepsText = (protocolData.steps || [])
       .map(s => `${s.id}. ${s.step}`)
       .join('\n');
     navigator.clipboard.writeText(stepsText);
@@ -266,9 +269,9 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
     setUpdateCounter(prev => prev + 1); // Force re-render to show the state immediately
     
     try{
-      const stepIndex = protocolData.steps.findIndex(s => s.id === stepId);
+      const stepIndex = (protocolData.steps || []).findIndex(s => s.id === stepId);
       if (stepIndex === -1) return;
-      
+
       const step = protocolData.steps[stepIndex];
 
       // Build thread history
@@ -308,7 +311,7 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
 
       // Clone protocol data to update immutably
       const updatedProtocol = { ...protocolData };
-      updatedProtocol.steps = [...protocolData.steps];
+      updatedProtocol.steps = [...(protocolData.steps || [])];
       updatedProtocol.steps[stepIndex] = {
         ...step,
         thread: [...(step.thread || []), userMsg, assistantMsg]
@@ -337,12 +340,33 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
       {/* Professional Header with Gradient */}
       <CardHeader className={`bg-gradient-to-r ${theme.gradient} text-white pb-6 pt-6`}>
         <div className="space-y-4">
-          {/* Protocol Type Badge */}
+          {/* Protocol Type & Source Badges */}
           <div className="flex items-center space-x-2">
             <div className="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
               <div className="flex items-center space-x-2">
                 <ThemeIcon className="h-3.5 w-3.5 text-white" />
                 <span className="text-xs font-bold tracking-wider">{theme.label}</span>
+              </div>
+            </div>
+
+            {/* Protocol Source Indicator */}
+            <div className={`px-3 py-1 rounded-full border ${
+              protocolSource === 'user'
+                ? 'bg-purple-500/20 border-purple-300/50 backdrop-blur-sm'
+                : 'bg-white/10 border-white/30 backdrop-blur-sm'
+            }`}>
+              <div className="flex items-center space-x-1.5">
+                {protocolSource === 'user' ? (
+                  <>
+                    <User className="h-3 w-3 text-white" />
+                    <span className="text-xs font-bold tracking-wider text-white">YOUR PROTOCOL</span>
+                  </>
+                ) : (
+                  <>
+                    <Globe className="h-3 w-3 text-white" />
+                    <span className="text-xs font-bold tracking-wider text-white">GLOBAL</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -414,12 +438,12 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
             )}
           </div>
           <Badge variant="outline" className="border-slate-300 text-slate-700">
-            {protocolData.steps.length} steps
+            {protocolData.steps?.length || 0} steps
           </Badge>
         </div>
 
         <div className="space-y-2">
-          {protocolData.steps.map((step, index) => {
+          {protocolData.steps?.length > 0 ? protocolData.steps.map((step, index) => {
             const citation = step.citation || step.citations?.[0];
             const citationRef = citation ? protocolData.citations?.find(c => c.id === citation) : null;
             const isExpanded = expandedSteps.has(step.id);
@@ -584,7 +608,13 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
                 )}
                 </div>
             );
-          })}
+          }) : (
+            <div className="text-center py-8 text-slate-500">
+              <FileText className="h-12 w-12 mx-auto mb-3 text-slate-300" />
+              <p className="text-sm font-medium">No protocol steps available</p>
+              <p className="text-xs mt-1">This protocol may be loading or incomplete.</p>
+            </div>
+          )}
         </div>
 
         {/* Citations Section */}
@@ -679,15 +709,18 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
   
   // Basic checks first
   if (prevProps.protocolData.title !== nextProps.protocolData.title ||
-      prevProps.protocolData.steps.length !== nextProps.protocolData.steps.length ||
+      (prevProps.protocolData.steps || []).length !== (nextProps.protocolData.steps || []).length ||
       prevProps.intent !== nextProps.intent) {
     return false; // Should re-render
   }
   
   // Check if thread data has changed
-  for (let i = 0; i < prevProps.protocolData.steps.length; i++) {
-    const prevStep = prevProps.protocolData.steps[i];
-    const nextStep = nextProps.protocolData.steps[i];
+  const prevSteps = prevProps.protocolData.steps || [];
+  const nextSteps = nextProps.protocolData.steps || [];
+
+  for (let i = 0; i < prevSteps.length; i++) {
+    const prevStep = prevSteps[i];
+    const nextStep = nextSteps[i];
     
     if (prevStep.id !== nextStep.id) {
       return false; // Should re-render

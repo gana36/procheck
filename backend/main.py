@@ -3,10 +3,11 @@ ProCheck Backend API
 Medical Protocol Search and Generation Service
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
+import asyncio
 from config.settings import settings
 from models.protocol_models import (
     ProtocolSearchRequest,
@@ -38,6 +39,10 @@ from services.elasticsearch_service import (
 from services.gemini_service import summarize_checklist, step_thread_chat, protocol_conversation_chat
 from services.firestore_service import FirestoreService
 from services.embedding_service import generate_embedding, enhance_query_with_llm
+from services.document_processor import DocumentProcessor
+
+# Global document processor instance to maintain state across requests
+document_processor = DocumentProcessor()
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -125,21 +130,30 @@ async def elasticsearch_sample(size: int = 3):
     return get_sample_documents(size=size)
 
 @app.post("/protocols/search", response_model=ProtocolSearchResponse)
-async def protocols_search(payload: ProtocolSearchRequest, use_hybrid: bool = True, enhance_query: bool = False):
+async def protocols_search(
+    payload: ProtocolSearchRequest,
+    use_hybrid: bool = True,
+    enhance_query: bool = False,
+    user_id: str = None,
+    search_mode: str = "mixed"
+):
     """
     Search medical protocols using hybrid search (BM25 + semantic vectors).
-    
+    Now supports personalized search when user_id is provided.
+
     Args:
         payload: Search request with query and filters
         use_hybrid: If True, use hybrid search; if False, use traditional text search
         enhance_query: If True, use LLM to enhance the query before searching
+        user_id: Optional Firebase Auth user ID for personalized search
+        search_mode: "mixed" (user+global), "user_only", "global_only" (when user_id provided)
     """
     if not settings.elasticsearch_configured:
         raise HTTPException(status_code=400, detail="Elasticsearch is not configured.")
-    
+
     original_query = payload.query
     enhanced_info = None
-    
+
     # Optional: Enhance query using Gemini
     if enhance_query and original_query and settings.gemini_configured:
         try:
@@ -148,7 +162,53 @@ async def protocols_search(payload: ProtocolSearchRequest, use_hybrid: bool = Tr
             payload.query = enhanced_info.get("enhanced_query", original_query)
         except Exception as e:
             pass  # Silently fall back to original query
-    
+
+    # If user_id is provided, use personalized search
+    if user_id and user_id.strip():
+        try:
+            # Import personalized search functions
+            from services.elasticsearch_service import search_user_protocols, search_mixed_protocols
+
+            if search_mode == "user_only":
+                # Search only user protocols
+                es_resp = search_user_protocols(
+                    user_id=user_id,
+                    query=payload.query,
+                    size=payload.size
+                )
+            elif search_mode == "global_only":
+                # Use existing global search logic (fall through to below)
+                es_resp = None
+            else:  # mixed mode (default)
+                # Search both user and global protocols
+                es_resp = search_mixed_protocols(
+                    user_id=user_id,
+                    query=payload.query,
+                    size=payload.size,
+                    user_protocols_first=True
+                )
+
+            # If we got personalized results, use them
+            if es_resp and not es_resp.get("error"):
+                hits = []
+                for h in es_resp.get("hits", {}).get("hits", []):
+                    hits.append(ProtocolSearchHit(
+                        id=h.get("_id"),
+                        score=h.get("_score"),
+                        source=h.get("_source", {}),
+                        highlight=h.get("highlight")
+                    ))
+
+                total = es_resp.get("hits", {}).get("total", {}).get("value", 0)
+                took = es_resp.get("took", 0)
+
+                return ProtocolSearchResponse(total=total, hits=hits, took_ms=took)
+
+        except Exception as e:
+            # If personalized search fails, fall back to global search
+            print(f"⚠️  Personalized search failed, falling back to global: {str(e)}")
+
+    # Global search (original logic) - used when no user_id or as fallback
     # Use hybrid search if enabled and Gemini is configured
     if use_hybrid and settings.gemini_configured and payload.query:
         try:
@@ -185,6 +245,54 @@ async def protocols_search(payload: ProtocolSearchRequest, use_hybrid: bool = Tr
     took = es_resp.get("took", 0)
     
     return ProtocolSearchResponse(total=total, hits=hits, took_ms=took)
+
+@app.get("/users/{user_id}/protocols")
+async def get_user_protocols(user_id: str, size: int = 20):
+    """Get user's uploaded protocols from their Elasticsearch index"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+
+    if not settings.elasticsearch_configured:
+        raise HTTPException(status_code=400, detail="Elasticsearch is not configured")
+
+    try:
+        # Import search function
+        from services.elasticsearch_service import search_user_protocols
+
+        # Get all user protocols (no specific query)
+        result = search_user_protocols(user_id=user_id, query=None, size=size)
+
+        if result.get("error"):
+            return {"success": False, "protocols": [], "total": 0, "error": result["error"]}
+
+        # Transform ES results to a more user-friendly format
+        protocols = []
+        for hit in result.get("hits", {}).get("hits", []):
+            source = hit.get("_source", {})
+            protocols.append({
+                "id": hit.get("_id"),
+                "title": source.get("title", "Untitled Protocol"),
+                "organization": source.get("organization", "Custom Protocol"),
+                "region": source.get("region", "User Defined"),
+                "year": source.get("year", 2024),
+                "created_at": source.get("last_reviewed", ""),
+                "steps_count": source.get("steps_count", 0),
+                "citations_count": source.get("citations_count", 0),
+                "source_file": source.get("source", ""),
+                "protocol_data": source  # Include full data for viewing
+            })
+
+        total = result.get("hits", {}).get("total", {}).get("value", 0)
+
+        return {
+            "success": True,
+            "protocols": protocols,
+            "total": total
+        }
+
+    except Exception as e:
+        return {"success": False, "protocols": [], "total": 0, "error": str(e)}
+
 
 @app.post("/protocols/generate", response_model=ProtocolGenerateResponse)
 async def protocols_generate(payload: ProtocolGenerateRequest):
@@ -395,6 +503,7 @@ async def get_saved_protocols_endpoint(user_id: str, limit: int = 20):
 @app.delete("/protocols/saved/{user_id}/{protocol_id}")
 async def delete_saved_protocol_endpoint(user_id: str, protocol_id: str):
     """Delete a saved protocol"""
+    print(f"🔥 delete_saved_protocol_endpoint called with user_id={user_id}, protocol_id={protocol_id}")
     if not user_id or not user_id.strip():
         raise HTTPException(status_code=400, detail="user_id is required")
     if not protocol_id or not protocol_id.strip():
@@ -480,6 +589,315 @@ async def delete_user_data(user_id: str):
         raise HTTPException(status_code=status_code, detail=result)
 
     return result
+
+# Document upload endpoints
+@app.post("/users/{user_id}/upload-documents")
+async def upload_documents(
+    user_id: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    custom_prompt: str = Form(None)
+):
+    """Upload ZIP file containing medical PDFs for protocol extraction"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+
+    # Validate file type
+    if not file.filename or not file.filename.endswith('.zip'):
+        raise HTTPException(status_code=400, detail="Only ZIP files are allowed")
+
+    # Validate file size (100MB limit)
+    content = await file.read()
+    if len(content) > 100 * 1024 * 1024:  # 100MB
+        raise HTTPException(status_code=400, detail="File size exceeds 100MB limit")
+
+    # Generate unique upload ID
+    upload_id = f"upload_{user_id}_{hash(file.filename)}_{hash(content)}"
+
+    # Initialize document processor
+    # Use global processor to maintain cancellation state
+
+    # Add background task for processing
+    # Create a cancellable task instead of using background_tasks
+    async def wrapped_process_upload():
+        return await document_processor.process_upload(user_id, content, upload_id, custom_prompt)
+
+    # Create and track the task immediately
+    upload_key = f"{user_id}_{upload_id}"
+    task = asyncio.create_task(wrapped_process_upload())
+    document_processor.active_tasks[upload_key] = task
+
+    # Add callback to clean up task when it's done
+    def cleanup_task(task_obj):
+        document_processor.active_tasks.pop(upload_key, None)
+        print(f"🧹 Cleaned up task for upload {upload_id}")
+
+    task.add_done_callback(cleanup_task)
+
+    return {
+        "success": True,
+        "upload_id": upload_id,
+        "filename": file.filename,
+        "size": len(content),
+        "status": "processing",
+        "message": "File uploaded successfully. Processing will begin shortly."
+    }
+
+@app.get("/users/{user_id}/upload-status/{upload_id}")
+async def get_upload_status(user_id: str, upload_id: str):
+    """Get status of document upload processing"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not upload_id or not upload_id.strip():
+        raise HTTPException(status_code=400, detail="upload_id is required")
+
+    # TODO: Implement actual status tracking
+    # For now, return mock status that shows awaiting_approval
+    return {
+        "upload_id": upload_id,
+        "status": "awaiting_approval",  # processing, completed, failed, awaiting_approval
+        "progress": 100,
+        "protocols_extracted": 3,
+        "protocols_indexed": 0,  # Not indexed yet, awaiting approval
+        "processing_time": "1m 45s",
+        "created_at": "2024-10-08T10:30:00Z"
+    }
+
+@app.post("/users/{user_id}/protocols/{protocol_id}/regenerate")
+async def regenerate_protocol(
+    user_id: str,
+    protocol_id: str,
+    background_tasks: BackgroundTasks,
+    custom_prompt: str = Form(None)
+):
+    """Regenerate a specific user protocol with new custom prompt"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not protocol_id or not protocol_id.strip():
+        raise HTTPException(status_code=400, detail="protocol_id is required")
+
+    # Initialize document processor
+    # Use global processor to maintain cancellation state
+
+    # Generate new regeneration ID
+    regeneration_id = f"regen_{user_id}_{protocol_id}_{hash(custom_prompt or '')}"
+
+    # Add background task for regeneration
+    background_tasks.add_task(document_processor.regenerate_protocol, user_id, protocol_id, regeneration_id, custom_prompt)
+
+    return {
+        "success": True,
+        "regeneration_id": regeneration_id,
+        "protocol_id": protocol_id,
+        "status": "processing",
+        "message": "Protocol regeneration started. This may take a few minutes."
+    }
+
+
+@app.delete("/users/{user_id}/protocols/all")
+async def delete_all_user_protocols_endpoint(user_id: str):
+    """Delete all protocols for a user"""
+    print(f"🚀 delete_all_user_protocols_endpoint called for user {user_id}")
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+
+    try:
+        from services.elasticsearch_service_additions import delete_all_user_protocols as es_delete_all_protocols
+        deleted_count = await es_delete_all_protocols(user_id)
+        print(f"✅ Successfully deleted {deleted_count} protocols for user {user_id}")
+        return {
+            "success": True,
+            "message": f"Successfully deleted {deleted_count} protocols",
+            "deleted_count": deleted_count
+        }
+    except Exception as e:
+        print(f"❌ Error deleting all protocols for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete protocols: {str(e)}")
+
+@app.delete("/users/{user_id}/protocols/{protocol_id}")
+async def delete_user_protocol(user_id: str, protocol_id: str):
+    """Delete a specific user-uploaded protocol"""
+    print(f"🎯 delete_user_protocol endpoint called with user_id={user_id}, protocol_id={protocol_id}")
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not protocol_id or not protocol_id.strip():
+        raise HTTPException(status_code=400, detail="protocol_id is required")
+
+    try:
+        print(f"🗑️ Deleting individual protocol {protocol_id} for user {user_id}")
+        from services.elasticsearch_service_additions import delete_user_protocol as es_delete_protocol
+        deleted = await es_delete_protocol(user_id, protocol_id)
+
+        if deleted:
+            return {
+                "success": True,
+                "message": "Protocol deleted successfully"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Protocol not found")
+
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        print(f"❌ Unexpected error deleting protocol {protocol_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete protocol: {str(e)}")
+
+@app.put("/users/{user_id}/protocols/{protocol_id}/title")
+async def update_user_protocol_title(
+    user_id: str,
+    protocol_id: str,
+    title_update: dict  # {"title": "new title"}
+):
+    """Update the title of a specific user-uploaded protocol"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not protocol_id or not protocol_id.strip():
+        raise HTTPException(status_code=400, detail="protocol_id is required")
+
+    new_title = title_update.get('title')
+    if not new_title or not new_title.strip():
+        raise HTTPException(status_code=400, detail="title is required")
+
+    try:
+        # Import Elasticsearch service
+        from services.elasticsearch_service_additions import update_user_protocol_title as es_update_title
+
+        # Update protocol title in user's Elasticsearch index
+        updated = await es_update_title(user_id, protocol_id, new_title.strip())
+
+        if updated:
+            return {
+                "success": True,
+                "message": "Protocol title updated successfully"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Protocol not found")
+
+    except Exception as e:
+        print(f"❌ Error updating protocol {protocol_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update protocol: {str(e)}")
+
+
+@app.get("/users/{user_id}/upload-preview/{upload_id}")
+async def get_upload_preview(user_id: str, upload_id: str):
+    """Get preview of generated protocols before indexing"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not upload_id or not upload_id.strip():
+        raise HTTPException(status_code=400, detail="upload_id is required")
+
+    try:
+        # Initialize document processor
+        # Use global processor to maintain cancellation state
+
+        # Get stored protocols for this upload
+        protocols = await document_processor.get_preview_protocols(user_id, upload_id)
+
+        return {
+            "success": True,
+            "upload_id": upload_id,
+            "protocols": protocols,
+            "total": len(protocols)
+        }
+
+    except Exception as e:
+        print(f"❌ Error getting upload preview: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get upload preview: {str(e)}")
+
+@app.post("/users/{user_id}/upload-approve/{upload_id}")
+async def approve_and_index_upload(user_id: str, upload_id: str, background_tasks: BackgroundTasks):
+    """Approve and index the generated protocols"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not upload_id or not upload_id.strip():
+        raise HTTPException(status_code=400, detail="upload_id is required")
+
+    try:
+        # Initialize document processor
+        # Use global processor to maintain cancellation state
+
+        # Add background task for indexing
+        background_tasks.add_task(document_processor.approve_and_index_protocols, user_id, upload_id)
+
+        return {
+            "success": True,
+            "upload_id": upload_id,
+            "status": "indexing",
+            "message": "Protocols approved. Indexing in progress..."
+        }
+
+    except Exception as e:
+        print(f"❌ Error approving upload: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to approve upload: {str(e)}")
+
+@app.post("/users/{user_id}/upload-regenerate/{upload_id}")
+async def regenerate_upload_protocols(
+    user_id: str,
+    upload_id: str,
+    background_tasks: BackgroundTasks,
+    custom_prompt: str = Form(None)
+):
+    """Regenerate protocols from an upload preview with new custom prompt"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not upload_id or not upload_id.strip():
+        raise HTTPException(status_code=400, detail="upload_id is required")
+
+    try:
+        # Initialize document processor
+        # Use global processor to maintain cancellation state
+
+        # Generate new regeneration ID
+        regeneration_id = f"regen_{user_id}_{upload_id}_{hash(custom_prompt or '')}"
+
+        # Add background task for regeneration
+        background_tasks.add_task(document_processor.regenerate_upload_protocols, user_id, upload_id, regeneration_id, custom_prompt)
+
+        return {
+            "success": True,
+            "regeneration_id": regeneration_id,
+            "upload_id": upload_id,
+            "status": "processing",
+            "message": "Upload protocols regeneration started. This may take a few minutes."
+        }
+
+    except Exception as e:
+        print(f"❌ Error regenerating upload protocols: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to regenerating upload protocols: {str(e)}")
+
+@app.post("/users/{user_id}/upload-cancel/{upload_id}")
+async def cancel_upload(user_id: str, upload_id: str):
+    """Cancel an ongoing upload processing"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not upload_id or not upload_id.strip():
+        raise HTTPException(status_code=400, detail="upload_id is required")
+
+    try:
+        # Initialize document processor
+        # Use global processor to maintain cancellation state
+
+        # Set cancellation flag for the upload
+        success = await document_processor.cancel_upload(user_id, upload_id)
+
+        if success:
+            print(f"🚫 Upload {upload_id} cancelled successfully")
+            return {
+                "success": True,
+                "upload_id": upload_id,
+                "message": "Upload cancelled successfully"
+            }
+        else:
+            return {
+                "success": False,
+                "upload_id": upload_id,
+                "message": "Upload not found or already completed"
+            }
+    except Exception as e:
+        print(f"❌ Error cancelling upload: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to cancel upload: {str(e)}")
+
 
 if __name__ == "__main__":
     uvicorn.run(
