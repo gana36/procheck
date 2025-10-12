@@ -82,3 +82,31 @@ export type Year = '2024' | '2023' | '2022' | '2021' | '2020';
 
 export const regions: Region[] = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Global', 'WHO', 'India', 'US', 'UK'];
 export const years: Year[] = ['2024', '2023', '2022', '2021', '2020'];
+
+// Tab system types
+export interface ConversationTab {
+  id: string;
+  title: string;
+  type: 'chat';
+  messages: Message[];
+  conversationId: string;
+  isLoading: boolean;
+}
+
+export interface ProtocolTab {
+  id: string;
+  title: string;
+  type: 'generated-protocols';
+  protocols: any[]; // Generated protocols data
+  isLoading: boolean;
+}
+
+export interface ProtocolIndexTab {
+  id: string;
+  title: string;
+  type: 'protocol-index';
+  protocols: any[]; // User uploaded protocols
+  isLoading: boolean;
+}
+
+export type AppTab = ConversationTab | ProtocolTab | ProtocolIndexTab;
