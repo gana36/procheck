@@ -2,7 +2,6 @@ import { useState, useEffect, memo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import {
   Stethoscope,
   Search,
@@ -20,11 +19,13 @@ import {
   UserX,
   Upload,
   FileText,
-  Sparkles
+  Sparkles,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 // import { mockSavedProtocols } from '@/data/mockData';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserConversations, getSavedProtocols, getSavedProtocol, deleteConversation, updateConversationTitle, deleteSavedProtocol, updateSavedProtocolTitle, uploadDocuments, getUploadStatus, getUserUploadedProtocols, regenerateProtocol, deleteUserProtocol, updateUserProtocolTitle, getUploadPreview, approveAndIndexUpload, cancelUpload, ConversationListItem, SavedProtocol as ApiSavedProtocol } from '@/lib/api';
+import { getUserConversations, getSavedProtocols, getSavedProtocol, deleteConversation, updateConversationTitle, deleteSavedProtocol, updateSavedProtocolTitle, uploadDocuments, getUploadStatus, getUserUploadedProtocols, regenerateProtocol, deleteUserProtocol, updateUserProtocolTitle, getUploadPreview, cancelUpload, ConversationListItem, SavedProtocol as ApiSavedProtocol } from '@/lib/api';
 import { updateProfile } from 'firebase/auth';
 
 interface SidebarProps {
@@ -36,8 +37,8 @@ interface SidebarProps {
   onShowLogoutModal?: () => void;
   onShowDeleteModal?: () => void;
   onShowProtocolPreview?: (uploadId: string, protocols: any[]) => void; // Show preview in main content area
-  onShowUserProtocolsIndex?: () => void; // Show user's protocol index in main content area
-  onShowGeneratedProtocols?: (uploadId: string, protocols: any[]) => void; // Show generated protocols view
+  onShowUserProtocolsIndex?: (keepProfileOpen?: boolean) => void; // Show user's protocol index in main content area
+  onShowGeneratedProtocols?: (uploadId: string, protocols: any[], keepProfileOpen?: boolean) => void; // Show generated protocols view
   generatedProtocols?: any[]; // Currently generated protocols
   generatedUploadId?: string | null; // Upload ID for generated protocols
   onNotifyUploadReady?: (notification: {
@@ -55,6 +56,46 @@ interface SidebarProps {
     dangerous?: boolean;
   }) => void; // Show custom confirmation modal
   onClearProtocolCache?: (clearCacheFunction: () => void) => void; // Register cache clearing function
+
+  // Profile modal state and handlers (moved from local state)
+  isProfileOpen: boolean;
+  activeProfileTab: 'profile' | 'protocols';
+  onOpenProfile: () => void;
+  onCloseProfile: () => void;
+  onSetActiveProfileTab: (tab: 'profile' | 'protocols') => void;
+
+  // Upload state props for persistence across navigation
+  isUploading: boolean;
+  setIsUploading: (value: boolean) => void;
+  uploadProgress: {
+    status: string;
+    filename?: string;
+    upload_id?: string;
+    progress?: number;
+    protocols_extracted?: number;
+    protocols_indexed?: number;
+    error?: string;
+  } | null;
+  setUploadProgress: (value: {
+    status: string;
+    filename?: string;
+    upload_id?: string;
+    progress?: number;
+    protocols_extracted?: number;
+    protocols_indexed?: number;
+    error?: string;
+  } | null) => void;
+  uploadCancelled: boolean;
+  setUploadCancelled: (value: boolean) => void;
+  currentUploadId: string | null;
+  setCurrentUploadId: (value: string | null) => void;
+
+  // User index protocols data from parent (single source of truth)
+  userIndexProtocols: any[];
+
+  // Sidebar collapse/expand state
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 // Global cache to persist data completely outside React
@@ -72,7 +113,7 @@ const getCachedProtocols = (userId: string) => {
   try {
     const cached = localStorage.getItem(getCacheKey(userId));
     if (cached) {
-      const { data, timestamp, expires } = JSON.parse(cached);
+      const { data, expires } = JSON.parse(cached);
       if (Date.now() < expires) {
         console.log('✅ Using cached user protocols');
         return data;
@@ -111,7 +152,7 @@ const clearProtocolCache = (userId: string) => {
   }
 };
 
-const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, savedProtocolsRefreshTrigger, onShowLogoutModal, onShowDeleteModal, onShowProtocolPreview, onShowUserProtocolsIndex, onShowGeneratedProtocols, generatedProtocols = [], generatedUploadId = null, onNotifyUploadReady, onShowConfirmation, onClearProtocolCache }: SidebarProps) {
+const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, savedProtocolsRefreshTrigger, onShowLogoutModal, onShowDeleteModal, onShowUserProtocolsIndex, onShowGeneratedProtocols, generatedProtocols = [], generatedUploadId = null, onNotifyUploadReady, onShowConfirmation, onClearProtocolCache, isProfileOpen, activeProfileTab, onOpenProfile, onCloseProfile, onSetActiveProfileTab, isUploading, setIsUploading, uploadProgress, setUploadProgress, uploadCancelled, setUploadCancelled, currentUploadId, setCurrentUploadId, userIndexProtocols, isCollapsed, onToggleCollapse }: SidebarProps) {
   const { currentUser } = useAuth();
   
   // CRITICAL: Extract userId directly - this is stable because we'll control when effects run
@@ -131,7 +172,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   const [savedError, setSavedError] = useState<string | null>(null);
 
   // State for uploaded protocols (from Elasticsearch) - initialize from cache if available
-  const [uploadedProtocols, setUploadedProtocols] = useState<any[]>(() => {
+  const [, setUploadedProtocols] = useState<any[]>(() => {
     if (userId) {
       const cached = getCachedProtocols(userId);
       if (cached) {
@@ -163,28 +204,14 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
   // Generated protocols are now passed as props
 
-  // Profile modal state
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  // Profile modal state - now passed as props from parent
   const [isRenaming, setIsRenaming] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [activeProfileTab, setActiveProfileTab] = useState<'profile' | 'protocols'>('profile');
 
-  // Upload state
-  const [isUploading, setIsUploading] = useState(false);
+  // Upload state - now comes from props for persistence
   const [customPrompt, setCustomPrompt] = useState('');
-  const [uploadProgress, setUploadProgress] = useState<{
-    status: string;
-    filename?: string;
-    upload_id?: string;
-    progress?: number;
-    protocols_extracted?: number;
-    protocols_indexed?: number;
-    error?: string;
-  } | null>(null);
-  const [uploadCancelled, setUploadCancelled] = useState(false);
-  const [currentUploadId, setCurrentUploadId] = useState<string | null>(null);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const uploadAbortController = useRef<AbortController | null>(null);
 
   // Regeneration state
@@ -194,7 +221,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   const [protocolToRegenerate, setProtocolToRegenerate] = useState<string | null>(null);
 
 
-  // Combine saved protocols and uploaded protocols
+  // Combine saved protocols and uploaded protocols (using userIndexProtocols from parent)
   const userProtocols = [
     // Saved protocols (bookmarked from searches)
     ...savedProtocols.map(protocol => ({
@@ -207,8 +234,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       type: 'SAVED',
       protocol_data: protocol.protocol_data
     })),
-    // Uploaded protocols (from document processing)
-    ...uploadedProtocols.map(protocol => ({
+    // Uploaded protocols (from document processing) - now from parent prop
+    ...userIndexProtocols.map(protocol => ({
       id: `uploaded_${protocol.id}`,
       title: protocol.title,
       created_at: protocol.created_at || new Date().toISOString(),
@@ -842,7 +869,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
           await showProtocolPreview(uploadId);
         } else if (status.status === 'failed') {
           console.log('❌ Upload processing failed');
-          setUploadProgress(prev => prev ? { ...prev, status: 'error', error: 'Processing failed' } : null);
+          setUploadProgress({ status: 'error', error: 'Processing failed' });
           setIsUploading(false);
           setUploadCancelled(false);
         } else {
@@ -851,7 +878,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         }
       } catch (error) {
         console.error('❌ Status polling failed:', error);
-        setUploadProgress(prev => prev ? { ...prev, status: 'error', error: 'Status check failed' } : null);
+        setUploadProgress({ status: 'error', error: 'Status check failed' });
         setIsUploading(false);
         setUploadCancelled(false);
       }
@@ -930,6 +957,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     };
   }, []);
 
+  // Handler function for regenerating protocols (currently unused but kept for future features)
+  // @ts-ignore - Intentionally unused, kept for future features
   const handleRegenerateProtocol = async (protocolId: string) => {
     if (!currentUser) {
       alert('Please log in to regenerate protocols');
@@ -979,6 +1008,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     setRegenerationPrompt('');
   };
 
+  // Handler function for deleting user protocols (currently unused but kept for future features)
+  // @ts-ignore - Intentionally unused, kept for future features
   const handleDeleteUserProtocol = async (protocolId: string, e: React.MouseEvent) => {
     e.stopPropagation();
 
@@ -986,7 +1017,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
     // Find protocol title for the confirmation message
     const actualProtocolId = protocolId.replace('uploaded_', '');
-    const protocol = uploadedProtocols.find(p => p.id === actualProtocolId);
+    const protocol = userIndexProtocols.find(p => p.id === actualProtocolId);
     const protocolTitle = protocol?.title || 'this uploaded protocol';
 
     if (onShowConfirmation) {
@@ -1014,6 +1045,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     }
   };
 
+  // Handler function for renaming user protocols (currently unused but kept for future features)
+  // @ts-ignore - Intentionally unused, kept for future features
   const handleSaveUserProtocolRename = async (protocolId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
 
@@ -1063,10 +1096,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
           });
         }
 
-        // IMMEDIATELY set generated protocols state for sidebar card visibility
-        if (onShowGeneratedProtocols) {
-          onShowGeneratedProtocols(uploadId, preview.protocols);
-        }
+        // Don't automatically create the tab - let user click "View Protocols" to open it
+        // This prevents duplicate tabs when user clicks the notification button
       }
 
       // Clear upload progress since protocols are ready
@@ -1081,31 +1112,56 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
 
   return (
-    <div className="w-80 bg-white border-r border-slate-200 h-full flex flex-col overflow-hidden">
+    <div className={`${isCollapsed ? 'w-16' : 'w-80'} bg-white border-r border-slate-200 h-full flex flex-col overflow-hidden transition-all duration-300`}>
       {/* Header */}
-      <div className="p-6 border-b border-slate-200 flex-shrink-0">
-        <div className="flex items-center space-x-3 mb-4">
-          <div className="p-2 bg-teal-100 rounded-lg">
-            <Stethoscope className="h-5 w-5 text-teal-600" />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">ProCheck</h2>
-            <Badge variant="secondary" className="bg-teal-100 text-teal-700 text-xs">
-              Beta
-            </Badge>
-          </div>
+      <div className={`${isCollapsed ? 'p-3' : 'p-6'} border-b border-slate-200 flex-shrink-0`}>
+        <div className={`flex items-center ${isCollapsed ? 'justify-center mb-3' : 'space-x-3 mb-4'}`}>
+          {!isCollapsed && (
+            <div className="p-2 bg-teal-100 rounded-lg">
+              <Stethoscope className="h-5 w-5 text-teal-600" />
+            </div>
+          )}
+          {!isCollapsed && (
+            <div className="flex-1">
+              <h2 className="text-lg font-bold text-slate-900">ProCheck</h2>
+              <Badge variant="secondary" className="bg-teal-100 text-teal-700 text-xs">
+                Beta
+              </Badge>
+            </div>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleCollapse}
+            className="h-8 w-8 text-slate-600 hover:text-slate-900 flex-shrink-0"
+            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </Button>
         </div>
-        <Button 
-          onClick={onNewSearch}
-          className="w-full bg-teal-600 hover:bg-teal-700 text-white"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New Protocol Search
-        </Button>
+        {!isCollapsed && (
+          <Button
+            onClick={onNewSearch}
+            className="w-full bg-teal-600 hover:bg-teal-700 text-white"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Protocol Search
+          </Button>
+        )}
+        {isCollapsed && (
+          <Button
+            onClick={onNewSearch}
+            size="icon"
+            className="w-full bg-teal-600 hover:bg-teal-700 text-white"
+            title="New Protocol Search"
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       {/* Content Area - Split into three scrollable sections */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className={`flex-1 flex flex-col overflow-hidden ${isCollapsed ? 'hidden' : ''}`}>
         {/* Saved Protocols Section - Takes up one third */}
         <div className="flex-1 min-h-0 border-b border-slate-200 flex flex-col">
           <div className="px-6 pt-6 pb-3 flex-shrink-0">
@@ -1370,36 +1426,103 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         </div>
       </div>
 
+      {/* Collapsed View - Show minimal icons */}
+      {isCollapsed && (
+        <div className="flex-1 flex flex-col justify-center items-center space-y-4 py-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 text-slate-600 hover:text-teal-600 hover:bg-teal-50"
+            onClick={() => {
+              onToggleCollapse(); // Expand sidebar first
+              setTimeout(() => onSetActiveProfileTab('protocols'), 100); // Then open protocols tab
+              onOpenProfile(); // Open profile modal
+            }}
+            title="My Protocols"
+          >
+            <FileText className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 text-slate-600 hover:text-yellow-600 hover:bg-yellow-50"
+            onClick={onToggleCollapse} // Just expand to show saved checklists
+            title="Saved Checklists"
+          >
+            <Star className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 text-slate-600 hover:text-blue-600 hover:bg-blue-50"
+            onClick={onToggleCollapse} // Just expand to show recent searches
+            title="Recent Searches"
+          >
+            <Search className="h-5 w-5" />
+          </Button>
+        </div>
+      )}
+
       {/* Footer */}
-      <div className="p-6 border-t border-slate-200 flex-shrink-0">
-        <Button
-          variant="ghost"
-          className="w-full justify-start"
-          onClick={() => setIsProfileOpen(true)}
-        >
-          <div className="h-8 w-8 bg-teal-100 rounded-full flex items-center justify-center mr-3">
-            {getProfileImageUrl() ? (
-              <img
-                src={getProfileImageUrl()!}
-                alt="Profile"
-                className="h-8 w-8 rounded-full object-cover"
-                referrerPolicy="no-referrer"
-                onError={(e) => {
-                  // Hide image if it fails to load
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            ) : (
-              <User className="h-4 w-4 text-teal-600" />
-            )}
-          </div>
-          <div className="flex flex-col items-start">
-            <span className="text-sm font-medium text-slate-900">
-              {currentUser?.displayName || currentUser?.email || 'User'}
-            </span>
-            <span className="text-xs text-slate-500">View profile</span>
-          </div>
-        </Button>
+      <div className={`${isCollapsed ? 'p-3' : 'p-6'} border-t border-slate-200 flex-shrink-0`}>
+        {!isCollapsed ? (
+          <Button
+            variant="ghost"
+            className="w-full justify-start"
+            onClick={onOpenProfile}
+          >
+            <div className="h-8 w-8 bg-teal-100 rounded-full flex items-center justify-center mr-3">
+              {getProfileImageUrl() ? (
+                <img
+                  src={getProfileImageUrl()!}
+                  alt="Profile"
+                  className="h-8 w-8 rounded-full object-cover"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    // Hide image if it fails to load
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <User className="h-4 w-4 text-teal-600" />
+              )}
+            </div>
+            <div className="flex flex-col items-start">
+              <span className="text-sm font-medium text-slate-900">
+                {currentUser?.displayName || currentUser?.email || 'User'}
+              </span>
+              <span className="text-xs text-slate-500">View profile</span>
+            </div>
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-full h-10"
+            onClick={() => {
+              onToggleCollapse(); // Expand sidebar first
+              setTimeout(() => onOpenProfile(), 100); // Then open profile modal with a small delay
+            }}
+            title="View profile"
+          >
+            <div className="h-8 w-8 bg-teal-100 rounded-full flex items-center justify-center">
+              {getProfileImageUrl() ? (
+                <img
+                  src={getProfileImageUrl()!}
+                  alt="Profile"
+                  className="h-8 w-8 rounded-full object-cover"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    // Hide image if it fails to load
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <User className="h-4 w-4 text-teal-600" />
+              )}
+            </div>
+          </Button>
+        )}
       </div>
 
       {/* Profile Modal */}
@@ -1412,10 +1535,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  setIsProfileOpen(false);
-                  setActiveProfileTab('profile');
-                }}
+                onClick={onCloseProfile}
                 className="h-8 w-8 p-0"
               >
                 ×
@@ -1427,8 +1547,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
               <Button
                 variant={activeProfileTab === 'profile' ? 'default' : 'ghost'}
                 size="sm"
-                onClick={() => setActiveProfileTab('profile')}
-                className={`flex-1 text-sm ${activeProfileTab === 'profile' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}
+                onClick={() => onSetActiveProfileTab('profile')}
+                className={`flex-1 text-sm ${activeProfileTab === 'profile' ? 'bg-teal-600 text-white shadow-sm hover:bg-teal-700' : 'hover:bg-slate-200'}`}
               >
                 <User className="h-4 w-4 mr-2" />
                 Profile
@@ -1436,11 +1556,11 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
               <Button
                 variant={activeProfileTab === 'protocols' ? 'default' : 'ghost'}
                 size="sm"
-                onClick={() => setActiveProfileTab('protocols')}
-                className={`flex-1 text-sm ${activeProfileTab === 'protocols' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}
+                onClick={() => onSetActiveProfileTab('protocols')}
+                className={`flex-1 text-sm ${activeProfileTab === 'protocols' ? 'bg-teal-600 text-white shadow-sm hover:bg-teal-700' : 'hover:bg-slate-200'}`}
               >
                 <FileText className="h-4 w-4 mr-2" />
-                My Protocols ({userProtocols.length})
+                My Protocols ({userIndexProtocols.length + generatedProtocols.length})
               </Button>
             </div>
           </div>
@@ -1591,7 +1711,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                     <div>
                       <h3 className="text-lg font-semibold text-slate-900">My Protocols</h3>
                       <p className="text-sm text-slate-600">
-                        Saved and uploaded protocols ({userProtocols.length} total)
+                        Your uploaded and generated protocols ({userIndexProtocols.length + generatedProtocols.length} total)
                       </p>
                     </div>
                     <Button
@@ -1621,7 +1741,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                     <div className="text-xs text-red-600 mb-3 p-2 bg-red-50 rounded">
                       {savedError || uploadedError}
                     </div>
-                  ) : userProtocols.length === 0 && !isUploading && uploadedProtocols.length === 0 && generatedProtocols.length === 0 ? (
+                  ) : userProtocols.length === 0 && !isUploading && userIndexProtocols.length === 0 && generatedProtocols.length === 0 ? (
                     <div className="text-center py-12">
                       <FileText className="h-12 w-12 text-slate-300 mx-auto mb-4" />
                       <h4 className="text-lg font-medium text-slate-900 mb-2">No protocols yet</h4>
@@ -1644,16 +1764,17 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                   ) : (
                     <div className="space-y-4">
                       {/* User's Protocol Index - Always show when user has protocols or is uploading */}
-                      {(uploadedProtocols.length > 0 || isUploading || userProtocols.length > 0) && (
+                      {(userIndexProtocols.length > 0 || isUploading || userProtocols.length > 0) && (
                         <Card
                           className="cursor-pointer hover:shadow-md transition-all duration-200 hover:border-teal-200 border-blue-200 bg-blue-50"
                           onClick={(e) => {
                             console.log('🎯 Protocol Index clicked!', { isUploading, uploadProgress: uploadProgress?.status });
                             e.preventDefault();
                             e.stopPropagation();
-                            // Always allow access to protocol index, even during uploads
-                            // Don't change sidebar tab - just switch main content view
-                            onShowUserProtocolsIndex?.();
+                            e.nativeEvent.stopImmediatePropagation();
+
+                            // Call the handler with keepProfileOpen=true
+                            onShowUserProtocolsIndex?.(true);
                           }}
                           style={{
                             pointerEvents: 'auto',
@@ -1672,12 +1793,12 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                                     Your Protocol Index
                                   </h4>
                                   <p className="text-xs text-slate-600">
-                                    {uploadedProtocols.length} protocols uploaded
+                                    {userIndexProtocols.length} protocols uploaded
                                   </p>
                                 </div>
                               </div>
                               <div className="text-xl font-bold text-blue-600">
-                                {uploadedProtocols.length}
+                                {userIndexProtocols.length}
                               </div>
                             </div>
                           </CardContent>
@@ -1692,10 +1813,11 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                             console.log('🎯 Generated Protocols clicked!');
                             e.preventDefault();
                             e.stopPropagation();
-                            // Don't change sidebar tab - just switch main content view
-                            // Show the generated protocols
+                            e.nativeEvent.stopImmediatePropagation();
+
+                            // Call the handler with keepProfileOpen=true
                             if (generatedUploadId && generatedProtocols.length > 0) {
-                              onShowGeneratedProtocols?.(generatedUploadId, generatedProtocols);
+                              onShowGeneratedProtocols?.(generatedUploadId, generatedProtocols, true);
                             }
                           }}
                           style={{
@@ -1727,31 +1849,6 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                         </Card>
                       )}
 
-                      {/* Saved Protocols Summary */}
-                      {savedProtocols.length > 0 && (
-                        <Card className="border-teal-200 bg-teal-50">
-                          <CardContent className="p-4">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-3">
-                                <div className="h-10 w-10 bg-teal-100 rounded-lg flex items-center justify-center">
-                                  <Star className="h-5 w-5 text-teal-600" />
-                                </div>
-                                <div>
-                                  <h4 className="text-sm font-medium text-slate-900">
-                                    Saved Protocols
-                                  </h4>
-                                  <p className="text-xs text-slate-600">
-                                    {savedProtocols.length} protocols saved
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="text-xl font-bold text-teal-600">
-                                {savedProtocols.length}
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      )}
 
                       {/* Quick Actions */}
                       <div className="border-t border-slate-200 pt-4">

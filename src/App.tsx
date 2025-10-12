@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Menu, X, LogOut, UserX, FileText, Plus } from 'lucide-react';
+import { Menu, X, LogOut, UserX, FileText, Plus, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import LandingScreen from '@/components/LandingScreen';
 import Sidebar from '@/components/Sidebar';
 import ChatInput from '@/components/ChatInput';
@@ -15,7 +15,7 @@ import SignupPage from '@/components/auth/SignupPage';
 import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import NetworkStatusBanner from '@/components/NetworkStatusBanner';
-import { Message, ProtocolData, ProtocolStep, Citation, SearchMetadata } from '@/types';
+import { Message, ProtocolData, ProtocolStep, Citation, SearchMetadata, AppTab, ConversationTab, ProtocolTab, ProtocolIndexTab } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocol, ConversationMessage, protocolConversationChat, deleteUserData } from '@/lib/api';
 import { deleteUser } from 'firebase/auth';
@@ -176,26 +176,38 @@ function App() {
   const userId = currentUser?.uid || null;
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  const handleToggleSidebarCollapse = () => {
+    setIsSidebarCollapsed(!isSidebarCollapsed);
+  };
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showNewTabDialog, setShowNewTabDialog] = useState(false);
+
+  // Profile modal state - moved from Sidebar to prevent reset on re-renders
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [activeProfileTab, setActiveProfileTab] = useState<'profile' | 'protocols'>('profile');
+
+  // Profile modal handlers
+  const handleOpenProfile = useCallback(() => setIsProfileOpen(true), []);
+  const handleCloseProfile = useCallback(() => {
+    setIsProfileOpen(false);
+    setActiveProfileTab('profile');
+  }, []);
+  const handleSetActiveProfileTab = useCallback((tab: 'profile' | 'protocols') => {
+    setActiveProfileTab(tab);
+  }, []);
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
   const [showCloseAllDialog, setShowCloseAllDialog] = useState(false);
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   // Tab management state
-  interface ConversationTab {
-    id: string;
-    title: string;
-    messages: Message[];
-    conversationId: string;
-    isLoading: boolean;
-  }
-
-  const [tabs, setTabs] = useState<ConversationTab[]>([{
+  const [tabs, setTabs] = useState<AppTab[]>([{
     id: generateTabId(),
     title: 'New Protocol',
+    type: 'chat' as const,
     messages: [],
     conversationId: generateConversationId(),
     isLoading: false
@@ -221,11 +233,23 @@ function App() {
   const [regenerationPrompt, setRegenerationPrompt] = useState('Focus on specific aspects like pediatric considerations, emergency protocols, or detailed contraindications');
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isRegenerated, setIsRegenerated] = useState(false);
-  const [showUserProtocolsIndex, setShowUserProtocolsIndex] = useState(false);
   const [userIndexProtocols, setUserIndexProtocols] = useState<any[]>([]);
-  const [showGeneratedProtocols, setShowGeneratedProtocols] = useState(false);
   const [generatedProtocols, setGeneratedProtocols] = useState<any[]>([]);
   const [generatedUploadId, setGeneratedUploadId] = useState<string | null>(null);
+
+  // Upload state - moved from Sidebar for persistence across navigation
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{
+    status: string;
+    filename?: string;
+    upload_id?: string;
+    progress?: number;
+    protocols_extracted?: number;
+    protocols_indexed?: number;
+    error?: string;
+  } | null>(null);
+  const [uploadCancelled, setUploadCancelled] = useState(false);
+  const [currentUploadId, setCurrentUploadId] = useState<string | null>(null);
 
   // Regeneration modal state
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
@@ -558,23 +582,24 @@ function App() {
   };
 
   // Helper functions for tab management
-  const getActiveTab = (): ConversationTab | null => {
+  const getActiveTab = (): AppTab | null => {
     return tabs.find(tab => tab.id === activeTabId) || null;
   };
 
   const updateActiveTab = (updates: Partial<ConversationTab>) => {
     setTabs(prevTabs =>
       prevTabs.map(tab =>
-        tab.id === activeTabId ? { ...tab, ...updates } : tab
+        tab.id === activeTabId && tab.type === 'chat'
+          ? { ...tab, ...updates } : tab
       )
     );
   };
 
   // Derived state from active tab
   const activeTab = getActiveTab();
-  const messages = activeTab?.messages || [];
+  const messages = activeTab?.type === 'chat' ? activeTab.messages : [];
   const isLoading = activeTab?.isLoading || false;
-  const currentConversationId = activeTab?.conversationId || generateConversationId();
+  const currentConversationId = activeTab?.type === 'chat' ? activeTab.conversationId : generateConversationId();
 
   // Tab management functions
   const createNewTab = (title: string = 'New Protocol'): string => {
@@ -582,6 +607,7 @@ function App() {
     const newTab: ConversationTab = {
       id: newTabId,
       title,
+      type: 'chat',
       messages: [],
       conversationId: generateConversationId(),
       isLoading: false
@@ -601,7 +627,7 @@ function App() {
     
     // Save current tab's conversation before switching
     const currentTab = getActiveTab();
-    if (currentTab && currentTab.messages.length > 0 && userId) {
+    if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0 && userId) {
       const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
       if (lastUserMessage) {
         await saveCurrentConversation(currentTab.messages, lastUserMessage.content);
@@ -614,7 +640,7 @@ function App() {
   const closeTab = async (tabId: string) => {
     // Save the tab's conversation before closing
     const tabToClose = tabs.find(tab => tab.id === tabId);
-    if (tabToClose && tabToClose.messages.length > 0 && userId) {
+    if (tabToClose && tabToClose.type === 'chat' && tabToClose.messages.length > 0 && userId) {
       const lastUserMessage = [...tabToClose.messages].reverse().find(m => m.type === 'user');
       if (lastUserMessage) {
         await saveCurrentConversation(tabToClose.messages, lastUserMessage.content);
@@ -634,6 +660,7 @@ function App() {
         const defaultTab: ConversationTab = {
           id: 'tab-default',
           title: 'New Protocol',
+          type: 'chat',
           messages: [],
           conversationId: generateConversationId(),
           isLoading: false
@@ -781,7 +808,8 @@ function App() {
         };
 
         // Get latest messages again before updating
-        const messagesBeforeUpdate = getActiveTab()?.messages || [];
+        const activeTab = getActiveTab();
+        const messagesBeforeUpdate = (activeTab?.type === 'chat' ? activeTab.messages : []) || [];
         const newMessages = [...messagesBeforeUpdate, assistantMessage];
         updateActiveTab({
           messages: newMessages,
@@ -1093,7 +1121,7 @@ CITATION REQUIREMENT:
 
       // Save conversation - need to get the conversation ID for this tab
       const targetTab = tabs.find(t => t.id === targetTabId);
-      if (targetTab && userId) {
+      if (targetTab && targetTab.type === 'chat' && userId) {
         const conversationMessages: ConversationMessage[] = newMessages.map(msg => ({
           id: msg.id,
           type: msg.type as 'user' | 'assistant',
@@ -1139,7 +1167,6 @@ CITATION REQUIREMENT:
 
     // Clear any preview modes to return to normal chat
     setShowProtocolPreview(false);
-    setShowUserProtocolsIndex(false);
     setPreviewProtocols([]);
     setPreviewUploadId(null);
 
@@ -1160,7 +1187,7 @@ CITATION REQUIREMENT:
     // Save all tabs before closing
     if (userId) {
       for (const tab of tabs) {
-        if (tab.messages.length > 0) {
+        if (tab.type === 'chat' && tab.messages.length > 0) {
           const lastUserMessage = [...tab.messages].reverse().find(m => m.type === 'user');
           if (lastUserMessage) {
             await saveCurrentConversation(tab.messages, lastUserMessage.content);
@@ -1173,6 +1200,7 @@ CITATION REQUIREMENT:
     const defaultTab: ConversationTab = {
       id: generateTabId(),
       title: 'New Protocol',
+      type: 'chat',
       messages: [],
       conversationId: generateConversationId(),
       isLoading: false
@@ -1187,7 +1215,7 @@ CITATION REQUIREMENT:
 
     // Save current tab before opening new one
     const currentTab = getActiveTab();
-    if (currentTab && currentTab.messages.length > 0) {
+    if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0) {
       const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
       if (lastUserMessage) {
         await saveCurrentConversation(currentTab.messages, lastUserMessage.content);
@@ -1199,7 +1227,6 @@ CITATION REQUIREMENT:
 
     // Clear any preview modes to return to normal chat
     setShowProtocolPreview(false);
-    setShowUserProtocolsIndex(false);
     setPreviewProtocols([]);
     setPreviewUploadId(null);
 
@@ -1340,7 +1367,7 @@ CITATION REQUIREMENT:
     
     // Save current tab before opening new one
     const currentTab = getActiveTab();
-    if (currentTab && currentTab.messages.length > 0 && userId) {
+    if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0 && userId) {
       const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
       if (lastUserMessage) {
         await saveCurrentConversation(currentTab.messages, lastUserMessage.content);
@@ -1359,7 +1386,6 @@ CITATION REQUIREMENT:
 
     // Clear any preview modes to return to normal chat
     setShowProtocolPreview(false);
-    setShowUserProtocolsIndex(false);
     setPreviewProtocols([]);
     setPreviewUploadId(null);
 
@@ -1455,21 +1481,41 @@ CITATION REQUIREMENT:
   }, []);
 
   // User protocols index handler
-  const handleShowUserProtocolsIndex = useCallback(async () => {
+  const handleShowUserProtocolsIndex = useCallback(async (keepProfileOpen = false) => {
     try {
       if (!currentUser) {
         console.log('❌ No current user for protocol index');
         return;
       }
 
-      console.log('🚀 IMMEDIATE: Showing user protocols index');
+      console.log('🚀 Creating protocol index tab');
 
-      // IMMEDIATE: Show view first, load data in background
-      setShowUserProtocolsIndex(true);
+      // Check if a protocol index tab already exists
+      const existingIndexTab = tabs.find(tab => tab.type === 'protocol-index');
+
+      if (existingIndexTab) {
+        // Switch to existing tab
+        setActiveTabId(existingIndexTab.id);
+        console.log('✅ Switched to existing protocol index tab');
+      } else {
+        // Create new protocol index tab
+        const newIndexTab: ProtocolIndexTab = {
+          id: generateTabId(),
+          title: 'Your Protocol Index',
+          type: 'protocol-index',
+          protocols: userIndexProtocols, // Use existing cached data if available
+          isLoading: userIndexProtocols.length === 0 // Only loading if no cached data
+        };
+
+        setTabs(prevTabs => [...prevTabs, newIndexTab]);
+        setActiveTabId(newIndexTab.id);
+        console.log('✅ Created new protocol index tab');
+      }
+
+      // Clear other views
       setShowProtocolPreview(false);
-      // DON'T clear messages - let upload/generation continue independently
 
-      console.log('✅ IMMEDIATE: View switched, checking if data refresh needed...');
+      console.log('✅ Protocol index tab created/switched, checking if data refresh needed...');
 
       // Only refresh data if we don't have any protocols cached OR if explicitly needed
       if (userIndexProtocols.length === 0) {
@@ -1496,16 +1542,17 @@ CITATION REQUIREMENT:
       if (response.success && response.protocols) {
         console.log('✅ BACKGROUND: Loading protocols data:', response.protocols.length, 'protocols');
         setUserIndexProtocols(response.protocols);
-        console.log('✅ BACKGROUND: Protocols data loaded and view updated');
 
-        // Debug view states after setting
-        setTimeout(() => {
-          console.log('🔍 View states after 100ms:', {
-            showUserProtocolsIndex: true, // We just set this
-            showProtocolPreview: false, // We just cleared this
-            messagesLength: 0 // We just cleared this
-          });
-        }, 100);
+        // Update the protocol index tab with the loaded data
+        setTabs(prevTabs =>
+          prevTabs.map(tab =>
+            tab.type === 'protocol-index'
+              ? { ...tab, protocols: response.protocols, isLoading: false } as ProtocolIndexTab
+              : tab
+          )
+        );
+
+        console.log('✅ BACKGROUND: Protocols data loaded and tab updated');
       } else {
         console.error('❌ Failed to load user protocols:', response.error || 'Unknown error');
         addToastNotification({
@@ -1525,27 +1572,56 @@ CITATION REQUIREMENT:
         message: 'An error occurred while loading your protocols'
       });
     }
-  }, [currentUser, addToastNotification]);
+
+    // If called from profile modal, maintain the modal state
+    if (keepProfileOpen) {
+      setIsProfileOpen(true);
+      setActiveProfileTab('protocols');
+    }
+  }, [currentUser, addToastNotification, tabs, userIndexProtocols, setTabs, setActiveTabId]);
 
   // Generated protocols handler
-  const handleShowGeneratedProtocols = useCallback(async (uploadId: string, protocols: any[]) => {
-    console.log('🔧 Showing generated protocols:', {
-      uploadId,
-      protocolCount: protocols.length
-    });
+  const handleShowGeneratedProtocols = useCallback(async (uploadId: string, protocols: any[], keepProfileOpen = false) => {
+    // Check if a generated protocols tab already exists
+    const existingProtocolTab = tabs.find(tab => tab.type === 'generated-protocols');
 
-    // Set generated protocols data
+    if (existingProtocolTab) {
+      // Update existing tab with new protocols
+      setTabs(prevTabs =>
+        prevTabs.map(tab =>
+          tab.type === 'generated-protocols'
+            ? { ...tab, protocols, isLoading: false } as ProtocolTab
+            : tab
+        )
+      );
+      setActiveTabId(existingProtocolTab.id);
+    } else {
+      // Create new protocol tab
+      const newProtocolTab: ProtocolTab = {
+        id: generateTabId(),
+        title: 'Generated Protocols',
+        type: 'generated-protocols',
+        protocols,
+        isLoading: false
+      };
+
+      setTabs(prevTabs => [...prevTabs, newProtocolTab]);
+      setActiveTabId(newProtocolTab.id);
+    }
+
+    // Store for approval functionality
     setGeneratedProtocols(protocols);
     setGeneratedUploadId(uploadId);
-    setShowGeneratedProtocols(true);
 
     // Clear other views
     setShowProtocolPreview(false);
-    setShowUserProtocolsIndex(false);
-    setMessages([]);
 
-    console.log('✅ Generated protocols view activated');
-  }, []);
+    // If called from profile modal, maintain the modal state
+    if (keepProfileOpen) {
+      setIsProfileOpen(true);
+      setActiveProfileTab('protocols');
+    }
+  }, [tabs]);
 
   // Protocol preview handlers
   const handleShowProtocolPreview = useCallback(async (uploadId: string, protocols: any[]) => {
@@ -1563,8 +1639,7 @@ CITATION REQUIREMENT:
 
     // Always completely clear ALL view states before setting new protocols
     setShowProtocolPreview(false);
-    setShowUserProtocolsIndex(false); // Clear protocol index view
-    setShowGeneratedProtocols(false); // Clear generated protocols view
+    // No longer using showGeneratedProtocols state
     setPreviewProtocols([]);
     setPreviewUploadId(null);
     setUserIndexProtocols([]); // Clear index protocols
@@ -1581,7 +1656,11 @@ CITATION REQUIREMENT:
       const result = await approveAndIndexUpload(currentUser.uid, generatedUploadId);
       console.log('✅ Protocols approved and indexing started:', result);
 
-      setShowGeneratedProtocols(false);
+      // Close the protocol tab and clear state
+      const protocolTab = tabs.find(tab => tab.type === 'generated-protocols');
+      if (protocolTab) {
+        closeTab(protocolTab.id);
+      }
       setGeneratedProtocols([]);
       setGeneratedUploadId(null);
 
@@ -1592,8 +1671,33 @@ CITATION REQUIREMENT:
         message: 'Protocols approved successfully! Indexing in progress...'
       });
 
-      // Trigger sidebar refresh
+      // Trigger sidebar refresh for saved protocols
       setSavedProtocolsRefreshTrigger(prev => prev + 1);
+
+      // Refresh user uploaded protocols after a short delay to allow indexing to complete
+      setTimeout(async () => {
+        try {
+          console.log('🔄 Refreshing user protocols after indexing...');
+          const response = await getUserUploadedProtocols(currentUser.uid, 20);
+          if (response.success && response.protocols) {
+            console.log('✅ User protocols refreshed:', response.protocols.length, 'protocols');
+            setUserIndexProtocols(response.protocols);
+
+            // Clear the cache so sidebar shows updated count
+            if (clearProtocolCacheRef.current) {
+              clearProtocolCacheRef.current();
+            }
+
+            addToastNotification({
+              type: 'success',
+              title: 'Protocols Indexed',
+              message: `${response.protocols.length} protocols have been added to your index!`
+            });
+          }
+        } catch (refreshError) {
+          console.error('❌ Failed to refresh user protocols:', refreshError);
+        }
+      }, 2000); // Wait 2 seconds for indexing to complete
 
     } catch (error) {
       console.error('❌ Failed to approve protocols:', error);
@@ -1603,9 +1707,9 @@ CITATION REQUIREMENT:
         content: 'Failed to approve protocols. Please try again.',
         timestamp: getUserTimestamp(),
       };
-      setMessages([errorMessage]);
+      updateActiveTab({ messages: [errorMessage] });
     }
-  }, [currentUser, generatedUploadId, addToastNotification]);
+  }, [currentUser, generatedUploadId, addToastNotification, tabs, closeTab]);
 
   const handleRegenerateProtocols = useCallback(async (customPrompt: string = '') => {
     try {
@@ -1647,8 +1751,17 @@ CITATION REQUIREMENT:
               // Update the Generated Protocols view with new protocols
               setGeneratedProtocols(preview.protocols);
 
-              // Ensure the Generated Protocols view is visible
-              setShowGeneratedProtocols(true);
+              // Update the protocol tab with new protocols
+              const protocolTab = tabs.find(tab => tab.type === 'generated-protocols');
+              if (protocolTab) {
+                setTabs(prevTabs =>
+                  prevTabs.map(tab =>
+                    tab.type === 'generated-protocols'
+                      ? { ...tab, protocols: preview.protocols, isLoading: false } as ProtocolTab
+                      : tab
+                  )
+                );
+              }
 
               addToastNotification({
                 type: 'success',
@@ -1693,7 +1806,7 @@ CITATION REQUIREMENT:
     } finally {
       setIsRegenerating(false);
     }
-  }, [currentUser, generatedUploadId, addToastNotification]);
+  }, [currentUser, generatedUploadId, addToastNotification, tabs, setTabs]);
 
   // Focus management for regeneration modal
   useEffect(() => {
@@ -1741,7 +1854,7 @@ CITATION REQUIREMENT:
         content: '🔄 Protocol regeneration started successfully! Your protocols are being regenerated with the new instructions using Gemini AI. Please wait a moment for the updated protocols to be ready.',
         timestamp: getUserTimestamp(),
       };
-      setMessages([successMessage]);
+      updateActiveTab({ messages: [successMessage] });
 
       // Wait a moment then refresh the preview to show regenerated protocols
       setTimeout(async () => {
@@ -1805,11 +1918,11 @@ CITATION REQUIREMENT:
 
   const handleNotificationClick = useCallback((notification: typeof notifications[0]) => {
     if (notification.type === 'upload_ready' && notification.uploadId && notification.protocols) {
-      // Show upload preview
-      handleShowProtocolPreview(notification.uploadId, notification.protocols);
+      // Show generated protocols directly when user clicks "View Protocols"
+      handleShowGeneratedProtocols(notification.uploadId, notification.protocols);
       removeNotification(notification.id);
     }
-  }, [handleShowProtocolPreview, removeNotification]);
+  }, [handleShowGeneratedProtocols, removeNotification]);
 
   // Modal handlers
   const handleShowLogoutModal = () => {
@@ -1839,12 +1952,21 @@ CITATION REQUIREMENT:
     if (!currentUser) return;
 
     try {
-      // First delete user data from backend
-      console.log('Deleting user data from backend...');
-      const backendResult = await deleteUserData(currentUser.uid);
-      console.log('Backend deletion result:', backendResult);
+      // First delete user's uploaded protocols from Elasticsearch
+      console.log('Deleting user protocols from Elasticsearch...');
+      try {
+        const protocolsResult = await deleteAllUserProtocols(currentUser.uid);
+        console.log('Elasticsearch protocols deletion result:', protocolsResult);
+      } catch (protocolError) {
+        console.warn('Failed to delete Elasticsearch protocols, continuing with account deletion:', protocolError);
+      }
 
-      // Then delete Firebase Auth user account
+      // Then delete user data from Firestore backend (conversations and saved protocols)
+      console.log('Deleting user data from Firestore...');
+      const backendResult = await deleteUserData(currentUser.uid);
+      console.log('Firestore deletion result:', backendResult);
+
+      // Finally delete Firebase Auth user account
       console.log('Deleting Firebase Auth account...');
       await deleteUser(currentUser);
 
@@ -1925,8 +2047,10 @@ CITATION REQUIREMENT:
       )}
       
       {/* Sidebar - always mounted, visibility controlled by CSS */}
-      <div className={`fixed lg:relative lg:translate-x-0 inset-y-0 left-0 z-50 lg:z-auto transition-transform duration-300 ${
+      <div className={`fixed lg:relative lg:translate-x-0 inset-y-0 left-0 z-50 lg:z-auto transition-all duration-300 ${
         isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      } ${
+        isSidebarCollapsed ? 'lg:w-16' : 'lg:w-80'
       }`}>
         <Sidebar
           onNewSearch={handleNewSearch}
@@ -1944,6 +2068,24 @@ CITATION REQUIREMENT:
           onNotifyUploadReady={addNotification}
           onShowConfirmation={showConfirmation}
           onClearProtocolCache={handleClearProtocolCache}
+          // Profile modal state and handlers
+          isProfileOpen={isProfileOpen}
+          activeProfileTab={activeProfileTab}
+          onOpenProfile={handleOpenProfile}
+          onCloseProfile={handleCloseProfile}
+          onSetActiveProfileTab={handleSetActiveProfileTab}
+          // Upload state props for persistence
+          isUploading={isUploading}
+          setIsUploading={setIsUploading}
+          uploadProgress={uploadProgress}
+          setUploadProgress={setUploadProgress}
+          uploadCancelled={uploadCancelled}
+          setUploadCancelled={setUploadCancelled}
+          currentUploadId={currentUploadId}
+          setCurrentUploadId={setCurrentUploadId}
+          userIndexProtocols={userIndexProtocols}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={handleToggleSidebarCollapse}
         />
       </div>
       <div className="flex-1 flex flex-col h-full">
@@ -2014,10 +2156,10 @@ CITATION REQUIREMENT:
           ref={chatContainerRef}
           className="flex-1 overflow-y-auto p-4 space-y-4 relative"
           onScroll={handleScroll}
-          key={`content-${showUserProtocolsIndex}-${showProtocolPreview}-${Date.now()}`}
+          key={`content-${showProtocolPreview}-${Date.now()}`}
         >
-          {/* User Protocol Index View */}
-          {console.log('🎬 Render check:', { showUserProtocolsIndex, userIndexProtocolsLength: userIndexProtocols.length }) || showUserProtocolsIndex && (
+          {/* User Protocol Index View - REMOVED - Now using tab system */}
+          {false && (
             <div className="max-w-4xl mx-auto">
               <div className="bg-white rounded-lg shadow-lg border border-slate-200 mb-6">
                 <div className="p-6 border-b border-slate-200">
@@ -2061,8 +2203,7 @@ CITATION REQUIREMENT:
 
                                 // Also close the index view since there are no protocols left
                                 setTimeout(() => {
-                                  setShowUserProtocolsIndex(false);
-                                }, 1500);
+                                                              }, 1500);
 
                               } catch (error) {
                                 console.error('Failed to delete all protocols:', error);
@@ -2083,8 +2224,7 @@ CITATION REQUIREMENT:
                         variant="ghost"
                         size="sm"
                         onClick={() => {
-                          setShowUserProtocolsIndex(false);
-                          setUserIndexProtocols([]);
+                                                setUserIndexProtocols([]);
                         }}
                         className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600"
                       >
@@ -2240,8 +2380,8 @@ CITATION REQUIREMENT:
             </div>
           )}
 
-          {/* Generated Protocols View - Only show if User Index is not active */}
-          {showGeneratedProtocols && !showUserProtocolsIndex && (
+          {/* Tab Content Area */}
+          {activeTab?.type === 'generated-protocols' && (
             <div className="max-w-4xl mx-auto">
               {/* Header */}
               <div className="bg-white rounded-lg shadow-lg border border-slate-200 mb-6">
@@ -2250,23 +2390,10 @@ CITATION REQUIREMENT:
                     <div>
                       <h1 className="text-2xl font-bold text-slate-900">Generated Protocols</h1>
                       <p className="text-slate-600">
-                        {generatedProtocols.length} protocols generated from your upload. Review and approve to add to your index.
+                        {activeTab.protocols.length} protocols generated from your upload. Review and approve to add to your index.
                       </p>
                     </div>
-                    <div className="flex items-center space-x-3">
-                      <button
-                        onClick={() => {
-                          setShowGeneratedProtocols(false);
-                          setGeneratedProtocols([]);
-                          setGeneratedUploadId(null);
-                        }}
-                        className="text-slate-400 hover:text-slate-600"
-                      >
-                        ✕
-                      </button>
-                    </div>
                   </div>
-
 
                   {/* Action Buttons */}
                   <div className="flex items-center space-x-3">
@@ -2279,7 +2406,7 @@ CITATION REQUIREMENT:
                           : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       }`}
                     >
-                      Approve & Add to Index ({generatedProtocols.length} protocols)
+                      Approve & Add to Index ({activeTab.protocols.length} protocols)
                     </button>
                     <button
                       onClick={() => {
@@ -2301,18 +2428,46 @@ CITATION REQUIREMENT:
                     >
                       {isRegenerating ? 'Regenerating...' : 'Regenerate Protocols'}
                     </button>
+                    <button
+                      onClick={() => {
+                        console.log('🗑️ Clear Generated Protocols clicked');
+
+                        // Clear the generated protocols from state (no confirmation needed - they're temporary)
+                        setGeneratedProtocols([]);
+                        setGeneratedUploadId(null);
+
+                        // Close the generated protocols tab and go back to default
+                        const newTabs = tabs.filter(tab => tab.type !== 'generated-protocols');
+                        setTabs(newTabs);
+
+                        // Switch to the first available tab
+                        if (newTabs.length > 0) {
+                          setActiveTabId(newTabs[0].id);
+                        }
+
+                        console.log('✅ Generated protocols cleared and tab closed');
+                      }}
+                      disabled={!currentUser || generatedProtocols.length === 0}
+                      className={`px-6 py-2 rounded-lg font-medium ${
+                        currentUser && generatedProtocols.length > 0
+                          ? 'bg-red-600 hover:bg-red-700 text-white'
+                          : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      }`}
+                    >
+                      Clear All
+                    </button>
                   </div>
                 </div>
 
                 {/* Protocols List */}
                 <div className="p-6">
-                  {generatedProtocols.length === 0 ? (
+                  {activeTab.protocols.length === 0 ? (
                     <div className="text-center py-8 text-slate-500">
                       No protocols data available
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      {generatedProtocols.map((protocol: any, index: number) => {
+                      {activeTab.protocols.map((protocol: any, index: number) => {
                         console.log(`🔍 Rendering protocol ${index}:`, protocol);
 
                         // Extract protocol steps from various possible structures
@@ -2436,6 +2591,240 @@ CITATION REQUIREMENT:
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Protocol Index Tab Content */}
+          {activeTab?.type === 'protocol-index' && (
+            <div className="max-w-4xl mx-auto">
+              {/* Header */}
+              <div className="bg-white rounded-lg shadow-lg border border-slate-200 mb-6">
+                <div className="p-6 border-b border-slate-200">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h1 className="text-2xl font-bold text-slate-900">Your Protocol Index</h1>
+                      <p className="text-slate-600">
+                        {activeTab.protocols.length} protocols uploaded from your documents
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          showConfirmation({
+                            title: 'Delete All Protocols',
+                            message: `Are you sure you want to delete all ${activeTab.protocols.length} protocols from your index? This action cannot be undone and will permanently remove all your uploaded protocols.`,
+                            confirmText: `Delete All ${activeTab.protocols.length} Protocols`,
+                            confirmAction: async () => {
+                              try {
+                                if (!currentUser) return;
+
+                                const response = await deleteAllUserProtocols(currentUser.uid);
+                                if (response.success) {
+                                  setUserIndexProtocols([]);
+
+                                  // Update the tab
+                                  setTabs(prevTabs =>
+                                    prevTabs.map(tab =>
+                                      tab.type === 'protocol-index'
+                                        ? { ...tab, protocols: [] } as ProtocolIndexTab
+                                        : tab
+                                    )
+                                  );
+
+                                  addToastNotification({
+                                    type: 'success',
+                                    title: 'All Protocols Deleted',
+                                    message: 'All protocols have been successfully removed from your index'
+                                  });
+
+                                  // Close the tab since there are no protocols left
+                                  const protocolTab = tabs.find(tab => tab.type === 'protocol-index');
+                                  if (protocolTab) {
+                                    closeTab(protocolTab.id);
+                                  }
+
+                                } else {
+                                  throw new Error(response.message || 'Failed to delete protocols');
+                                }
+                              } catch (error) {
+                                console.error('❌ Error deleting all protocols:', error);
+                                addToastNotification({
+                                  type: 'error',
+                                  title: 'Delete Failed',
+                                  message: error instanceof Error ? error.message : 'Failed to delete protocols'
+                                });
+                              }
+                            },
+                            dangerous: true
+                          });
+                        }}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        Delete All
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Protocols List */}
+                <div className="p-6">
+                  {activeTab.isLoading ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600 mx-auto mb-4"></div>
+                      <p className="text-slate-600">Loading your protocols...</p>
+                    </div>
+                  ) : activeTab.protocols.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500">
+                      No protocols uploaded yet. Upload documents to generate protocols.
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {activeTab.protocols.map((protocol: any, index: number) => (
+                        <div key={`index-${index}`} className="border border-slate-200 rounded-lg p-4 hover:bg-slate-50">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                                {protocol.title || protocol.name || `Protocol ${index + 1}`}
+                              </h3>
+                              <div className="text-sm text-slate-600 space-y-1">
+                                <p><strong>Steps:</strong> {protocol.steps_count || 0}</p>
+                                <p><strong>Citations:</strong> {protocol.citations_count || 0}</p>
+                                <p><strong>Source:</strong> {protocol.source_file || 'Unknown'}</p>
+                                <p><strong>Organization:</strong> {protocol.organization || 'Unknown'}</p>
+                                <p><strong>Region:</strong> {protocol.region || 'Unknown'}</p>
+                                <p><strong>Year:</strong> {protocol.year || 'Unknown'}</p>
+                              </div>
+
+                              {/* Protocol Steps Display */}
+                              {(() => {
+                                // Try multiple ways to get steps data
+                                let protocolSteps = protocol.protocol_data?.step_details ||
+                                                  protocol.protocol_data?.steps ||
+                                                  protocol.protocol_data?.checklist ||
+                                                  protocol.protocol_data?.procedures ||
+                                                  protocol.protocol_data?.instructions ||
+                                                  protocol.steps ||
+                                                  protocol.checklist ||
+                                                  [];
+
+                                // If still no steps, try to parse JSON if it's a string
+                                if (!protocolSteps || protocolSteps.length === 0) {
+                                  if (typeof protocol.protocol_data === 'string') {
+                                    try {
+                                      const parsed = JSON.parse(protocol.protocol_data);
+                                      protocolSteps = parsed.step_details || parsed.steps || parsed.checklist || parsed.procedures || [];
+                                    } catch (e) {
+                                      // Silently handle JSON parsing errors
+                                    }
+                                  }
+                                }
+
+                                return protocolSteps && protocolSteps.length > 0 ? (
+                                  <div className="mt-4 border-t border-slate-200 pt-4">
+                                    <h4 className="font-medium text-slate-700 mb-2">Protocol Steps:</h4>
+                                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                                      {protocolSteps.slice(0, 5).map((step: any, stepIndex: number) => {
+                                        // Try different step text fields
+                                        const stepText = step.step ||
+                                                       step.text ||
+                                                       step.description ||
+                                                       step.title ||
+                                                       step.content ||
+                                                       step.action ||
+                                                       (typeof step === 'string' ? step : 'Protocol step');
+
+                                        return (
+                                          <div key={stepIndex} className="text-sm bg-slate-50 p-2 rounded border-l-2 border-teal-200">
+                                            <div className="font-medium text-slate-800">
+                                              {stepIndex + 1}. {stepText}
+                                            </div>
+                                            {step.explanation && (
+                                              <div className="text-slate-600 mt-1 text-xs">
+                                                {step.explanation}
+                                              </div>
+                                            )}
+                                            {step.details && (
+                                              <div className="text-slate-600 mt-1 text-xs">
+                                                {step.details}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                      {protocolSteps.length > 5 && (
+                                        <div className="text-xs text-slate-500 italic">
+                                          ... and {protocolSteps.length - 5} more steps
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="mt-4 border-t border-slate-200 pt-4">
+                                    <div className="text-sm text-slate-500 italic">
+                                      No detailed steps available for this protocol
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                            <button
+                              className="text-slate-400 hover:text-red-600 p-1 hover:bg-red-50 rounded"
+                              onClick={async () => {
+                                try {
+                                  if (!currentUser) return;
+
+                                  // Show confirmation dialog
+                                  const confirmed = window.confirm(`Are you sure you want to delete "${protocol.title}"?`);
+                                  if (!confirmed) return;
+
+                                  // Use the existing deleteUserProtocol API function
+                                  await deleteUserProtocol(currentUser.uid, protocol.id);
+
+                                  // Remove from local state
+                                  setUserIndexProtocols(prev => prev.filter(p => p.id !== protocol.id));
+
+                                  // Update the protocol index tab
+                                  setTabs(prevTabs =>
+                                    prevTabs.map(tab =>
+                                      tab.type === 'protocol-index'
+                                        ? { ...tab, protocols: tab.protocols.filter((p: any) => p.id !== protocol.id) } as ProtocolIndexTab
+                                        : tab
+                                    )
+                                  );
+
+                                  // Clear sidebar cache to refresh protocol counts
+                                  if (clearProtocolCacheRef.current) {
+                                    clearProtocolCacheRef.current();
+                                  }
+
+                                  addToastNotification({
+                                    type: 'success',
+                                    title: 'Protocol Deleted',
+                                    message: `"${protocol.title}" has been successfully deleted`
+                                  });
+
+                                } catch (error) {
+                                  console.error('❌ Error deleting protocol:', error);
+                                  addToastNotification({
+                                    type: 'error',
+                                    title: 'Delete Failed',
+                                    message: 'Failed to delete the protocol. Please try again.'
+                                  });
+                                }
+                              }}
+                              title="Delete this protocol"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -2651,7 +3040,7 @@ CITATION REQUIREMENT:
             </div>
           )}
 
-          {!showProtocolPreview && !showUserProtocolsIndex && !showGeneratedProtocols && messages.length === 0 && (
+          {!showProtocolPreview && activeTab?.type === 'chat' && messages.length === 0 && (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
                 <div className="text-6xl mb-4">🏥</div>
@@ -2665,57 +3054,61 @@ CITATION REQUIREMENT:
               </div>
             </div>
           )}
-          {messages.map((message, index) => {
-            const isLastAssistant = message.type === 'assistant' && index === messages.length - 1;
-            const isFirstUserMessage = message.type === 'user' && index === 0;
-            return (
-              <div 
-                key={message.id}
-                ref={isLastAssistant ? lastAssistantMessageRef : null}
-              >
-                <ChatMessage
-                  message={message}
-                  onSaveToggle={handleSaveToggle}
-                  onProtocolUpdate={handleProtocolUpdate}
-                  onFollowUpClick={handleFollowUpClick}
-                  isFirstUserMessage={isFirstUserMessage}
-                  isProtocolAlreadySaved={isSavedProtocolMessage(message)}
-                />
-              </div>
-            );
-          })}
-          {isLoading && (
-            <div className="flex justify-start">
-              <div className="max-w-[90%]">
-                <div className="flex items-start space-x-3">
-                  <div className="flex-shrink-0">
-                    <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-teal-600"></div>
-                    </div>
+          {activeTab?.type === 'chat' && (
+            <>
+              {messages.map((message, index) => {
+                const isLastAssistant = message.type === 'assistant' && index === messages.length - 1;
+                const isFirstUserMessage = message.type === 'user' && index === 0;
+                return (
+                  <div
+                    key={message.id}
+                    ref={isLastAssistant ? lastAssistantMessageRef : null}
+                  >
+                    <ChatMessage
+                      message={message}
+                      onSaveToggle={handleSaveToggle}
+                      onProtocolUpdate={handleProtocolUpdate}
+                      onFollowUpClick={handleFollowUpClick}
+                      isFirstUserMessage={isFirstUserMessage}
+                      isProtocolAlreadySaved={isSavedProtocolMessage(message)}
+                    />
                   </div>
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <h4 className="font-semibold text-slate-900">ProCheck Protocol Assistant</h4>
-                    </div>
-                    <div className="mb-3 flex flex-wrap items-center gap-2">
-                      <Badge className="bg-slate-700 text-white border-0">
-                        Searching protocols...
-                      </Badge>
-                    </div>
-                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                      <div className="space-y-2">
-                        <p className="text-sm text-slate-600">
-                          Searching medical databases with semantic understanding...
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          Using BM25 keyword + vector embeddings for better results
-                        </p>
+                );
+              })}
+              {isLoading && (
+                <div className="flex justify-start">
+                  <div className="max-w-[90%]">
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0">
+                        <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center">
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-teal-600"></div>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <h4 className="font-semibold text-slate-900">ProCheck Protocol Assistant</h4>
+                        </div>
+                        <div className="mb-3 flex flex-wrap items-center gap-2">
+                          <Badge className="bg-slate-700 text-white border-0">
+                            Searching protocols...
+                          </Badge>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                          <div className="space-y-2">
+                            <p className="text-sm text-slate-600">
+                              Searching medical databases with semantic understanding...
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Using BM25 keyword + vector embeddings for better results
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              )}
+            </>
           )}
           <div ref={messagesEndRef} />
           
@@ -2795,7 +3188,7 @@ CITATION REQUIREMENT:
             </div>
           )}
         </div>
-        {!showProtocolPreview && !showUserProtocolsIndex && !showGeneratedProtocols && (
+        {!showProtocolPreview && activeTab?.type === 'chat' && (
           <ChatInput
             onSendMessage={handleSendMessage}
             isLoading={isLoading}
