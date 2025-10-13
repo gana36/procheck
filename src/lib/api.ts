@@ -110,6 +110,7 @@ export type ConversationMessage = {
   content: string;
   timestamp: string;
   protocol_data?: any;
+  follow_up_questions?: FollowUpQuestion[]; // Persist follow-up questions
 };
 
 export type ConversationSaveRequest = {

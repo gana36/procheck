@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Message } from '@/types';
 import ProtocolCard from './ProtocolCard';
+import MessageStatus from './MessageStatus';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -13,6 +14,7 @@ interface ChatMessageProps {
   onSaveToggle?: () => void;
   onProtocolUpdate?: (updatedProtocol: any) => void;
   onFollowUpClick?: (question: string) => void;
+  onRetryMessage?: (messageId: string) => void;
   isFirstUserMessage?: boolean;
   isProtocolAlreadySaved?: boolean;
 }
@@ -114,18 +116,24 @@ const stripMarkdown = (text: string): string => {
     .trim();
 };
 
-export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, onFollowUpClick, isFirstUserMessage = false, isProtocolAlreadySaved = false }: ChatMessageProps) {
+export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, onFollowUpClick, onRetryMessage, isFirstUserMessage = false, isProtocolAlreadySaved = false }: ChatMessageProps) {
 
   if (message.type === 'user') {
     return (
       <div className={`flex justify-end mb-6 ${isFirstUserMessage ? 'sticky top-0 z-30 bg-slate-50 pb-4 pt-4 border-b border-slate-200 shadow-sm' : ''}`}>
         <div className="max-w-[75%]">
           <div className="flex items-end justify-end space-x-3">
-            <Card className="bg-slate-700 text-white border-0 shadow-md">
-              <CardContent className="p-4">
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
-              </CardContent>
-            </Card>
+            <div className="flex flex-col items-end">
+              <Card className="bg-slate-700 text-white border-0 shadow-md">
+                <CardContent className="p-4">
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                </CardContent>
+              </Card>
+              <MessageStatus 
+                message={message} 
+                onRetry={onRetryMessage ? () => onRetryMessage(message.id) : undefined}
+              />
+            </div>
             <div className="flex-shrink-0">
               <div className="w-9 h-9 bg-slate-700 rounded-full flex items-center justify-center shadow-sm">
                 <User className="h-4 w-4 text-white" />

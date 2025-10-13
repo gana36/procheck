@@ -8,7 +8,7 @@ import { Menu, X, LogOut, UserX, FileText, Plus, PanelLeftClose, PanelLeftOpen }
 import LandingScreen from '@/components/LandingScreen';
 import Sidebar from '@/components/Sidebar';
 import ChatInput from '@/components/ChatInput';
-import ChatMessage from '@/components/ChatMessage';
+import ChatContainer from '@/components/ChatContainer';
 import ProtocolTabs from '@/components/ProtocolTabs';
 import LoginPage from '@/components/auth/LoginPage';
 import SignupPage from '@/components/auth/SignupPage';
@@ -203,16 +203,41 @@ function App() {
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Tab management state
-  const [tabs, setTabs] = useState<AppTab[]>([{
-    id: generateTabId(),
-    title: 'New Protocol',
-    type: 'chat' as const,
-    messages: [],
-    conversationId: generateConversationId(),
-    isLoading: false
-  }]);
-  const [activeTabId, setActiveTabId] = useState(tabs[0]?.id || generateTabId());
+  // Tab management state with localStorage persistence
+  const [tabs, setTabs] = useState<AppTab[]>(() => {
+    try {
+      const savedTabs = localStorage.getItem('procheck_tabs');
+      if (savedTabs) {
+        const parsed = JSON.parse(savedTabs) as AppTab[];
+        if (parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to restore tabs from localStorage:', error);
+    }
+    // Default tab if nothing in storage
+    return [{
+      id: generateTabId(),
+      title: 'New Protocol',
+      type: 'chat' as const,
+      messages: [],
+      conversationId: generateConversationId(),
+      isLoading: false
+    }];
+  });
+  
+  const [activeTabId, setActiveTabId] = useState(() => {
+    try {
+      const savedActiveTab = localStorage.getItem('procheck_active_tab');
+      if (savedActiveTab) {
+        return savedActiveTab;
+      }
+    } catch (error) {
+      console.error('Failed to restore active tab from localStorage:', error);
+    }
+    return tabs[0]?.id || generateTabId();
+  });
 
   // Confirmation modal states
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -224,7 +249,6 @@ function App() {
     dangerous?: boolean;
   } | null>(null);
   const [savedProtocolsRefreshTrigger, setSavedProtocolsRefreshTrigger] = useState(0);
-  const [showScrollButton, setShowScrollButton] = useState(false);
   const [searchFilter, setSearchFilter] = useState<'all' | 'global' | 'user'>('all');
   const [showProtocolPreview, setShowProtocolPreview] = useState(false);
   const [previewProtocols, setPreviewProtocols] = useState<any[]>([]);
@@ -271,50 +295,38 @@ function App() {
     protocols?: any[];
     timestamp: number;
   }>>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messageCountRef = useRef(0);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
-  const lastAssistantMessageRef = useRef<HTMLDivElement>(null);
   const isThreadInteractionRef = useRef(false);
 
-  // Cache for loaded conversations to prevent redundant fetches
+  // Cache for loaded conversations to prevent redundant fetches with LRU eviction
   const conversationCache = useRef<Map<string, Message[]>>(new Map());
+  const MAX_CACHE_SIZE = 20; // Maximum number of conversations to cache
+  
+  // LRU Cache helper: Add to cache with automatic eviction
+  const addToCache = useCallback((conversationId: string, messages: Message[]) => {
+    const cache = conversationCache.current;
+    
+    // If conversation already exists, delete it first (to re-add at end for LRU)
+    if (cache.has(conversationId)) {
+      cache.delete(conversationId);
+    }
+    
+    // Add new entry
+    cache.set(conversationId, messages);
+    
+    // LRU EVICTION: If cache exceeds max size, remove oldest entry
+    if (cache.size > MAX_CACHE_SIZE) {
+      const firstKey = cache.keys().next().value;
+      if (firstKey) {
+        cache.delete(firstKey);
+        console.log(`🗑️ LRU eviction: Removed conversation ${firstKey} from cache`);
+      }
+    }
+    
+    console.log(`💾 Cache updated: ${cache.size}/${MAX_CACHE_SIZE} conversations cached`);
+  }, []);
   
   // Abort controller for managing in-flight requests
   const abortControllerRef = useRef<AbortController | null>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const scrollToLastAssistant = () => {
-    console.log('scrollToLastAssistant called, lastAssistantMessageRef:', !!lastAssistantMessageRef.current);
-    // Scroll to START of last assistant message, not to bottom
-    if (lastAssistantMessageRef.current) {
-      console.log('Scrolling to last assistant message');
-      // Check if this is a protocol message
-      const hasProtocol = lastAssistantMessageRef.current.querySelector('[data-protocol-card]');
-      console.log('Last assistant message has protocol:', !!hasProtocol);
-      lastAssistantMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  };
-
-  const scrollCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    // Throttle scroll checks to prevent excessive re-renders
-    if (scrollCheckTimeoutRef.current) return;
-    
-    scrollCheckTimeoutRef.current = setTimeout(() => {
-      const target = e.currentTarget;
-      // FIX: Check if target and its properties exist before accessing
-      if (target && target.scrollHeight !== null && target.scrollTop !== null && target.clientHeight !== null) {
-        const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 100;
-        setShowScrollButton(!isAtBottom);
-      }
-      scrollCheckTimeoutRef.current = null;
-    }, 150);
-  };
 
   const handleStartSearch = () => {
     if (currentUser) {
@@ -543,8 +555,11 @@ function App() {
     return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}`;
   };
 
-  // Helper function to save conversation
-  const saveCurrentConversation = async (updatedMessages: Message[], lastQuery: string) => {
+  // Debounced save helper
+  const debouncedSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Helper function to save conversation with debouncing
+  const saveCurrentConversation = useCallback(async (updatedMessages: Message[], lastQuery: string) => {
     if (!currentUser) return;
 
     try {
@@ -568,14 +583,27 @@ function App() {
         created_at: firstMessageTimestamp,
       });
 
-      // Update cache with latest messages - OPTIMIZATION: keep cache in sync
-      conversationCache.current.set(currentConversationId, updatedMessages);
+      // Update cache with latest messages - OPTIMIZATION: keep cache in sync with LRU eviction
+      addToCache(currentConversationId, updatedMessages);
       console.log('✅ Conversation saved and cached');
       // Note: Sidebar will only reload on user login or explicit refresh trigger
     } catch (error) {
       console.error('Failed to save conversation:', error);
     }
-  };
+  }, [currentUser, addToCache]);
+
+  // Debounced save wrapper - prevents excessive API calls
+  const debouncedSaveConversation = useCallback((messages: Message[], lastQuery: string) => {
+    // Clear existing timeout
+    if (debouncedSaveRef.current) {
+      clearTimeout(debouncedSaveRef.current);
+    }
+    
+    // Set new timeout for 1 second
+    debouncedSaveRef.current = setTimeout(() => {
+      saveCurrentConversation(messages, lastQuery);
+    }, 1000); // Wait 1 second after last change before saving
+  }, [saveCurrentConversation]);
 
   const handleFollowUpClick = (question: string) => {
     handleSendMessage(question);
@@ -718,37 +746,41 @@ function App() {
     return { isFollowUp: false };
   };
 
-  // Scroll effect - placed after tab helpers to avoid dependency issues
+  // Persist tabs to localStorage whenever they change
   useEffect(() => {
-    console.log('Messages useEffect triggered:', {
-      messagesLength: messages.length,
-      messageCountRef: messageCountRef.current,
-      isThreadInteraction: isThreadInteractionRef.current
-    });
-    
-    // CRITICAL: If this is a thread interaction, NEVER scroll
-    if (isThreadInteractionRef.current) {
-      console.log('Thread interaction detected - NOT scrolling');
-      isThreadInteractionRef.current = false;
-      return; // Exit early - don't scroll at all
+    try {
+      localStorage.setItem('procheck_tabs', JSON.stringify(tabs));
+    } catch (error) {
+      console.error('Failed to persist tabs to localStorage:', error);
     }
-    
-    // Only scroll when new messages are added, not when existing messages are updated
-    if (messages.length > messageCountRef.current) {
-      console.log('New message detected - scrolling to last assistant');
-      // Scroll to START of new assistant message instead of bottom
-      setTimeout(() => {
-        scrollToLastAssistant();
-      }, 100);
-      messageCountRef.current = messages.length;
-    } else {
-      console.log('No scroll condition met');
+  }, [tabs]);
+
+  // Persist active tab to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('procheck_active_tab', activeTabId);
+    } catch (error) {
+      console.error('Failed to persist active tab to localStorage:', error);
     }
-  }, [messages]);
+  }, [activeTabId]);
+
 
   const handleSendMessage = async (content: string, skipDialogCheck: boolean = false) => {
     // Get current messages before any state changes
     const currentMessages = messages;
+    
+    // MESSAGE DEDUPLICATION: Check if identical message is already pending or recently sent
+    const recentlySent = currentMessages.find(msg => 
+      msg.type === 'user' && 
+      msg.content === content && 
+      (msg.status === 'pending' || 
+       (msg.status === 'sent' && Date.now() - new Date(msg.timestamp).getTime() < 2000)) // Within 2 seconds
+    );
+    
+    if (recentlySent) {
+      console.log('🚫 Duplicate message blocked:', content);
+      return; // Prevent duplicate send
+    }
     
     // Check if this is a follow-up question
     const followUpCheck = isFollowUpQuestion(content, currentMessages);
@@ -771,6 +803,7 @@ function App() {
       type: 'user',
       content,
       timestamp: getUserTimestamp(),
+      status: 'pending', // Optimistic update - show as pending immediately
     };
     
     // Update current tab with new message and loading state
@@ -810,12 +843,18 @@ function App() {
         // Get latest messages again before updating
         const activeTab = getActiveTab();
         const messagesBeforeUpdate = (activeTab?.type === 'chat' ? activeTab.messages : []) || [];
-        const newMessages = [...messagesBeforeUpdate, assistantMessage];
+        
+        // Mark user message as sent
+        const updatedMessages = messagesBeforeUpdate.map(msg =>
+          msg.id === userMessage.id ? { ...msg, status: 'sent' as const } : msg
+        );
+        
+        const newMessages = [...updatedMessages, assistantMessage];
         updateActiveTab({
           messages: newMessages,
           isLoading: false
         });
-        saveCurrentConversation(newMessages, content);
+        debouncedSaveConversation(newMessages, content);
         return;
       }
       // Map search filter to API search mode
@@ -964,17 +1003,29 @@ CITATION REQUIREMENT:
         followUpQuestions: generateFollowUpQuestions(intent),
       };
 
-      // Update the current tab
-      const newMessages = [...currentMessages, userMessage, assistantMessage];
+      // Mark user message as sent and update the current tab
+      const messagesWithStatus = [...currentMessages, { ...userMessage, status: 'sent' as const }];
+      const newMessages = [...messagesWithStatus, assistantMessage];
       updateActiveTab({
         messages: newMessages,
         isLoading: false,
         title: protocolData.title
       });
       
-      // Save conversation
-      saveCurrentConversation(newMessages, content);
+      // Save conversation (debounced to prevent excessive API calls)
+      debouncedSaveConversation(newMessages, content);
     } catch (err: any) {
+      // Mark user message as failed
+      const activeTab = getActiveTab();
+      const currentTabMessages = (activeTab?.type === 'chat' ? activeTab.messages : []) || [];
+      const failedMessages = currentTabMessages.map(msg =>
+        msg.id === userMessage.id ? { 
+          ...msg, 
+          status: 'failed' as const,
+          error: err instanceof Error ? err.message : 'Failed to send message'
+        } : msg
+      );
+      
       const assistantMessage: Message = {
         id: generateMessageId(),
         type: 'assistant',
@@ -983,13 +1034,49 @@ CITATION REQUIREMENT:
       };
       
       // Update current tab with error message
-      const newMessages = [...currentMessages, userMessage, assistantMessage];
+      const newMessages = [...failedMessages, assistantMessage];
       updateActiveTab({
         messages: newMessages,
         isLoading: false
       });
       
-      saveCurrentConversation(newMessages, content);
+      debouncedSaveConversation(newMessages, content);
+    }
+  };
+
+  // Retry failed message
+  const handleRetryMessage = async (messageId: string) => {
+    const activeTab = getActiveTab();
+    if (!activeTab || activeTab.type !== 'chat') return;
+
+    const failedMessage = activeTab.messages.find(msg => msg.id === messageId);
+    if (!failedMessage || failedMessage.type !== 'user') return;
+
+    // Update message status to retrying
+    const updatedMessages = activeTab.messages.map(msg =>
+      msg.id === messageId ? { ...msg, status: 'retrying' as const, retryCount: (msg.retryCount || 0) + 1 } : msg
+    );
+    updateActiveTab({ messages: updatedMessages });
+
+    try {
+      // Resend the message
+      await handleSendMessage(failedMessage.content, true);
+      
+      // Mark as sent
+      const finalMessages = (getActiveTab() as ConversationTab)?.messages.map(msg =>
+        msg.id === messageId ? { ...msg, status: 'sent' as const, error: undefined } : msg
+      );
+      updateActiveTab({ messages: finalMessages });
+    } catch (error) {
+      // Mark as failed again
+      const errorMessages = (getActiveTab() as ConversationTab)?.messages.map(msg =>
+        msg.id === messageId ? { 
+          ...msg, 
+          status: 'failed' as const, 
+          error: error instanceof Error ? error.message : 'Retry failed' 
+        } : msg
+      );
+      updateActiveTab({ messages: errorMessages });
     }
   };
 
@@ -1141,7 +1228,7 @@ CITATION REQUIREMENT:
           created_at: firstMessageTimestamp,
         });
 
-        conversationCache.current.set(targetTab.conversationId, newMessages);
+        addToCache(targetTab.conversationId, newMessages);
       }
     } catch (err: any) {
       const assistantMessage: Message = {
@@ -1181,21 +1268,10 @@ CITATION REQUIREMENT:
     setShowCloseAllDialog(true);
   }, []);
 
-  const confirmCloseAllTabs = useCallback(async () => {
+  const confirmCloseAllTabs = useCallback(() => {
     setShowCloseAllDialog(false);
     
-    // Save all tabs before closing
-    if (userId) {
-      for (const tab of tabs) {
-        if (tab.type === 'chat' && tab.messages.length > 0) {
-          const lastUserMessage = [...tab.messages].reverse().find(m => m.type === 'user');
-          if (lastUserMessage) {
-            await saveCurrentConversation(tab.messages, lastUserMessage.content);
-          }
-        }
-      }
-    }
-
+    // No need to save - tabs are auto-saved on switch/close/message updates
     // Reset to a single empty tab
     const defaultTab: ConversationTab = {
       id: generateTabId(),
@@ -1208,7 +1284,7 @@ CITATION REQUIREMENT:
     
     setTabs([defaultTab]);
     setActiveTabId(defaultTab.id);
-  }, [tabs, userId]);
+  }, []);
 
   const handleRecentSearch = useCallback(async (conversationId: string) => {
     if (!userId) return;
@@ -1274,10 +1350,8 @@ CITATION REQUIREMENT:
           protocolData: msg.protocol_data,
         }));
 
-        // Prevent auto-scroll by temporarily increasing message count
-        messageCountRef.current = loadedMessages.length;
-        // Cache the loaded conversation
-        conversationCache.current.set(conversationId, loadedMessages);
+        // Cache the loaded conversation with LRU eviction
+        addToCache(conversationId, loadedMessages);
         // Update new tab with loaded messages
         setTabs(prevTabs =>
           prevTabs.map(tab =>
@@ -1292,13 +1366,6 @@ CITATION REQUIREMENT:
               : tab
           )
         );
-        
-        // Scroll to top after a brief delay
-        setTimeout(() => {
-          if (chatContainerRef.current) {
-            chatContainerRef.current.scrollTop = 0;
-          }
-        }, 100);
       }
     } catch (error) {
       console.error('Failed to load conversation:', error);
@@ -2152,12 +2219,19 @@ CITATION REQUIREMENT:
           onCloseAll={handleCloseAllTabs}
         />
 
-        <div
-          ref={chatContainerRef}
-          className="flex-1 overflow-y-auto p-4 space-y-4 relative"
-          onScroll={handleScroll}
-          key={`content-${showProtocolPreview}-${Date.now()}`}
-        >
+        {activeTab?.type === 'chat' ? (
+          <ChatContainer
+            messages={messages}
+            isLoading={isLoading}
+            isThreadInteraction={isThreadInteractionRef.current}
+            onSaveToggle={handleSaveToggle}
+            onProtocolUpdate={handleProtocolUpdate}
+            onFollowUpClick={handleFollowUpClick}
+            onRetryMessage={handleRetryMessage}
+            isSavedProtocolMessage={isSavedProtocolMessage}
+          />
+        ) : (
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 relative" key={`content-${activeTabId}`}>
           {/* User Protocol Index View - REMOVED - Now using tab system */}
           {false && (
             <div className="max-w-4xl mx-auto">
@@ -3040,154 +3114,73 @@ CITATION REQUIREMENT:
             </div>
           )}
 
-          {!showProtocolPreview && activeTab?.type === 'chat' && messages.length === 0 && (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <div className="text-6xl mb-4">🏥</div>
-                <h2 className="text-2xl font-semibold text-slate-900 mb-2">
-                  Welcome to ProCheck
-                </h2>
-                <p className="text-slate-600 max-w-md">
-                  Ask me about any medical protocol and I'll provide you with
-                  comprehensive, clinically cited guidelines.
-                </p>
-              </div>
-            </div>
-          )}
-          {activeTab?.type === 'chat' && (
-            <>
-              {messages.map((message, index) => {
-                const isLastAssistant = message.type === 'assistant' && index === messages.length - 1;
-                const isFirstUserMessage = message.type === 'user' && index === 0;
-                return (
-                  <div
-                    key={message.id}
-                    ref={isLastAssistant ? lastAssistantMessageRef : null}
-                  >
-                    <ChatMessage
-                      message={message}
-                      onSaveToggle={handleSaveToggle}
-                      onProtocolUpdate={handleProtocolUpdate}
-                      onFollowUpClick={handleFollowUpClick}
-                      isFirstUserMessage={isFirstUserMessage}
-                      isProtocolAlreadySaved={isSavedProtocolMessage(message)}
-                    />
-                  </div>
-                );
-              })}
-              {isLoading && (
-                <div className="flex justify-start">
-                  <div className="max-w-[90%]">
-                    <div className="flex items-start space-x-3">
-                      <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center">
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-teal-600"></div>
-                        </div>
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <h4 className="font-semibold text-slate-900">ProCheck Protocol Assistant</h4>
-                        </div>
-                        <div className="mb-3 flex flex-wrap items-center gap-2">
-                          <Badge className="bg-slate-700 text-white border-0">
-                            Searching protocols...
-                          </Badge>
-                        </div>
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                          <div className="space-y-2">
-                            <p className="text-sm text-slate-600">
-                              Searching medical databases with semantic understanding...
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              Using BM25 keyword + vector embeddings for better results
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-          <div ref={messagesEndRef} />
-          
-          {/* Scroll to Bottom Button */}
-          {showScrollButton && (
-            <button
-              onClick={scrollToBottom}
-              className="fixed bottom-24 right-8 bg-slate-700 hover:bg-slate-800 text-white rounded-full p-3 shadow-lg transition-all z-10 flex items-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-              </svg>
-              <span className="text-sm font-medium">Scroll to Bottom</span>
-            </button>
-          )}
 
-          {/* Notification Panel */}
-          {notifications.length > 0 && (
-            <div className="fixed top-20 right-8 space-y-3 z-50 max-w-sm">
-              {notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  className="bg-white border border-slate-200 rounded-lg shadow-lg p-4 cursor-pointer hover:shadow-xl transition-all"
-                  onClick={() => handleNotificationClick(notification)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-2">
-                        {notification.type === 'upload_ready' ? (
-                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                        ) : (
-                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                        )}
-                        <h3 className="text-sm font-semibold text-slate-900">
-                          {notification.title}
-                        </h3>
-                      </div>
-                      <p className="text-sm text-slate-600 mb-3">
-                        {notification.message}
-                      </p>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          size="sm"
-                          className="bg-teal-600 hover:bg-teal-700 text-white text-xs"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleNotificationClick(notification);
-                          }}
-                        >
-                          {notification.type === 'upload_ready' ? 'View Protocols' : 'View Result'}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-xs text-slate-500 hover:text-slate-700"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeNotification(notification.id);
-                          }}
-                        >
-                          Dismiss
-                        </Button>
-                      </div>
+          </div>
+        )}
+        
+        {/* Notification Panel - outside chat container */}
+        {notifications.length > 0 && (
+          <div className="fixed top-20 right-8 space-y-3 z-50 max-w-sm">
+            {notifications.map((notification) => (
+              <div
+                key={notification.id}
+                className="bg-white border border-slate-200 rounded-lg shadow-lg p-4 cursor-pointer hover:shadow-xl transition-all"
+                onClick={() => handleNotificationClick(notification)}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2 mb-2">
+                      {notification.type === 'upload_ready' ? (
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                      ) : (
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                      )}
+                      <h3 className="text-sm font-semibold text-slate-900">
+                        {notification.title}
+                      </h3>
                     </div>
-                    <button
-                      className="text-slate-400 hover:text-slate-600 ml-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeNotification(notification.id);
-                      }}
-                    >
-                      ×
-                    </button>
+                    <p className="text-sm text-slate-600 mb-3">
+                      {notification.message}
+                    </p>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        size="sm"
+                        className="bg-teal-600 hover:bg-teal-700 text-white text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleNotificationClick(notification);
+                        }}
+                      >
+                        {notification.type === 'upload_ready' ? 'View Protocols' : 'View Result'}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs text-slate-500 hover:text-slate-700"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeNotification(notification.id);
+                        }}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
                   </div>
+                  <button
+                    className="text-slate-400 hover:text-slate-600 ml-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeNotification(notification.id);
+                    }}
+                  >
+                    ×
+                  </button>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
+        
         {!showProtocolPreview && activeTab?.type === 'chat' && (
           <ChatInput
             onSendMessage={handleSendMessage}

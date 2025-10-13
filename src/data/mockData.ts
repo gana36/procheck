@@ -1,237 +1,963 @@
-import { ProtocolData, RecentSearch, SavedProtocol } from '@/types';
-
 export const sampleQueries = [
-  "Checklist for pediatric asthma, Mumbai 2024",
-  "Dengue fever protocol Delhi guidelines",
-  "COVID-19 treatment WHO protocol 2024",
-  "Hypertension management steps ICMR",
-  "Emergency cardiac arrest protocol",
-  "Diabetes management checklist India"
+  "What are the symptoms of dengue fever?",
+  "How do I treat malaria?",
+  "What should I do if someone has a heart attack?",
+  "Emergency treatment for asthma attack",
+  "COVID-19 home management protocol",
+  "Stroke warning signs and FAST test",
+  "Diabetes management guidelines",
+  "How to prevent mosquito-borne diseases?",
+  "Childhood fever - when to seek help?",
+  "CPR protocol for cardiac arrest"
 ];
 
-
-export const mockRecentSearches: RecentSearch[] = [
-  {
-    id: '1',
-    query: 'Pediatric asthma management protocol',
-    timestamp: '2 hours ago',
-    region: 'Mumbai',
-    year: '2024'
-  },
-  {
-    id: '2',
-    query: 'Dengue fever treatment guidelines',
-    timestamp: '1 day ago',
-    region: 'Delhi',
-    year: '2024'
-  },
-  {
-    id: '3',
-    query: 'COVID-19 isolation protocol',
-    timestamp: '3 days ago',
-    region: 'WHO',
-    year: '2024'
-  }
-];
-
-export const mockSavedProtocols: SavedProtocol[] = [
-  {
-    id: '1',
-    title: 'Pediatric Asthma Management Checklist',
-    organization: 'ICMR',
-    savedDate: '2024-01-15',
-    region: 'India',
-    year: '2024'
-  },
-  {
-    id: '2',
-    title: 'Dengue Fever Treatment Protocol',
-    organization: 'Delhi Health Department',
-    savedDate: '2024-01-10',
-    region: 'Delhi',
-    year: '2024'
-  }
-];
-
-export const generateMockProtocol = (query: string): ProtocolData => {
-  const baseProtocol: ProtocolData = {
-    title: 'Pediatric Asthma Management Protocol',
-    region: 'Mumbai',
-    year: '2024',
-    organization: 'ICMR',
-    steps: [
-      {
-        id: 1,
-        step: 'Assess patient\'s respiratory status and oxygen saturation levels',
-        citations: [1, 2],
-        isNew: true,
-        changes: 'Updated oxygen target ranges based on latest WHO guidelines'
-      },
-      {
-        id: 2,
-        step: 'Administer short-acting beta-2 agonist (SABA) via metered-dose inhaler or nebulizer',
-        citations: [1, 3]
-      },
-      {
-        id: 3,
-        step: 'If no improvement, add anticholinergic medication (ipratropium bromide)',
-        citations: [2, 4]
-      },
-      {
-        id: 4,
-        step: 'Consider systemic corticosteroids for moderate to severe exacerbations',
-        citations: [1, 3, 5]
-      },
-      {
-        id: 5,
-        step: 'Monitor response to treatment and adjust therapy accordingly',
-        citations: [2, 4]
-      },
-      {
-        id: 6,
-        step: 'Provide patient education on inhaler technique and asthma action plan',
-        citations: [3, 5],
-        isNew: true,
-        changes: 'Enhanced digital resources for patient education'
-      },
-      {
-        id: 7,
-        step: 'Schedule follow-up within 48 hours for severe cases',
-        citations: [1, 2, 5]
-      }
-    ],
-    citations: [
-      {
-        id: 1,
-        source: 'Global Initiative for Asthma (GINA) 2024 Guidelines',
-        organization: 'GINA',
-        year: '2024',
-        region: 'Global',
-        url: 'https://ginasthma.org',
-        excerpt: 'Updated recommendations for pediatric asthma management focusing on personalized treatment approaches.'
-      },
-      {
-        id: 2,
-        source: 'Indian Council of Medical Research (ICMR) Asthma Guidelines',
-        organization: 'ICMR',
-        year: '2024',
-        region: 'India',
-        url: 'https://icmr.nic.in',
-        excerpt: 'Comprehensive guidelines for asthma management in Indian pediatric population with regional considerations.'
-      },
-      {
-        id: 3,
-        source: 'World Health Organization (WHO) Essential Medicines List',
-        organization: 'WHO',
-        year: '2024',
-        region: 'Global',
-        url: 'https://who.int',
-        excerpt: 'Updated list of essential medicines for respiratory conditions including pediatric formulations.'
-      },
-      {
-        id: 4,
-        source: 'American Academy of Pediatrics Asthma Guidelines',
-        organization: 'AAP',
-        year: '2024',
-        region: 'US',
-        url: 'https://aap.org',
-        excerpt: 'Evidence-based recommendations for asthma management in children and adolescents.'
-      },
-      {
-        id: 5,
-        source: 'European Respiratory Society (ERS) Pediatric Asthma Guidelines',
-        organization: 'ERS',
-        year: '2024',
-        region: 'UK',
-        url: 'https://ersnet.org',
-        excerpt: 'Comprehensive European guidelines for pediatric asthma diagnosis and treatment.'
-      }
-    ],
-    lastUpdated: '2024-01-15'
-  };
-
-  // Modify based on query
-  if (query.toLowerCase().includes('dengue')) {
-    baseProtocol.title = 'Dengue Fever Treatment Protocol';
-    baseProtocol.organization = 'Delhi Health Department';
-    baseProtocol.steps = [
-      {
-        id: 1,
-        step: 'Assess clinical signs and symptoms of dengue fever',
-        citations: [1, 2]
-      },
-      {
-        id: 2,
-        step: 'Perform complete blood count and monitor platelet levels',
-        citations: [1, 3]
-      },
-      {
-        id: 3,
-        step: 'Provide supportive care with adequate hydration',
-        citations: [2, 4]
-      },
-      {
-        id: 4,
-        step: 'Monitor for warning signs of severe dengue',
-        citations: [1, 3, 5]
-      },
-      {
-        id: 5,
-        step: 'Administer platelet transfusion if platelet count < 10,000/μL',
-        citations: [2, 4],
-        isNew: true,
-        changes: 'Updated threshold based on recent clinical trials'
-      },
-      {
-        id: 6,
-        step: 'Provide patient education on mosquito bite prevention',
-        citations: [3, 5]
-      }
-    ];
-    baseProtocol.citations = [
-      {
-        id: 1,
-        source: 'WHO Dengue Guidelines 2024',
-        organization: 'WHO',
-        year: '2024',
-        region: 'Global',
-        url: 'https://who.int',
-        excerpt: 'Updated global guidelines for dengue fever diagnosis and management.'
-      },
-      {
-        id: 2,
-        source: 'Delhi Health Department Dengue Protocol',
-        organization: 'Delhi Health Department',
-        year: '2024',
-        region: 'Delhi',
-        excerpt: 'Regional protocol for dengue management adapted for Delhi conditions.'
-      },
-      {
-        id: 3,
-        source: 'ICMR Dengue Treatment Guidelines',
-        organization: 'ICMR',
-        year: '2024',
-        region: 'India',
-        excerpt: 'National guidelines for dengue fever treatment in India.'
-      },
-      {
-        id: 4,
-        source: 'CDC Dengue Clinical Guidelines',
-        organization: 'CDC',
-        year: '2024',
-        region: 'US',
-        excerpt: 'Clinical guidelines for dengue fever management and prevention.'
-      },
-      {
-        id: 5,
-        source: 'European Centre for Disease Prevention and Control',
-        organization: 'ECDC',
-        year: '2024',
-        region: 'UK',
-        excerpt: 'European guidelines for imported dengue fever cases.'
-      }
-    ];
-  }
-
-  return baseProtocol;
-};
+export const medicalProtocols = [
+    {
+      "disease": "dengue",
+      "region": "UK",
+      "year": 2023,
+      "organization": "NHS",
+      "title": "Dengue Symptoms Recognition Guide",
+      "section": "Symptoms",
+      "body": "Dengue symptoms usually start 4 to 10 days after being bitten by an infected mosquito. Early symptoms include high temperature, severe headache, pain behind the eyes, muscle and joint pain, feeling or being sick, swollen glands, and a blotchy rash made up of flat or slightly raised spots. The rash can affect large areas of your body. Some dengue symptoms are similar to flu, making early recognition crucial.",
+      "source_url": "https://www.nhs.uk/conditions/dengue/",
+      "last_reviewed": "2023-01-11",
+      "next_review_due": "2026-01-11"
+    },
+    {
+      "disease": "dengue",
+      "region": "UK",
+      "year": 2023,
+      "organization": "NHS",
+      "title": "Dengue Treatment Protocol - Mild Cases",
+      "section": "Treatment",
+      "body": "Most people with dengue feel better in a few days. There is no specific treatment for dengue, but you can help ease symptoms by resting, drinking plenty of fluids, and taking paracetamol to help bring down temperature and ease pain. Do not take anti-inflammatory painkillers like ibuprofen or aspirin as these can cause bleeding problems if you have dengue.",
+      "source_url": "https://www.nhs.uk/conditions/dengue/",
+      "last_reviewed": "2023-01-11",
+      "next_review_due": "2026-01-11"
+    },
+    {
+      "disease": "dengue",
+      "region": "UK",
+      "year": 2023,
+      "organization": "NHS",
+      "title": "Severe Dengue Emergency Warning Signs",
+      "section": "Emergency",
+      "body": "Call 999 or go to A&E immediately if you have travelled to a dengue area and develop severe symptoms: severe tummy pain, repeatedly being sick, fast breathing, bleeding gums or nose, extreme tiredness, being unable to relax (restlessness), or blood in vomit or poo. Severe dengue can be very serious if not treated quickly in hospital.",
+      "source_url": "https://www.nhs.uk/conditions/dengue/",
+      "last_reviewed": "2023-01-11",
+      "next_review_due": "2026-01-11"
+    },
+    {
+      "disease": "dengue",
+      "region": "UK",
+      "year": 2023,
+      "organization": "NHS",
+      "title": "Dengue Prevention Measures",
+      "section": "Prevention",
+      "body": "In dengue-endemic countries, prevent infection by avoiding mosquito bites. Wear long-sleeved clothing and trousers, particularly during early morning and evening. Use insect repellent containing DEET. Close windows and doors or use screens. Sleep under a mosquito net treated with insecticide, including during the day since dengue mosquitoes bite during daylight hours.",
+      "source_url": "https://www.nhs.uk/conditions/dengue/",
+      "last_reviewed": "2023-01-11",
+      "next_review_due": "2026-01-11"
+    },
+    {
+      "disease": "dengue",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Dengue Case Management - Outpatient Care",
+      "section": "Treatment",
+      "body": "Control fever with acetaminophen at 6-hour intervals if patient is febrile (maximum 4 doses per day). Do not give ibuprofen or aspirin-containing drugs. Sponge patient's skin with tepid water when temperature is high. Prevent dehydration by giving plenty of fluids. Monitor for warning signs that appear as fever declines typically 2-7 days after onset.",
+      "source_url": "https://www.cdc.gov/dengue/media/pdfs/2024/05/20240521_342849-B_PRESS_READY_PocketGuideDCMC_UPDATE.pdf",
+      "last_reviewed": "2024-05-20",
+      "next_review_due": "2027-05-20"
+    },
+    {
+      "disease": "dengue",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Dengue Warning Signs Protocol",
+      "section": "Emergency",
+      "body": "Return immediately to clinic or emergency department if warning signs appear: severe abdominal pain or persistent vomiting, bleeding from nose or gums, abnormal vaginal bleeding, vomiting blood, black tarry stools, drowsiness or irritability, pale cold or clammy skin, or difficulty breathing. Warning signs commonly appear as fever starts to decline.",
+      "source_url": "https://www.cdc.gov/dengue/media/pdfs/2024/05/20240521_342849-B_PRESS_READY_PocketGuideDCMC_UPDATE.pdf",
+      "last_reviewed": "2024-05-20",
+      "next_review_due": "2027-05-20"
+    },
+    {
+      "disease": "dengue",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Dengue Prevention During Travel",
+      "section": "Prevention",
+      "body": "Pack EPA-registered insect repellent and acetaminophen for fever management. Stay in air-conditioned places with window/door screens. Use bed nets if screened rooms unavailable. After travel, continue preventing mosquito bites for 3 weeks to avoid spreading dengue to local mosquitoes. See healthcare provider if fever develops within 2 weeks of return.",
+      "source_url": "https://www.cdc.gov/dengue/prevention/index.html",
+      "last_reviewed": "2024-05-28",
+      "next_review_due": "2027-05-28"
+    },
+    {
+      "disease": "dengue",
+      "region": "UK",
+      "year": 2023,
+      "organization": "TravelHealthPro",
+      "title": "Dengue Vaccination Protocol",
+      "section": "Prevention",
+      "body": "Qdenga vaccine available for people aged 4+ with previous dengue infection traveling to endemic areas or occupational exposure. Vaccine is live and contraindicated in immunosuppressed, pregnant, or breastfeeding individuals. Assessment of previous dengue exposure through blood tests may be needed. Consult travel clinic for personalized advice.",
+      "source_url": "https://travelhealthpro.org.uk/disease/42/dengue",
+      "last_reviewed": "2025-05-01",
+      "next_review_due": "2028-05-01"
+    },
+    {
+      "disease": "malaria",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Malaria Symptoms and Early Recognition",
+      "section": "Symptoms",
+      "body": "Main signs and symptoms of malaria include fever, headache, and chills, often accompanied by fatigue. These symptoms typically appear 10-15 days after being bitten by an infected mosquito but can occur as early as 7 days or as long as 30 days later. P. falciparum and P. vivax pose the greatest threat, with P. falciparum being the deadliest malaria parasite.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/malaria",
+      "last_reviewed": "2024-12-10",
+      "next_review_due": "2027-12-10"
+    },
+    {
+      "disease": "malaria",
+      "region": "Global",
+      "year": 2025,
+      "organization": "CDC",
+      "title": "Malaria Treatment - P. falciparum Protocol",
+      "section": "Treatment",
+      "body": "Initiate antimalarial treatment immediately upon confirmation of diagnosis. For uncomplicated P. falciparum malaria, use artemisinin-based combination therapy (ACT). Treatment guided by infecting Plasmodium species, clinical status, expected drug susceptibility based on geographic area, and previous antimalarial use. Patients with severe disease require hospitalization.",
+      "source_url": "https://www.cdc.gov/malaria/hcp/clinical-guidance/general-treatment.html",
+      "last_reviewed": "2025-05-19",
+      "next_review_due": "2028-05-19"
+    },
+    {
+      "disease": "malaria",
+      "region": "Global",
+      "year": 2025,
+      "organization": "CDC",
+      "title": "Malaria Rapid Diagnostic Testing",
+      "section": "Diagnosis",
+      "body": "Rapid Diagnostic Test (RDT) provides diagnosis within 15-30 minutes by detecting specific malaria antigens. BinaxNow is FDA-approved for US clinical laboratories. All negative RDTs must be followed by microscopy to confirm results. All positive RDTs also need microscopy to determine species and quantify parasite density for prognosis.",
+      "source_url": "https://www.cdc.gov/malaria/hcp/diagnosis-testing/malaria-diagnostic-tests.html",
+      "last_reviewed": "2024-05-09",
+      "next_review_due": "2027-05-09"
+    },
+    {
+      "disease": "malaria",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Malaria Prevention - Vector Control",
+      "section": "Prevention",
+      "body": "Use insecticide-treated nets for night-time prevention of mosquito bites. Indoor residual spraying kills mosquitoes that rest on walls and roofs. These core interventions can be complemented by reducing standing water habitats where mosquitoes breed. Travelers should use EPA-registered repellents containing DEET, IR3535, or Icaridin after dusk.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/malaria",
+      "last_reviewed": "2024-12-10",
+      "next_review_due": "2027-12-10"
+    },
+    {
+      "disease": "malaria",
+      "region": "Global",
+      "year": 2025,
+      "organization": "CDC",
+      "title": "Malaria Chemoprophylaxis for Travelers",
+      "section": "Prevention",
+      "body": "Travelers to malaria-endemic areas should begin chemoprophylaxis 1-2 days before travel for atovaquone-proguanil or doxycycline, or 1-2 weeks for chloroquine/mefloquine. Continue daily during travel and for specified period after leaving endemic areas: 7 days for atovaquone-proguanil, 4 weeks for others. Consult CDC malaria hotline for guidance.",
+      "source_url": "https://www.cdc.gov/yellow-book/hcp/travel-associated-infections-diseases/malaria.html",
+      "last_reviewed": "2025-07-30",
+      "next_review_due": "2028-07-30"
+    },
+    {
+      "disease": "malaria",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Severe Malaria Emergency Management",
+      "section": "Emergency",
+      "body": "Severe malaria requires immediate hospitalization and IV artesunate treatment. Warning signs include impaired consciousness, convulsions, severe anemia, acute kidney injury, hypoglycemia, acute respiratory distress, shock, or parasite density >5%. Early diagnosis and treatment within 24 hours of fever onset is essential to prevent life-threatening complications.",
+      "source_url": "https://www.who.int/teams/global-malaria-programme/case-management/treatment",
+      "last_reviewed": "2024-12-10",
+      "next_review_due": "2027-12-10"
+    },
+    {
+      "disease": "malaria",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Malaria Vaccines - RTS,S and R21/Matrix-M",
+      "section": "Prevention",
+      "body": "WHO recommends RTS,S/AS01 malaria vaccine for children in regions with moderate to high P. falciparum transmission. R21/Matrix-M is the second WHO-recommended vaccine. Both vaccines significantly reduce malaria and severe malaria deaths among children. Vaccines complement other interventions like bed nets and chemoprophylaxis for maximum impact.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/malaria",
+      "last_reviewed": "2024-12-10",
+      "next_review_due": "2027-12-10"
+    },
+    {
+      "disease": "malaria",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Malaria in Pregnancy - IPTp Protocol",
+      "section": "Treatment",
+      "body": "Intermittent preventive treatment in pregnancy (IPTp) with sulfadoxine-pyrimethamine recommended for pregnant women in moderate to high transmission areas. Treatment given at routine antenatal care visits after first trimester. Pregnant women should also use insecticide-treated nets and avoid mosquito exposure, especially during evening and night hours.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/malaria",
+      "last_reviewed": "2024-12-10",
+      "next_review_due": "2027-12-10"
+    },
+    {
+      "disease": "zika",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Zika Virus Symptoms and Transmission",
+      "section": "Symptoms",
+      "body": "Zika virus is transmitted by day-biting Aedes mosquitoes. Many people infected with Zika won't have symptoms or will have mild symptoms lasting 2-7 days. Symptoms include fever, rash, headache, joint pain, conjunctivitis, and muscle pain. Most people recover fully without complications, but Zika can cause birth defects if contracted during pregnancy.",
+      "source_url": "https://www.cdc.gov/zika/",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "zika",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Zika Prevention During Pregnancy",
+      "section": "Prevention",
+      "body": "Pregnant women should consider avoiding travel to areas with Zika. If travel is necessary, use EPA-registered insect repellent, wear long-sleeved clothing, stay in air-conditioned places, and use bed nets. Partners of pregnant women should use condoms or abstain from sex during pregnancy if they've traveled to Zika areas, as virus can be sexually transmitted.",
+      "source_url": "https://www.cdc.gov/zika/",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "zika",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Zika Pregnancy Complications",
+      "section": "Emergency",
+      "body": "Zika infection during pregnancy can cause microcephaly and other congenital brain defects. Guillain-Barr\u00e9 syndrome has been associated with Zika infection in adults. Pregnant women with Zika exposure should receive regular ultrasounds and specialized monitoring. No specific treatment exists, only supportive care for symptoms.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/zika-virus",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "chikungunya",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Chikungunya Symptoms and Management",
+      "section": "Symptoms",
+      "body": "Chikungunya causes sudden onset of fever and severe joint pain, often in hands and feet. Other symptoms include headache, muscle pain, joint swelling, and rash. Joint pain can be debilitating and may persist for months or years. Most people recover fully, but joint pain may continue long-term in some patients.",
+      "source_url": "https://www.cdc.gov/chikungunya/",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "chikungunya",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Chikungunya Treatment Protocol",
+      "section": "Treatment",
+      "body": "No specific antiviral treatment exists for chikungunya. Treatment is supportive and symptomatic. Rest, drink plenty of fluids, and use acetaminophen or paracetamol for fever and pain relief. Avoid aspirin and NSAIDs until dengue is ruled out due to bleeding risk. Joint pain may require anti-inflammatory medications once dengue excluded.",
+      "source_url": "https://www.cdc.gov/chikungunya/",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "yellow_fever",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Yellow Fever Symptoms and Vaccination",
+      "section": "Symptoms",
+      "body": "Yellow fever begins with sudden onset of fever, headache, backache, muscle pain, nausea, and vomiting. After 3-4 days, some patients develop jaundice (yellowing of skin/eyes), dark urine, abdominal pain, and bleeding. Severe cases can be fatal. Yellow fever vaccine provides lifelong immunity and is required for travel to endemic areas.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/yellow-fever",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "asthma",
+      "region": "UK",
+      "year": 2025,
+      "organization": "NHS",
+      "title": "Asthma Attack Emergency Protocol",
+      "section": "Emergency",
+      "body": "Sit up straight to help breathing and stay calm. Use blue reliever inhaler: take 1 puff every 30-60 seconds up to maximum 10 puffs. Call 999 if you start to feel worse, don't feel better after maximum dose, or don't have an inhaler. If ambulance not arrived within 15 minutes, repeat up to 10 more puffs. See GP same day even if feeling better.",
+      "source_url": "https://www.nhs.uk/conditions/asthma/",
+      "last_reviewed": "2025-04-09",
+      "next_review_due": "2028-04-09"
+    },
+    {
+      "disease": "heart_attack",
+      "region": "Global",
+      "year": 2024,
+      "organization": "AHA",
+      "title": "Heart Attack Warning Signs - FAST Recognition",
+      "section": "Emergency",
+      "body": "Chest discomfort lasting more than few minutes - uncomfortable pressure, squeezing, fullness or pain in center or left side of chest. Discomfort in upper body including arms, back, neck, jaw, or stomach. Shortness of breath with or without chest discomfort. Other signs: breaking out in cold sweat, nausea, or lightheadedness. Call 911 immediately.",
+      "source_url": "https://www.heart.org/en/about-us/heart-attack-and-stroke-symptoms",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "stroke",
+      "region": "Global",
+      "year": 2024,
+      "organization": "AHA",
+      "title": "Stroke FAST Test Protocol",
+      "section": "Emergency",
+      "body": "F-Face Drooping: Does one side droop or is numb? Ask person to smile. A-Arm Weakness: Is one arm weak or numb? Ask person to raise both arms, does one drift down? S-Speech Difficulty: Is speech slurred or hard to understand? Ask person to repeat simple sentence. T-Time to Call 911: If any symptoms present, call 911 immediately even if symptoms go away.",
+      "source_url": "https://www.heart.org/en/about-us/heart-attack-and-stroke-symptoms",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "anaphylaxis",
+      "region": "Global",
+      "year": 2024,
+      "organization": "Mayo Clinic",
+      "title": "Anaphylaxis Emergency Action Protocol",
+      "section": "Emergency",
+      "body": "Severe allergic reaction requiring immediate action. Give epinephrine auto-injector (EpiPen) into outer thigh muscle if available. Call 911 immediately. Position person lying flat with legs elevated unless breathing is difficult, then help them sit up. Loosen tight clothing. Don't give oral medications if person has trouble swallowing. Be prepared to give CPR if person stops breathing.",
+      "source_url": "https://www.mayoclinic.org/first-aid/first-aid-anaphylaxis/basics/art-20056608",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "choking",
+      "region": "Global",
+      "year": 2024,
+      "organization": "Red Cross",
+      "title": "Choking Emergency - Heimlich Maneuver",
+      "section": "Emergency",
+      "body": "For conscious adults: Stand behind person, wrap arms around waist. Place fist slightly above navel, grasp fist with other hand. Give quick upward thrusts until object comes out or person becomes unconscious. For unconscious persons: Begin CPR starting with chest compressions. Check mouth for visible object before giving rescue breaths. Continue until emergency services arrive.",
+      "source_url": "https://www.redcross.org/take-a-class/first-aid/performing-first-aid/choking",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "cardiac_arrest",
+      "region": "Global",
+      "year": 2024,
+      "organization": "AHA",
+      "title": "Cardiac Arrest CPR Protocol",
+      "section": "Emergency",
+      "body": "Check for responsiveness and normal breathing. Call 911 and get AED if available. Begin chest compressions: hands interlocked in center of chest, push hard and fast at least 2 inches deep, 100-120 compressions per minute. If trained, give 2 rescue breaths after every 30 compressions. Continue until emergency services arrive or AED becomes available.",
+      "source_url": "https://www.heart.org/en/health-topics/cardiac-arrest",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "severe_bleeding",
+      "region": "Global",
+      "year": 2024,
+      "organization": "Red Cross",
+      "title": "Severe Bleeding Control Protocol",
+      "section": "Emergency",
+      "body": "Apply direct pressure to wound with clean cloth or sterile gauze. Maintain pressure while elevating injured area above heart level if possible. If bleeding soaks through, add more layers without removing original dressing. Apply pressure to pressure points if bleeding continues. Use tourniquet only if trained and bleeding is life-threatening from arm or leg injury.",
+      "source_url": "https://www.redcross.org/take-a-class/first-aid/performing-first-aid/bleeding-emergencies",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "asthma",
+      "region": "UK",
+      "year": 2024,
+      "organization": "NHS",
+      "title": "Asthma Symptoms and Triggers",
+      "section": "Symptoms",
+      "body": "Common asthma symptoms include wheezing, breathlessness, tight chest feeling like a band around it, and persistent cough especially at night or early morning. Symptoms can be triggered by allergens (pollen, dust mites, pet dander), irritants (smoke, pollution), exercise, cold air, stress, or respiratory infections. Keep track of symptoms and triggers in an asthma diary.",
+      "source_url": "https://www.nhs.uk/conditions/asthma/",
+      "last_reviewed": "2024-04-09",
+      "next_review_due": "2027-04-09"
+    },
+    {
+      "disease": "asthma",
+      "region": "UK",
+      "year": 2024,
+      "organization": "NHS",
+      "title": "Asthma Controller Treatment Protocol",
+      "section": "Treatment",
+      "body": "Most people need two types of inhaler: reliever inhaler (usually blue) for immediate symptom relief, and preventer inhaler (usually brown, red, or orange) taken daily even when feeling well. Controller medications include inhaled corticosteroids to reduce airway inflammation. Follow your personal asthma action plan and have regular reviews with healthcare provider.",
+      "source_url": "https://www.nhs.uk/conditions/asthma/",
+      "last_reviewed": "2024-04-09",
+      "next_review_due": "2027-04-09"
+    },
+    {
+      "disease": "pneumonia",
+      "region": "UK",
+      "year": 2025,
+      "organization": "NHS",
+      "title": "Pneumonia Symptoms Recognition",
+      "section": "Symptoms",
+      "body": "Pneumonia symptoms develop over a few days and include persistent cough (may be dry or produce yellow, green, or blood-stained sputum), difficulty breathing, fever, feeling weak and tired, loss of appetite, and muscle aches. Severe cases may cause wheezing, confusion (especially in older people), low blood pressure, fast breathing/heartbeat, and pleurisy causing sharp chest pain.",
+      "source_url": "https://www.ouh.nhs.uk/media/qvvjrtu3/78368pneumonia.pdf",
+      "last_reviewed": "2025-06-11",
+      "next_review_due": "2028-06-11"
+    },
+    {
+      "disease": "pneumonia",
+      "region": "UK",
+      "year": 2025,
+      "organization": "NHS",
+      "title": "Pneumonia Treatment - Outpatient Management",
+      "section": "Treatment",
+      "body": "Mild bacterial pneumonia can be managed at home with oral antibiotics (usually amoxicillin, or alternative if penicillin allergic), rest, plenty of fluids for hydration, and paracetamol or ibuprofen for fever and pain relief. Complete full course of antibiotics even if feeling better. Contact GP if no improvement after 3 days - may need different antibiotic.",
+      "source_url": "https://www.nth.nhs.uk/resources/pneumonia/",
+      "last_reviewed": "2025-06-11",
+      "next_review_due": "2028-06-11"
+    },
+    {
+      "disease": "pneumonia",
+      "region": "UK",
+      "year": 2025,
+      "organization": "NHS",
+      "title": "Severe Pneumonia Hospital Treatment",
+      "section": "Treatment",
+      "body": "Severe pneumonia requires hospital admission for IV antibiotics, oxygen therapy if blood levels low, IV fluids for hydration, regular monitoring of vital signs and blood tests. May need multiple antibiotics depending on suspected bacteria. Physiotherapy helps with breathing techniques and mobility. Treatment duration typically at least one week but may be longer based on severity.",
+      "source_url": "https://www.nth.nhs.uk/resources/pneumonia/",
+      "last_reviewed": "2025-06-11",
+      "next_review_due": "2028-06-11"
+    },
+    {
+      "disease": "covid19",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "COVID-19 Current Symptoms (2024)",
+      "section": "Symptoms",
+      "body": "Most common COVID-19 symptoms include fever, dry cough, tiredness, and loss of taste or smell. Less common symptoms are sore throat, headache, aches and pains, diarrhea, skin rash, or discoloration of fingers/toes. Serious symptoms requiring immediate medical attention: difficulty breathing, chest pain or pressure, loss of speech/mobility/confusion.",
+      "source_url": "https://www.who.int/emergencies/diseases/novel-coronavirus-2019",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "covid19",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "COVID-19 When to Seek Medical Care",
+      "section": "Emergency",
+      "body": "Seek emergency care immediately for trouble breathing, persistent chest pain or pressure, new confusion, inability to wake or stay awake, or bluish lips or face. High-risk individuals (elderly, immunocompromised, chronic conditions) should contact healthcare provider early in illness. Most people can recover at home with supportive care and isolation.",
+      "source_url": "https://www.cdc.gov/covid/symptoms/",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "covid19",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "COVID-19 Home Management Protocol",
+      "section": "Treatment",
+      "body": "Most COVID-19 cases are mild and can be managed at home. Rest, drink plenty of fluids, use paracetamol for fever and aches. Isolate at home for at least 5 days from symptom onset or until fever-free for 24 hours. Wear mask around others. Monitor symptoms and seek medical care if breathing difficulties develop. Maintain hand hygiene and surface cleaning.",
+      "source_url": "https://www.who.int/emergencies/diseases/novel-coronavirus-2019",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "copd",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "COPD Symptoms and Exacerbations",
+      "section": "Symptoms",
+      "body": "COPD main symptoms are persistent cough with sputum production, shortness of breath especially during physical activities, and frequent respiratory infections. Exacerbations (flare-ups) involve worsening of symptoms beyond normal day-to-day variation. Warning signs include increased breathlessness, more cough and sputum, change in sputum color, wheezing, chest tightness, or reduced exercise tolerance.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/chronic-obstructive-pulmonary-disease-(copd)",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "copd",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "COPD Management and Treatment",
+      "section": "Treatment",
+      "body": "COPD treatment includes smoking cessation (most important), bronchodilator medications (short and long-acting), inhaled corticosteroids for frequent exacerbations, pulmonary rehabilitation, oxygen therapy for severe cases, and vaccinations against influenza and pneumonia. Avoid air pollution and respiratory irritants. Regular physical activity as tolerated helps maintain lung function.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/chronic-obstructive-pulmonary-disease-(copd)",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "heart_attack",
+      "region": "Global",
+      "year": 2024,
+      "organization": "Mayo Clinic",
+      "title": "Heart Attack First Aid Protocol",
+      "section": "Emergency",
+      "body": "Call 911 immediately. Help person sit comfortably and loosen clothing. If person takes nitroglycerin, help them take it. If person becomes unconscious and stops breathing, begin CPR: 30 chest compressions followed by 2 rescue breaths. If available, use AED. Don't leave person alone except to call for help. Don't let person drive themselves to hospital.",
+      "source_url": "https://www.mayoclinic.org/first-aid/first-aid-heart-attack/basics/art-20056679",
+      "last_reviewed": "2024-05-08",
+      "next_review_due": "2027-05-08"
+    },
+    {
+      "disease": "heart_attack",
+      "region": "Global",
+      "year": 2024,
+      "organization": "AHA",
+      "title": "Heart Attack Risk Factors",
+      "section": "Prevention",
+      "body": "Major risk factors include high cholesterol, high blood pressure, smoking, diabetes, obesity, physical inactivity, family history, age (men 45+, women 55+), and stress. Controllable factors: maintain healthy diet, exercise regularly, don't smoke, limit alcohol, manage stress, control blood pressure and cholesterol, maintain healthy weight, manage diabetes if present.",
+      "source_url": "https://www.heart.org/",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "heart_attack",
+      "region": "Global",
+      "year": 2024,
+      "organization": "AHA",
+      "title": "Post-Heart Attack Care Protocol",
+      "section": "Treatment",
+      "body": "After heart attack, cardiac rehabilitation is crucial for recovery. Program includes supervised exercise, education about heart-healthy living, counseling to reduce stress. Take prescribed medications (aspirin, beta-blockers, ACE inhibitors, statins) as directed. Attend all follow-up appointments. Recognize warning signs of another heart attack. Make lifestyle changes: healthy diet, regular exercise, stress management.",
+      "source_url": "https://www.heart.org/",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "stroke",
+      "region": "Global",
+      "year": 2025,
+      "organization": "WHO",
+      "title": "Stroke Types and Risk Factors",
+      "section": "Prevention",
+      "body": "Two main types: ischemic stroke (blocked blood vessel, 85% of cases) and hemorrhagic stroke (ruptured blood vessel, 15% of cases). Risk factors include high blood pressure, atrial fibrillation, diabetes, high cholesterol, smoking, excessive alcohol, physical inactivity, obesity, age, and family history. Many strokes are preventable through lifestyle modifications and medical management.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/stroke-cerebrovascular-accident",
+      "last_reviewed": "2025-01-15",
+      "next_review_due": "2028-01-15"
+    },
+    {
+      "disease": "stroke",
+      "region": "Global",
+      "year": 2025,
+      "organization": "WHO",
+      "title": "Stroke Emergency Transport Protocol",
+      "section": "Emergency",
+      "body": "Time is brain - every minute counts. Call emergency services immediately when FAST symptoms identified. Note time symptoms first appeared and report to emergency responders. Don't give food, water, or medications. Keep person comfortable and monitor breathing. If unconscious but breathing, place in recovery position. Transport to stroke center capable of providing appropriate treatment.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/stroke-cerebrovascular-accident",
+      "last_reviewed": "2025-01-15",
+      "next_review_due": "2028-01-15"
+    },
+    {
+      "disease": "hypertension",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Hypertension Diagnosis Criteria",
+      "section": "Diagnosis",
+      "body": "Blood pressure consistently 140/90 mmHg or higher indicates hypertension. Categories: Normal <120/80, Elevated 120-129/<80, Stage 1 HTN 130-139/80-89, Stage 2 HTN \u2265140/90, Hypertensive Crisis >180/120. Diagnosis requires multiple readings on different occasions. Home monitoring and 24-hour ambulatory monitoring may be used to confirm diagnosis and assess treatment effectiveness.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/hypertension",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "hypertension",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Hypertension Lifestyle Management",
+      "section": "Treatment",
+      "body": "Lifestyle modifications: reduce sodium intake to <2g daily, maintain healthy weight (BMI 18.5-25), limit alcohol consumption, engage in regular physical activity (150 minutes moderate intensity per week), eat diet rich in fruits and vegetables, quit smoking, manage stress through relaxation techniques. These changes can lower blood pressure by 5-10 mmHg and may eliminate need for medications.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/hypertension",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "hypertension",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Hypertensive Crisis Emergency Protocol",
+      "section": "Emergency",
+      "body": "Hypertensive crisis: BP >180/120 with or without symptoms. Hypertensive emergency (with organ damage): chest pain, shortness of breath, back pain, numbness/weakness, change in vision, difficulty speaking. Call 911 immediately. Hypertensive urgency (no symptoms): contact healthcare provider same day. Don't try to lower BP too quickly as it may cause stroke or organ damage.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/hypertension",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "diabetes_type2",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Type 2 Diabetes Symptoms and Diagnosis",
+      "section": "Symptoms",
+      "body": "Common symptoms include urinating often, feeling very thirsty, feeling very hungry even though eating, extreme fatigue, blurry vision, cuts/bruises slow to heal, tingling/pain/numbness in hands/feet. Many people have mild symptoms that go unnoticed. Diagnosis: A1C \u22656.5%, fasting plasma glucose \u2265126 mg/dL, or random plasma glucose \u2265200 mg/dL with symptoms.",
+      "source_url": "https://diabetes.org/about-diabetes/type-2",
+      "last_reviewed": "2024-04-30",
+      "next_review_due": "2027-04-30"
+    },
+    {
+      "disease": "diabetes_type2",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Diabetes Lifestyle Management Protocol",
+      "section": "Treatment",
+      "body": "No special 'diabetes diet' needed - eat same healthy foods as everyone else. Focus on lower carbohydrates, added sugars, saturated fat, and sodium. Work with diabetes educator to create personalized meal plan. Regular physical activity helps control blood sugar. Monitor blood glucose as recommended. Take medications as prescribed. Attend regular medical appointments for monitoring.",
+      "source_url": "https://www.cdc.gov/diabetes/signs-symptoms/coping-with-type-2-diagnosis.html",
+      "last_reviewed": "2024-07-18",
+      "next_review_due": "2027-07-18"
+    },
+    {
+      "disease": "diabetes_type2",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Diabetes Medication Management",
+      "section": "Treatment",
+      "body": "Treatment may include oral medications, injectable medications including insulin, or combination based on individual needs. Metformin is often first-line medication. Monitor blood glucose regularly and maintain log. Know signs of hypoglycemia (low blood sugar) and hyperglycemia (high blood sugar). Adjust medications only under healthcare provider guidance. Regular A1C testing monitors long-term control.",
+      "source_url": "https://diabetes.org/about-diabetes/type-2",
+      "last_reviewed": "2024-04-30",
+      "next_review_due": "2027-04-30"
+    },
+    {
+      "disease": "diabetes_type2",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Hypoglycemia Emergency Protocol",
+      "section": "Emergency",
+      "body": "Low blood sugar <70 mg/dL requires immediate treatment. Mild symptoms: shakiness, sweating, nervousness, hunger, dizziness. Give 15g fast-acting carbs (glucose tablets, juice, regular soda). Recheck blood sugar in 15 minutes, repeat if still low. Severe hypoglycemia with confusion/unconsciousness: give glucagon injection if available, call 911, don't give oral liquids to unconscious person.",
+      "source_url": "https://www.cdc.gov/diabetes/",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "diabetes_type2",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Diabetes Complications Prevention",
+      "section": "Prevention",
+      "body": "Prevent complications through good glucose control, regular eye exams for retinopathy, foot care to prevent ulcers/infections, kidney function monitoring, cardiovascular risk management through blood pressure and cholesterol control. Annual flu vaccination recommended. Dental care important as diabetes increases infection risk. Stop smoking as it increases complication risks significantly.",
+      "source_url": "https://www.cdc.gov/diabetes/education-support-programs/index.html",
+      "last_reviewed": "2025-07-08",
+      "next_review_due": "2028-07-08"
+    },
+    {
+      "disease": "obesity",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Obesity Assessment and BMI Categories",
+      "section": "Diagnosis",
+      "body": "BMI calculation: weight(kg)/height(m)\u00b2. Categories: Underweight <18.5, Normal 18.5-24.9, Overweight 25-29.9, Obesity Class I 30-34.9, Class II 35-39.9, Class III \u226540. Waist circumference also important: risk increases with >102cm (40in) men, >88cm (35in) women. Consider ethnic differences in BMI interpretation and additional health risk factors.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/obesity-and-overweight",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "obesity",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Obesity Treatment Approach",
+      "section": "Treatment",
+      "body": "Comprehensive approach: dietary changes (reduce caloric intake, increase fruits/vegetables, limit processed foods), increased physical activity (150-300 minutes moderate exercise weekly), behavioral modifications (goal setting, self-monitoring, stress management). Medical supervision recommended for weight loss >10% body weight. Medications or surgery may be considered for severe obesity with comorbidities.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/obesity-and-overweight",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "hypothyroidism",
+      "region": "Global",
+      "year": 2024,
+      "organization": "Mayo Clinic",
+      "title": "Hypothyroidism Symptoms Recognition",
+      "section": "Symptoms",
+      "body": "Common symptoms include fatigue, weight gain, cold intolerance, constipation, dry skin, hair loss, muscle weakness, depression, memory problems, slow heart rate, and heavy menstrual periods in women. Symptoms develop slowly over months or years. In severe cases (myxedema), can cause life-threatening complications including heart problems, mental health issues, and coma.",
+      "source_url": "https://www.mayoclinic.org/diseases-conditions/hypothyroidism/symptoms-causes/syc-20350284",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "fever_children",
+      "region": "UK",
+      "year": 2024,
+      "organization": "NHS",
+      "title": "Childhood Fever - When to Seek Help",
+      "section": "Emergency",
+      "body": "Seek immediate medical help if child under 3 months has temperature 38\u00b0C+ or 3-6 months has 39\u00b0C+. Red flag symptoms: difficulty breathing, skin/lips blue, rash that doesn't fade with glass test, severe headache, stiff neck, sensitivity to light, confusion, persistent vomiting, refusing fluids, or if you're worried about child's condition regardless of temperature.",
+      "source_url": "https://www.nhs.uk/conditions/fever-in-children/",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "dehydration_children",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Childhood Dehydration Signs and Treatment",
+      "section": "Symptoms",
+      "body": "Mild dehydration: slightly dry mouth, increased thirst, less urination. Moderate: very dry mouth, little/no urination for 6+ hours, few/no tears when crying, sunken eyes, irritability. Severe dehydration: very dry mouth/tongue, no urination 8+ hours, sunken eyes/cheeks, skin tents when pinched, extreme fussiness/sleepiness. Give small frequent sips of fluids, ORS preferred.",
+      "source_url": "https://www.cdc.gov/healthywater/drinking/nutrition/dehydration.html",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "asthma_children",
+      "region": "UK",
+      "year": 2024,
+      "organization": "NHS",
+      "title": "Childhood Asthma Management",
+      "section": "Treatment",
+      "body": "Children need same controller and reliever inhalers as adults but with age-appropriate devices (spacers essential for young children). Symptoms may differ: persistent cough especially at night, tiredness during play, breathing problems during activities. Create asthma action plan with school. Ensure child and family understand when/how to use inhalers. Regular reviews essential as needs change with growth.",
+      "source_url": "https://www.nhs.uk/conditions/asthma/",
+      "last_reviewed": "2024-04-09",
+      "next_review_due": "2027-04-09"
+    },
+    {
+      "disease": "gastroenteritis_children",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Childhood Gastroenteritis Treatment",
+      "section": "Treatment",
+      "body": "Most important treatment is preventing dehydration with oral rehydration solution (ORS). Continue breastfeeding if applicable. Give small frequent amounts of fluids. Avoid fruit juices, carbonated drinks, sports drinks. Resume normal feeding as soon as child can keep fluids down. Seek medical care if signs of severe dehydration, blood in stool, high fever, or persistent vomiting.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/diarrhoeal-disease",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "vaccination_schedule",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Childhood Vaccination Schedule",
+      "section": "Prevention",
+      "body": "WHO recommended vaccinations: Birth (BCG, Hepatitis B), 6 weeks (DTP, Polio, Hepatitis B, Hib, PCV, Rotavirus), 10 weeks (repeat), 14 weeks (repeat), 9 months (Measles, Yellow Fever in endemic areas), 15-18 months (DTP, Polio, Measles booster). Variations by country and risk factors. Maintain vaccination records and follow national schedules.",
+      "source_url": "https://www.who.int/teams/immunization-vaccines-and-biologicals/policies/who-recommendations-for-routine-immunization---summary-tables",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "influenza",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Influenza Symptoms and Treatment",
+      "section": "Symptoms",
+      "body": "Flu symptoms appear suddenly and include fever, cough, sore throat, runny/stuffy nose, muscle/body aches, headaches, fatigue. May include vomiting/diarrhea (more common in children). Most people recover within few days to 2 weeks. Antiviral medications most effective when started within 48 hours of symptom onset. Annual vaccination recommended for everyone 6 months+.",
+      "source_url": "https://www.cdc.gov/flu/",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "tuberculosis",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Tuberculosis Diagnosis and Treatment",
+      "section": "Diagnosis",
+      "body": "TB symptoms: persistent cough >2 weeks, coughing blood, chest pain, weight loss, fatigue, fever, night sweats. Diagnosis through sputum tests, chest X-ray, tuberculin skin test, interferon-gamma release assays. Treatment requires 6-month course of antibiotics (typically isoniazid, rifampin, ethambutol, pyrazinamide). Directly observed therapy ensures completion. Multi-drug resistant TB requires longer, more complex treatment.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/tuberculosis",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "hepatitis_b",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Hepatitis B Prevention and Vaccination",
+      "section": "Prevention",
+      "body": "Hepatitis B vaccine is safe, effective, and provides protection for at least 20 years. Birth dose within 24 hours prevents mother-to-child transmission. Complete 3-dose series provides 95% protection. Prevention also includes safe injection practices, safe sex, avoiding sharing personal items (razors, toothbrushes), screening blood products. No specific treatment for acute infection, chronic infection may require antiviral therapy.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/hepatitis-b",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "uti",
+      "region": "Global",
+      "year": 2024,
+      "organization": "Mayo Clinic",
+      "title": "Urinary Tract Infection Symptoms and Treatment",
+      "section": "Symptoms",
+      "body": "UTI symptoms include strong, persistent urge to urinate, burning sensation when urinating, passing frequent small amounts of urine, cloudy urine, red/bright pink/cola-colored urine (blood), strong-smelling urine, pelvic pain in women. Treatment with antibiotics typically resolves symptoms within days. Drink plenty of water, urinate frequently, wipe front to back (women), avoid irritating feminine products.",
+      "source_url": "https://www.mayoclinic.org/diseases-conditions/urinary-tract-infection/symptoms-causes/syc-20353447",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "sepsis",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Sepsis Recognition and Emergency Response",
+      "section": "Emergency",
+      "body": "Sepsis warning signs: fever or low body temperature, fast heart rate, fast breathing, confusion/disorientation, extreme pain/discomfort, clammy/sweaty skin. Life-threatening emergency requiring immediate medical attention. Early recognition and treatment within first hour critical for survival. Treatment includes IV antibiotics, fluids, vasopressors, oxygen, and organ support as needed.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/sepsis",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "angina",
+      "region": "Global",
+      "year": 2024,
+      "organization": "AHA",
+      "title": "Angina Symptoms and Management",
+      "section": "Symptoms",
+      "body": "Angina is chest pain due to reduced blood flow to heart muscle. Symptoms include chest pressure, tightness, or squeezing; pain may spread to arms, neck, jaw, shoulder, or back. Stable angina occurs with exertion, unstable angina occurs at rest or with minimal exertion. Take nitroglycerin as prescribed. Seek emergency care if pain is severe, prolonged, or doesn't respond to nitroglycerin.",
+      "source_url": "https://www.heart.org/en/health-topics/angina",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "atrial_fibrillation",
+      "region": "Global",
+      "year": 2024,
+      "organization": "AHA",
+      "title": "Atrial Fibrillation Recognition and Treatment",
+      "section": "Symptoms",
+      "body": "AFib symptoms include irregular heartbeat, palpitations, shortness of breath, weakness, fatigue, dizziness, chest pain, or confusion. Some people have no symptoms. AFib increases stroke risk significantly. Treatment may include rate control medications, rhythm control medications, blood thinners to prevent stroke, and lifestyle modifications. Regular monitoring essential.",
+      "source_url": "https://www.heart.org/en/health-topics/atrial-fibrillation",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "bronchitis",
+      "region": "Global",
+      "year": 2024,
+      "organization": "Mayo Clinic",
+      "title": "Acute Bronchitis Symptoms and Treatment",
+      "section": "Symptoms",
+      "body": "Acute bronchitis symptoms include persistent cough with or without mucus, fatigue, shortness of breath, slight fever, and chest discomfort. Cough may last 2-3 weeks. Usually caused by viruses, so antibiotics not helpful. Treatment includes rest, fluids, humidifier use, honey for cough (not in children under 1 year), and over-the-counter pain relievers for fever.",
+      "source_url": "https://www.mayoclinic.org/diseases-conditions/bronchitis/symptoms-causes/syc-20355566",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "allergic_asthma",
+      "region": "UK",
+      "year": 2024,
+      "organization": "NHS",
+      "title": "Allergic Asthma Trigger Management",
+      "section": "Prevention",
+      "body": "Common allergens include pollen, dust mites, pet dander, mold. Trigger avoidance: use allergen-proof bedding covers, wash bedding weekly in hot water, keep humidity <50%, remove carpets if possible, use HEPA air filters, avoid pets in bedroom, shower after outdoor activities during pollen season. Consider allergy testing and immunotherapy for persistent symptoms.",
+      "source_url": "https://www.nhs.uk/conditions/asthma/",
+      "last_reviewed": "2024-04-09",
+      "next_review_due": "2027-04-09"
+    },
+    {
+      "disease": "diabetic_ketoacidosis",
+      "region": "Global",
+      "year": 2024,
+      "organization": "ADA",
+      "title": "Diabetic Ketoacidosis Emergency Protocol",
+      "section": "Emergency",
+      "body": "DKA warning signs: blood glucose >250 mg/dL, ketones in urine/blood, nausea/vomiting, abdominal pain, deep rapid breathing, fruity breath odor, confusion, dehydration. Life-threatening emergency requiring immediate hospital treatment. Call 911 if severe symptoms. Treatment includes IV insulin, fluids, electrolyte replacement. Can be prevented by never stopping insulin and monitoring during illness.",
+      "source_url": "https://diabetes.org/diabetes/dka-ketoacidosis-ketones",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "diabetic_foot_care",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Diabetic Foot Care Protocol",
+      "section": "Prevention",
+      "body": "Daily foot inspection for cuts, blisters, red spots, swelling. Wash feet daily with warm water, dry thoroughly especially between toes. Never walk barefoot. Trim nails straight across. Use lotion on top/bottom of feet but not between toes. Wear proper fitting shoes and clean socks daily. See healthcare provider for any foot problems immediately.",
+      "source_url": "https://www.cdc.gov/diabetes/managing/foot-complications.html",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "ear_infection_children",
+      "region": "Global",
+      "year": 2024,
+      "organization": "AAP",
+      "title": "Childhood Ear Infection Management",
+      "section": "Treatment",
+      "body": "Acute otitis media symptoms: ear pain, tugging at ear, fever, irritability, difficulty sleeping, fluid draining from ear. Many infections resolve without antibiotics. Pain management with acetaminophen or ibuprofen. Antibiotics if severe symptoms, age <6 months, or no improvement after 48-72 hours. Warm compress may help pain. Avoid inserting anything in ear.",
+      "source_url": "https://www.healthychildren.org/English/health-issues/conditions/ear-nose-throat/Pages/Ear-Infection-Information.aspx",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "food_allergies_children",
+      "region": "Global",
+      "year": 2024,
+      "organization": "FARE",
+      "title": "Childhood Food Allergy Emergency Plan",
+      "section": "Emergency",
+      "body": "Severe allergic reaction (anaphylaxis) symptoms: difficulty breathing, swelling of face/lips/tongue, widespread rash, rapid pulse, dizziness, loss of consciousness. Give epinephrine auto-injector immediately into outer thigh, call 911, give second dose if no improvement in 5-15 minutes. Stay with child until help arrives. Common allergens: milk, eggs, peanuts, tree nuts, fish, shellfish, wheat, soy.",
+      "source_url": "https://www.foodallergy.org/",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "meningitis",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Meningitis Emergency Recognition",
+      "section": "Emergency",
+      "body": "Bacterial meningitis is medical emergency. Symptoms: sudden high fever, severe headache, stiff neck, nausea/vomiting, confusion, sensitivity to light, skin rash that doesn't fade under pressure. In infants: high fever, constant crying, excessive sleepiness, inactive/sluggish, poor feeding, bulging fontanel. Seek immediate medical care - delay can cause brain damage, hearing loss, or death.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/meningitis",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "measles",
+      "region": "Global",
+      "year": 2024,
+      "organization": "WHO",
+      "title": "Measles Symptoms and Vaccination",
+      "section": "Prevention",
+      "body": "Measles symptoms: high fever, cough, runny nose, red watery eyes, followed by rash starting on face/upper neck and spreading downward. Highly contagious - spreads through air when infected person coughs/sneezes. MMR vaccine is safe and effective - 2 doses provide 97% protection. Complications can include pneumonia, encephalitis, and death, especially in children under 5.",
+      "source_url": "https://www.who.int/news-room/fact-sheets/detail/measles",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "seizure",
+      "region": "Global",
+      "year": 2024,
+      "organization": "Epilepsy Foundation",
+      "title": "Seizure Emergency First Aid",
+      "section": "Emergency",
+      "body": "Stay calm and time the seizure. Protect person from injury - move harmful objects away, cushion head if on ground. Don't restrain person or put anything in mouth. Turn person on side if possible to help breathing. Call 911 if seizure lasts >5 minutes, person is injured, has difficulty breathing, or doesn't return to normal consciousness. Stay with person until fully alert.",
+      "source_url": "https://www.epilepsy.com/what-is-epilepsy/seizure-first-aid",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "burns",
+      "region": "Global",
+      "year": 2024,
+      "organization": "Red Cross",
+      "title": "Burn Emergency First Aid",
+      "section": "Emergency",
+      "body": "Cool burn with cool running water for 10-20 minutes. Remove jewelry/tight clothing before swelling. Cover with sterile gauze or clean cloth. Don't use ice, butter, or home remedies. Seek emergency care for burns >3 inches, burns on face/hands/feet/genitals/major joints, electrical/chemical burns, or signs of infection. For severe burns, don't remove clothing stuck to burn.",
+      "source_url": "https://www.redcross.org/take-a-class/first-aid/performing-first-aid/burns",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "poisoning",
+      "region": "Global",
+      "year": 2024,
+      "organization": "Poison Control",
+      "title": "Poisoning Emergency Protocol",
+      "section": "Emergency",
+      "body": "Call Poison Control immediately: 1-800-222-1222 (US). If person is unconscious, not breathing, or having convulsions, call 911 first. Don't induce vomiting unless instructed. Don't give activated charcoal unless instructed. Remove person from source of poison if safe to do so. Have poison container available when calling for specific treatment instructions.",
+      "source_url": "https://www.poison.org/poison-control-centers",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    },
+    {
+      "disease": "concussion",
+      "region": "Global",
+      "year": 2024,
+      "organization": "CDC",
+      "title": "Concussion Recognition and Management",
+      "section": "Emergency",
+      "body": "Concussion signs: confusion, memory problems, dizziness, headache, nausea/vomiting, balance problems, sensitivity to light/noise, mood changes. In sports, remove player immediately if concussion suspected. Seek emergency care if severe symptoms: repeated vomiting, seizures, increasing confusion, loss of consciousness. Most concussions resolve with physical/mental rest, but medical clearance needed before return to activities.",
+      "source_url": "https://www.cdc.gov/headsup/basics/concussion_whatis.html",
+      "last_reviewed": "2024-01-15",
+      "next_review_due": "2027-01-15"
+    }
+  ]
