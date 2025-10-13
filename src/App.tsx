@@ -22,6 +22,7 @@ import { deleteUser } from 'firebase/auth';
 import { generateMessageId, generateConversationId, generateTabId } from '@/lib/id-generator';
 import { formatErrorMessage } from '@/lib/error-handler';
 import { approveAndIndexUpload, getUploadPreview, regenerateProtocol, regenerateUploadProtocols, getUserUploadedProtocols, deleteUserProtocol, deleteAllUserProtocols } from '@/lib/api';
+import { detectFollowUp, validateMessageContent, sanitizeInput } from '@/lib/chat-utils';
 
 // Memoized regeneration form to prevent re-renders
 const RegenerationForm = memo(({
@@ -718,32 +719,13 @@ function App() {
     return null;
   };
 
-  // Helper function to detect if this is a follow-up question
+  // Smart follow-up detection using integrated utilities
   const isFollowUpQuestion = (content: string, messages: Message[]): { isFollowUp: boolean; lastProtocol?: ProtocolData } => {
-    // Find the most recent assistant message with protocol data
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg.type === 'assistant' && msg.protocolData) {
-        // Check if this looks like a follow-up question
-        const followUpKeywords = [
-          'dosage', 'dose', 'how much', 'how often', 'when to',
-          'symptoms', 'signs', 'what to watch', 'monitor',
-          'side effects', 'complications', 'risks', 'contraindications',
-          'timing', 'duration', 'how long', 'frequency',
-          'safety', 'warnings', 'avoid', 'caution'
-        ];
-        
-        const contentLower = content.toLowerCase();
-        const hasFollowUpKeyword = followUpKeywords.some(keyword => contentLower.includes(keyword));
-        const isShortQuestion = content.length < 100; // Follow-ups are usually shorter
-        
-        if (hasFollowUpKeyword && isShortQuestion) {
-          return { isFollowUp: true, lastProtocol: msg.protocolData };
-        }
-        break; // Only check the most recent protocol
-      }
-    }
-    return { isFollowUp: false };
+    const analysis = detectFollowUp(content, messages);
+    return {
+      isFollowUp: analysis.isFollowUp,
+      lastProtocol: analysis.lastProtocol
+    };
   };
 
   // Persist tabs to localStorage whenever they change
@@ -766,21 +748,33 @@ function App() {
 
 
   const handleSendMessage = async (content: string, skipDialogCheck: boolean = false) => {
+    // Validate and sanitize input
+    const sanitized = sanitizeInput(content);
+    const validation = validateMessageContent(sanitized);
+    
+    if (!validation.valid) {
+      console.error('❌ Invalid message:', validation.error);
+      return; // Silently ignore invalid messages
+    }
+    
     // Get current messages before any state changes
     const currentMessages = messages;
     
     // MESSAGE DEDUPLICATION: Check if identical message is already pending or recently sent
     const recentlySent = currentMessages.find(msg => 
       msg.type === 'user' && 
-      msg.content === content && 
+      msg.content === sanitized && 
       (msg.status === 'pending' || 
        (msg.status === 'sent' && Date.now() - new Date(msg.timestamp).getTime() < 2000)) // Within 2 seconds
     );
     
     if (recentlySent) {
-      console.log('🚫 Duplicate message blocked:', content);
+      console.log('🚫 Duplicate message blocked:', sanitized);
       return; // Prevent duplicate send
     }
+    
+    // Use sanitized content from here on
+    content = sanitized;
     
     // Check if this is a follow-up question
     const followUpCheck = isFollowUpQuestion(content, currentMessages);

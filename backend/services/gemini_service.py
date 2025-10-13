@@ -138,17 +138,24 @@ def summarize_checklist(title: str, context_snippets: List[str], instructions: s
     # Classify query intent for smart templating
     intent = classify_query_intent(title)
     
-    # Base instructions - SIMPLE AND DIRECT
+    # Base instructions - STRICT SOURCE-BASED GENERATION
     base_instructions = [
-        "You are a medical AI assistant. Your job is to READ medical sources and CREATE a concise checklist with detailed explanations.",
+        "You are a medical AI assistant. Your ONLY job is to extract information from the provided sources below.",
         "",
-        "STRICT RULES:",
+        "⚠️ CRITICAL RULES - VIOLATING THESE IS UNACCEPTABLE:",
+        "1. ONLY use information EXPLICITLY stated in the [Source N] snippets below",
+        "2. DO NOT add any information from your general knowledge",
+        "3. DO NOT make assumptions or extrapolate beyond what the sources say",
+        "4. If the sources don't contain information about the query, create fewer steps (3-4 is fine)",
+        "5. Every single fact MUST come from the provided sources",
+        "",
+        "RESPONSE FORMAT:",
         "1. Each step has TWO parts:",
-        "   - 'text': Short action (under 15 words) - what to do",
-        "   - 'explanation': Detailed how-to (2-3 sentences) - how to do it",
-        "2. REPHRASE everything in your own words (NO copying)",
-        "3. EXTRACT the citation number from [Source N] in the context",
-        "4. ONLY include relevant information for this specific query",
+        "   - 'text': Short action (under 15 words) extracted from sources",
+        "   - 'explanation': Detailed how-to (2-3 sentences) extracted from sources",
+        "2. REPHRASE in your own words but DON'T add new information",
+        "3. EXTRACT the citation number from [Source N] tags",
+        "4. ONLY include information DIRECTLY related to the query '{title}'",
         "",
         "EXAMPLE:",
         "BAD: \"Dengue symptoms include high fever 39-40°C, severe headache...\"",
@@ -241,10 +248,20 @@ def summarize_checklist(title: str, context_snippets: List[str], instructions: s
         "- Extract source number from [Source N] in context",
         "- If synthesizing multiple sources, cite the primary one",
         "",
-        "FILTERING RULES:",
-        "- ONLY use information relevant to the query",
-        "- IGNORE unrelated diseases completely",
-        "- Better 4-6 synthesized steps than 10+ copied steps",
+        "⛔ ABSOLUTE FILTERING RULES:",
+        "- If a source discusses a DIFFERENT disease/condition, SKIP IT ENTIRELY",
+        "- Example: Query is 'dengue treatment', source mentions COVID-19 → IGNORE that source",
+        "- ONLY extract information that DIRECTLY answers the query: {title}",
+        "- DO NOT include general medical advice not in the sources",
+        "- DO NOT add safety warnings unless they're in the sources",
+        "- Better to have 3-4 accurate steps from sources than 10 steps with made-up content",
+        "",
+        "✅ VALIDATION CHECKLIST:",
+        "Before including any step, ask yourself:",
+        "- Is this EXACTLY from one of the [Source N] snippets? ✓",
+        "- Does this DIRECTLY relate to '{title}'? ✓",
+        "- Did I cite the correct [Source N]? ✓",
+        "- Did I avoid adding my own medical knowledge? ✓",
     ])
     
     if region:
@@ -254,15 +271,25 @@ def summarize_checklist(title: str, context_snippets: List[str], instructions: s
     if instructions:
         prompt_parts.append(f"Instructions: {instructions}")
 
-    prompt_parts.append(f"Title: {title}")
     prompt_parts.append("")
-    prompt_parts.append("Context Sources:")
-    prompt_parts.append("(Each source is labeled [Source N]. Extract the number N for your citation field.)")
+    prompt_parts.append("="*80)
+    prompt_parts.append(f"QUERY: {title}")
+    prompt_parts.append("="*80)
     prompt_parts.append("")
-    for snippet in context_snippets[:6]:  # Limit context to avoid verbosity
+    prompt_parts.append("🔍 AVAILABLE SOURCES (These are your ONLY source of truth):")
+    prompt_parts.append("Each source is labeled [Source N]. You MUST cite the source number.")
+    prompt_parts.append("")
+    
+    # Add sources with clear separation
+    for i, snippet in enumerate(context_snippets[:6], 1):
+        prompt_parts.append(f"━━━ SOURCE [{i}] ━━━")
         prompt_parts.append(snippet)
-    prompt_parts.append("")
-    prompt_parts.append("Remember: Extract the [Source N] number from each snippet and use N in your 'citation' field.")
+        prompt_parts.append("")
+    
+    prompt_parts.append("="*80)
+    prompt_parts.append("⚠️ REMINDER: Use ONLY the information above. Do NOT add external knowledge.")
+    prompt_parts.append(f"⚠️ REMINDER: Only include steps relevant to: {title}")
+    prompt_parts.append("="*80)
 
     prompt = "\n".join(prompt_parts)
     
@@ -375,50 +402,62 @@ def step_thread_chat(
             for msg in thread_history[-5:]  # Last 5 messages
         ])
     
-    prompt = f"""You are a knowledgeable medical AI assistant helping with the "{protocol_title}" protocol.
+    prompt = f"""You are a medical AI assistant. Answer questions about THIS SPECIFIC STEP ONLY.
 
-CONTEXT:
+⚠️ CRITICAL RULES:
+1. Use ONLY the information in the SOURCE below
+2. DO NOT add information from your general knowledge
+3. Stay focused on THIS step - don't discuss other parts of the protocol
+4. If the SOURCE doesn't answer the question, say so clearly
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 STEP {step_id}: {step_text}
-{citation_text}
+📋 PROTOCOL: {protocol_title}
+📍 STEP {step_id}: {step_text}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔍 SOURCE FOR THIS STEP:
+{citation_text if citation_text else "No specific source available for this step."}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {f"DISCUSSION HISTORY:{chr(10)}{history_text}{chr(10)}" if history_text else ""}
 
-USER QUESTION: {message}
-
-RESPONSE GUIDELINES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. **Stay Focused**: Answer questions specifically about THIS step
-2. **Be Comprehensive**: Cover the "why" and "how" when relevant
+USER QUESTION: {message}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+RESPONSE REQUIREMENTS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. **Stay Strictly On Topic**: Answer ONLY about Step {step_id}
+2. **Use Only Source Information**: Extract from the SOURCE above, don't add external knowledge
 3. **Structure Your Response**:
-   • Start with a direct answer to the question
-   • Provide clinical rationale or context
-   • Include practical considerations (timing, dosage, technique, etc.)
-   • Mention contraindications or warnings if relevant
-   • Suggest alternatives when appropriate
+   • Direct answer (1-2 sentences) - FROM SOURCE
+   • Clinical rationale - FROM SOURCE
+   • Practical details (timing, dosage, technique) - FROM SOURCE
+   • If SOURCE lacks info for the question, state: "The available source doesn't specify [aspect]. Please consult medical guidelines."
    
-4. **Use Medical Evidence**: Reference the source citation when applicable
-5. **Length**: Aim for 3-5 well-structured sentences (can be longer if needed for complex topics)
-6. **Tone**: Professional, clear, and helpful
-7. **Scope Limits**: If the question goes beyond this step, politely redirect to the main protocol chat
-8. **Formatting**: Use markdown for better readability:
-   - Use **bold** for key medical terms or important points
-   - Use bullet points (•, -) for lists
-   - Use numbered lists for sequential steps
-   - Keep paragraphs concise and well-spaced
+4. **Citations**: Reference the source when applicable
+5. **Scope**: If question is beyond this step, say: "This question is broader than Step {step_id}. Please ask in the main chat."
+6. **Formatting**:
+   - Use **bold** for medical terms
+   - Use bullet points for lists
+   - Keep paragraphs concise (2-3 sentences)
 
-EXAMPLE RESPONSE:
-"**Direct Answer:** [Main response to the question].
+EXAMPLE RESPONSE (if SOURCE has the info):
+"**Direct Answer:** [Extract from SOURCE].
 
-**Clinical Rationale:** [Why this step is important, evidence-based reasoning].
+**Clinical Rationale:** [Why - from SOURCE].
 
 **Practical Considerations:**
-- Timing: [When to perform]
-- Dosage/Technique: [How to perform]
-- Monitoring: [What to watch for]
+- Timing: [from SOURCE]
+- Technique: [from SOURCE]
+- Monitoring: [from SOURCE]
 
-**Important Notes:** [Contraindications, warnings, or alternatives if applicable]."
+**Note:** [Warnings from SOURCE, if any]."
+
+EXAMPLE RESPONSE (if SOURCE lacks info):
+"The available source for this step doesn't provide specific information about [aspect of question]. For detailed guidance on [topic], please consult the full medical guidelines or ask in the main protocol chat."
+
+⚠️ Remember: ONLY use information from the SOURCE above. Do NOT add external medical knowledge."
 
 Now provide a clear, well-formatted, helpful response:"""
 
@@ -437,6 +476,128 @@ Now provide a clear, well-formatted, helpful response:"""
         }
 
 
+def _analyze_question_type(message: str, protocol_title: str) -> Dict[str, Any]:
+    """
+    Analyze the user's question to determine intent and category.
+    Returns structured information about the question.
+    """
+    message_lower = message.lower()
+    
+    # Question categories with keywords
+    categories = {
+        'dosage': ['dosage', 'dose', 'how much', 'amount', 'mg', 'ml', 'quantity'],
+        'symptoms': ['symptom', 'sign', 'feel', 'looks like', 'presentation', 'manifest'],
+        'timing': ['when', 'how long', 'duration', 'frequency', 'how often', 'timing'],
+        'complications': ['complication', 'risk', 'side effect', 'adverse', 'danger', 'problem'],
+        'safety': ['safe', 'avoid', 'caution', 'warning', 'contraindication', 'dangerous'],
+        'procedure': ['how to', 'procedure', 'steps', 'technique', 'method', 'perform'],
+        'comparison': ['compare', 'difference', 'versus', 'vs', 'alternative', 'instead'],
+        'rationale': ['why', 'reason', 'because', 'explain', 'rationale', 'purpose']
+    }
+    
+    detected_categories = []
+    for category, keywords in categories.items():
+        if any(keyword in message_lower for keyword in keywords):
+            detected_categories.append(category)
+    
+    # Check if question is about the same topic
+    protocol_words = set(protocol_title.lower().split())
+    message_words = set(message_lower.split())
+    topic_overlap = len(protocol_words & message_words) / len(protocol_words) if protocol_words else 0
+    
+    return {
+        'categories': detected_categories,
+        'primary_category': detected_categories[0] if detected_categories else 'general',
+        'is_related_topic': topic_overlap > 0.3 or len(message) < 100,  # Short questions usually related
+        'topic_overlap': topic_overlap
+    }
+
+
+def _generate_smart_followups(message: str, protocol_title: str, conversation_history: List[Dict[str, str]], question_analysis: Dict[str, Any]) -> List[str]:
+    """
+    Generate contextually relevant follow-up questions that avoid repetition.
+    Uses conversation history and question analysis to be smart about suggestions.
+    """
+    # Extract previously asked topics from history
+    asked_topics = set()
+    for msg in conversation_history[-10:]:
+        if msg.get('role') == 'user':
+            content = msg.get('content', '').lower()
+            # Extract key topics
+            for topic in ['dosage', 'symptoms', 'timing', 'complications', 'safety', 'procedure']:
+                if topic in content:
+                    asked_topics.add(topic)
+    
+    # Question pool organized by category
+    question_templates = {
+        'dosage': [
+            f"What are alternative dosages for {protocol_title}?",
+            f"How do I adjust the dose based on severity?",
+            f"What if I miss a dose?"
+        ],
+        'symptoms': [
+            f"What symptoms indicate {protocol_title} is worsening?",
+            f"How do I differentiate mild vs severe symptoms?",
+            f"What early warning signs should I watch for?"
+        ],
+        'timing': [
+            f"When should I expect improvement?",
+            f"How long should I continue monitoring?",
+            f"What's the typical recovery timeline?"
+        ],
+        'complications': [
+            f"What are the most serious complications of {protocol_title}?",
+            f"How can I prevent complications?",
+            f"What complications require immediate attention?"
+        ],
+        'safety': [
+            f"What medications should I avoid with {protocol_title}?",
+            f"What are the contraindications?",
+            f"When is it unsafe to proceed with this protocol?"
+        ],
+        'procedure': [
+            f"What's the step-by-step procedure?",
+            f"What equipment or preparation is needed?",
+            f"What are common mistakes to avoid?"
+        ],
+        'comparison': [
+            f"How does this compare to alternative treatments?",
+            f"What are the pros and cons of this approach?",
+            f"When should I choose this protocol over others?"
+        ],
+        'general': [
+            f"What should healthcare providers know about {protocol_title}?",
+            f"What resources are available for more information?",
+            f"How has this protocol evolved recently?"
+        ]
+    }
+    
+    # Priority order based on current question
+    primary_category = question_analysis['primary_category']
+    
+    # Start with categories NOT yet asked about
+    priority_categories = [cat for cat in ['dosage', 'symptoms', 'timing', 'complications', 'safety', 'procedure'] 
+                          if cat not in asked_topics and cat != primary_category]
+    
+    # Add primary category if not just asked
+    if primary_category not in asked_topics:
+        priority_categories.insert(0, primary_category)
+    
+    # Add general as fallback
+    priority_categories.append('general')
+    
+    # Generate questions
+    suggestions = []
+    for category in priority_categories:
+        if category in question_templates:
+            # Take first question from each category
+            suggestions.append(question_templates[category][0])
+            if len(suggestions) >= 5:
+                break
+    
+    return suggestions[:5]
+
+
 def protocol_conversation_chat(
     message: str,
     concept_title: str,
@@ -448,11 +609,15 @@ def protocol_conversation_chat(
     """
     Handle protocol-level conversational chat.
     Users can ask follow-up questions about the entire protocol/concept.
+    Enhanced with intelligent context detection and smart follow-up generation.
     """
     _ensure_client()
     
     if conversation_history is None:
         conversation_history = []
+    
+    # Analyze the question to understand intent
+    question_analysis = _analyze_question_type(message, concept_title)
     
     # Build conversation history
     history_text = ""
@@ -490,73 +655,128 @@ def protocol_conversation_chat(
     if filters_json:
         filters_text = f"\nUser Filters: {filters_json}"
 
-    prompt = f"""You are ProCheck's clinical assistant. You have a current protocol context: "{concept_title}".
+    # Enhanced prompt with question categorization
+    question_category = question_analysis['primary_category']
+    is_related = question_analysis['is_related_topic']
+    
+    # Add category-specific guidance
+    category_guidance = {
+        'dosage': 'Focus on specific dosage recommendations, adjustments based on patient factors, and administration guidelines.',
+        'symptoms': 'Describe symptom progression, severity indicators, and how to differentiate from similar conditions.',
+        'timing': 'Provide clear timelines, frequency schedules, and duration expectations.',
+        'complications': 'Explain risk factors, early warning signs, and prevention strategies.',
+        'safety': 'Emphasize contraindications, warning signs, and when to seek help.',
+        'procedure': 'Give step-by-step instructions, required materials, and technique tips.',
+        'comparison': 'Compare approaches objectively with evidence-based pros and cons.',
+        'rationale': 'Explain the medical reasoning, evidence basis, and clinical decision factors.'
+    }
+    
+    category_hint = category_guidance.get(question_category, 'Provide comprehensive, evidence-based information.')
+    
+    prompt = f"""You are ProCheck's clinical assistant. Current protocol context: "{concept_title}".
 
-CRITICAL DECISION: Analyze the user's message and determine:
-1. If they're asking about the SAME medical condition/protocol → Continue conversation
-2. If they're asking about a COMPLETELY DIFFERENT condition → Respond with "NEW_SEARCH_NEEDED"
+🔍 QUESTION ANALYSIS:
+- Category: {question_category}
+- Related to current protocol: {is_related}
+- Topic overlap: {question_analysis['topic_overlap']:.0%}
 
-Current Protocol Context:
-- Protocol: {protocol_text}
-- Existing citations: {citations_text}
-- User filters (optional): {filters_text}
+🎯 RESPONSE STRATEGY:
+{category_hint}
 
-{f"Conversation History:{chr(10)}{history_text}{chr(10)}" if history_text else ""}
+⚠️ CRITICAL INSTRUCTIONS:
+1. The user is asking about "{concept_title}" protocol
+2. You MUST answer using ONLY the Available Sources below
+3. If the question is about a DIFFERENT medical condition → Return ONLY "NEW_SEARCH_NEEDED"
+4. DO NOT add information from your general medical knowledge
+5. If sources don't fully answer the question, say so in the Uncertainty note
 
-User message:
-{message}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CURRENT PROTOCOL CONTEXT:
+{protocol_text}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-DECISION LOGIC:
-- If asking about "{concept_title}" or related aspects → Continue conversation with normal format
-- If asking about DIFFERENT disease/condition (e.g., "heart attack" when current is "dengue") → Return ONLY "NEW_SEARCH_NEEDED"
-- Examples of different conditions: heart attack vs dengue, diabetes vs stroke, pneumonia vs asthma
-- If unclear, default to continuing conversation
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AVAILABLE SOURCES (Your ONLY source of information):
+{citations_text}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-IMPORTANT: If you determine a new search is needed, respond with ONLY the text "NEW_SEARCH_NEEDED" and nothing else.
+{f"Recent Conversation:{chr(10)}{history_text}{chr(10)}" if history_text else ""}
 
-Requirements:
-- Be concise, clinically useful, and stay on-topic to "{concept_title}".
-- **CRITICAL**: You MUST format your response using Markdown syntax
-- **ALWAYS** use **bold text** for medical terms, symptoms, medications, and warnings
-- Use bullet points (- ) for lists of symptoms, steps, or recommendations
-- Cite sources inline as [Source N] and list them at the end with titles/links.
-- If retrieval was needed, say "Used new sources".
-- If evidence is limited/conflicting, include a 1‑line uncertainty note.
-- Generate 3–5 SMART follow-up questions that are contextually relevant and avoid repetition.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+USER QUESTION: {message}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-SMART FOLLOW-UP GENERATION:
-- Analyze what the user just asked and avoid similar questions
-- Look for gaps in the protocol that haven't been discussed
-- Consider the medical condition's key aspects (symptoms, treatment, complications, etc.)
-- Make questions specific to the current protocol, not generic
-- Prioritize clinically important topics that users typically need to know
+📋 RESPONSE REQUIREMENTS:
 
-MARKDOWN FORMATTING EXAMPLES:
-- Medical terms: **fever**, **dengue symptoms**, **warning signs**
-- Lists: Use "- " for bullet points
-- Emphasis: Use **bold** for important terms, *italic* for emphasis
+1. **Topic Check:**
+   - Same/related condition → Normal response
+   - Different condition (e.g., heart attack when discussing dengue) → Return "NEW_SEARCH_NEEDED"
+   - If uncertain → Continue conversation
 
-Output format:
+2. **Formatting (CRITICAL):**
+   - Use **bold** for: medical terms, symptoms, medications, dosages, warnings
+   - Use bullet points (- ) for lists
+   - Use numbered lists (1. 2. 3.) for sequential steps
+   - Cite sources inline: [Source 1], [Source 2]
+   - Keep paragraphs short (2-4 sentences max)
+
+3. **Content Structure (USE ONLY SOURCE INFORMATION):**
+   - Start with direct answer (1-2 sentences) - FROM SOURCES
+   - Provide clinical rationale (why/how) - FROM SOURCES  
+   - Include practical considerations (when/where/how much) - FROM SOURCES
+   - Add safety notes ONLY if they're in the sources
+   - If sources don't cover an aspect, DON'T make it up
+
+4. **Evidence & Uncertainty (MANDATORY):**
+   - EVERY fact must cite a source: [Source N]
+   - If you're using information not from sources → DON'T include it
+   - If sources don't fully answer the question → Add uncertainty note
+   - If sources conflict → Mention both perspectives with citations
+   - Prefer quantitative data from sources (percentages, time frames)
+
+5. **Follow-up Questions:**
+   - Generate 3-5 SMART questions
+   - Avoid repeating the current question topic
+   - Cover unexplored aspects of the protocol
+   - Be specific to "{concept_title}" (not generic)
+   - Categories to consider: dosage, symptoms, timing, complications, safety, procedure
+
+📤 OUTPUT FORMAT:
+
 Answer:
-<2–6 sentences with **bold medical terms** and proper markdown formatting, with inline [Source N] citations>
+<2-6 sentences with **bold medical terms**, inline [Source N] citations, proper markdown>
 
 Uncertainty (omit if none):
-<one line>
+<brief note about limited/conflicting evidence>
 
 Sources:
-- [N] <title or org> — <url>
+- [1] <citation details>
+- [2] <citation details>
 
-Suggested follow-ups (plain text, no markdown):
-Generate 3-5 contextually relevant questions that:
-1. Don't repeat what was just asked
-2. Address important gaps in the current discussion
-3. Are specific to "{concept_title}" (not generic medical questions)
-4. Cover different aspects: symptoms, treatment, complications, timing, special populations
-- <specific question about this protocol>
-- <different aspect question>
-- <clinically important follow-up>
-- <protocol-specific question>
-- <practical application question>"""
+Suggested follow-ups:
+- <Question about unexplored aspect 1>
+- <Question about unexplored aspect 2>
+- <Question about unexplored aspect 3>
+- <Question about clinical consideration>
+- <Question about practical application>
+
+🎯 EXAMPLE RESPONSE:
+
+Answer:
+**Paracetamol** (acetaminophen) is the recommended antipyretic for **dengue fever**, typically dosed at **500-1000mg every 6 hours** for adults [Source 1]. **Avoid NSAIDs** (aspirin, ibuprofen) as they increase bleeding risk due to platelet dysfunction in dengue [Source 2]. Monitor for **warning signs** such as severe abdominal pain or persistent vomiting, which indicate progression to severe dengue [Source 1].
+
+Sources:
+- [1] WHO Dengue Guidelines 2009
+- [2] CDC Dengue Treatment Recommendations
+
+Suggested follow-ups:
+- What symptoms indicate I need to reduce or stop paracetamol?
+- How long should I continue fever monitoring?
+- What are the early warning signs of dengue hemorrhagic fever?
+- When should platelet counts be checked?
+- What fluid intake is recommended during dengue recovery?
+
+Now provide your response:"""
 
     try:
         response = _model.generate_content(prompt)
