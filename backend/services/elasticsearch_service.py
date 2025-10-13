@@ -156,6 +156,62 @@ def get_sample_documents(size: int = 3, index_name: Optional[str] = None) -> Dic
     return search_protocols(query=None, size=size, index_name=index_name)
 
 
+def _parse_medical_query(query: str) -> Dict[str, Any]:
+    """
+    Parse medical query to extract condition and intent keywords.
+    Example: "How to treat dengue?" -> condition="dengue", intent=["treat", "treatment"]
+    """
+    query_lower = query.lower()
+    
+    # Intent keyword mapping
+    intent_patterns = {
+        "treatment": ["treat", "treatment", "therapy", "medication", "drug", "manage", "cure", "remedy"],
+        "symptoms": ["symptom", "sign", "presentation", "manifest", "appear", "show", "indicate"],
+        "prevention": ["prevent", "prevention", "avoid", "protect", "prophylaxis", "precaution"],
+        "diagnosis": ["diagnose", "diagnosis", "test", "screening", "detect", "identify", "assess"],
+        "complications": ["complication", "risk", "side effect", "adverse", "danger", "problem"],
+    }
+    
+    # Common medical conditions/diseases
+    # Extract potential medical terms (words that are likely disease names)
+    stopwords = {"how", "to", "the", "a", "an", "is", "are", "what", "when", "where", "why", "do", "does", "can", "should", "during", "for", "with", "in", "on", "at", "of", "about"}
+    
+    words = query_lower.split()
+    
+    # Find intent keywords
+    intent_keywords = []
+    matched_intents = set()
+    for intent_type, keywords in intent_patterns.items():
+        for keyword in keywords:
+            if keyword in query_lower:
+                matched_intents.add(intent_type)
+                intent_keywords.append(intent_type)
+                break
+    
+    # Extract medical condition (likely to be a noun, not a stopword or intent keyword)
+    condition_words = []
+    for word in words:
+        cleaned = word.strip("?.,!;:")
+        if cleaned and cleaned not in stopwords and len(cleaned) > 2:
+            # Check if it's not an intent keyword
+            is_intent = False
+            for keywords_list in intent_patterns.values():
+                if any(cleaned in kw or kw in cleaned for kw in keywords_list):
+                    is_intent = True
+                    break
+            if not is_intent:
+                condition_words.append(cleaned)
+    
+    # Join condition words (usually 1-2 words like "dengue", "heart attack", "type 2 diabetes")
+    medical_condition = " ".join(condition_words[:3])  # Max 3 words for condition
+    
+    return {
+        "condition": medical_condition,
+        "intent_keywords": list(matched_intents),
+        "raw_query": query
+    }
+
+
 def search_with_filters(payload: Dict[str, Any], index_name: Optional[str] = None) -> Dict[str, Any]:
     client = get_client()
     index = index_name or settings.ELASTICSEARCH_INDEX_NAME
@@ -166,13 +222,45 @@ def search_with_filters(payload: Dict[str, Any], index_name: Optional[str] = Non
 
         must_clause: list[Dict[str, Any]] = []
         filter_clause: list[Dict[str, Any]] = []
+        should_clause: list[Dict[str, Any]] = []
 
         if query and str(query).strip():
-            must_clause.append({
+            # Parse query to extract medical condition and intent
+            parsed = _parse_medical_query(query)
+            medical_condition = parsed["condition"]
+            intent_keywords = parsed["intent_keywords"]
+            
+            # Build smart query that matches BOTH condition AND intent
+            if medical_condition:
+                # HIGH PRIORITY: Match the medical condition in disease/title/body
+                must_clause.append({
+                    "bool": {
+                        "should": [
+                            {"match": {"disease": {"query": medical_condition, "boost": 3.0}}},
+                            {"match": {"title": {"query": medical_condition, "boost": 2.5}}},
+                            {"match": {"body": {"query": medical_condition, "boost": 1.5}}}
+                        ],
+                        "minimum_should_match": 1
+                    }
+                })
+            
+            # BOOST: If intent keywords found, boost matching sections
+            if intent_keywords:
+                for intent_word in intent_keywords:
+                    should_clause.append({
+                        "match": {"section": {"query": intent_word, "boost": 3.0}}
+                    })
+                    should_clause.append({
+                        "match": {"title": {"query": intent_word, "boost": 2.0}}
+                    })
+            
+            # Fallback: general full-text search for any other query terms
+            should_clause.append({
                 "multi_match": {
                     "query": query,
-                    "fields": ["title^3", "disease^2.5", "section^2", "body", "content", "tags", "organization"],
-                    "type": "best_fields"
+                    "fields": ["title^2", "body", "content"],
+                    "type": "best_fields",
+                    "boost": 0.5  # Lower boost for general match
                 }
             })
         else:
@@ -192,6 +280,7 @@ def search_with_filters(payload: Dict[str, Any], index_name: Optional[str] = Non
         es_query = {
             "bool": {
                 "must": must_clause,
+                "should": should_clause,
                 "filter": filter_clause
             }
         }
@@ -259,17 +348,46 @@ def hybrid_search(
         add_terms("disease", filters.get("disease"))
         add_terms("tags", filters.get("tags"))
         
-        # If no vector provided, fall back to text-only search
+        # If no vector provided, fall back to smart text-only search
         if query_vector is None:
+            # Parse query for better relevance
+            parsed = _parse_medical_query(query)
+            medical_condition = parsed["condition"]
+            intent_keywords = parsed["intent_keywords"]
+            
+            must_clause = []
+            should_clause = []
+            
+            if medical_condition:
+                must_clause.append({
+                    "bool": {
+                        "should": [
+                            {"match": {"disease": {"query": medical_condition, "boost": 3.0}}},
+                            {"match": {"title": {"query": medical_condition, "boost": 2.5}}},
+                            {"match": {"body": {"query": medical_condition, "boost": 1.5}}}
+                        ],
+                        "minimum_should_match": 1
+                    }
+                })
+            
+            if intent_keywords:
+                for intent_word in intent_keywords:
+                    should_clause.append({"match": {"section": {"query": intent_word, "boost": 3.0}}})
+                    should_clause.append({"match": {"title": {"query": intent_word, "boost": 2.0}}})
+            
+            should_clause.append({
+                "multi_match": {
+                    "query": query,
+                    "fields": ["title^2", "body", "content"],
+                    "type": "best_fields",
+                    "boost": 0.5
+                }
+            })
+            
             text_query = {
                 "bool": {
-                    "must": [{
-                        "multi_match": {
-                            "query": query,
-                            "fields": ["title^3", "disease^2.5", "section^2", "body", "content"],
-                            "type": "best_fields"
-                        }
-                    }],
+                    "must": must_clause if must_clause else [{"match_all": {}}],
+                    "should": should_clause,
                     "filter": filter_clause
                 }
             }
@@ -302,15 +420,18 @@ def hybrid_search(
                         "rrf": {
                             "retrievers": [
                                 {
-                                    # BM25 text search retriever
+                                    # BM25 text search retriever (smart query)
                                     "standard": {
                                         "query": {
                                             "bool": {
                                                 "must": [{
-                                                    "multi_match": {
-                                                        "query": query,
-                                                        "fields": ["title^3", "disease^2.5", "section^2", "body"],
-                                                        "type": "best_fields"
+                                                    "bool": {
+                                                        "should": [
+                                                            {"match": {"disease": {"query": query, "boost": 3.0}}},
+                                                            {"match": {"title": {"query": query, "boost": 2.5}}},
+                                                            {"match": {"body": {"query": query, "boost": 1.0}}}
+                                                        ],
+                                                        "minimum_should_match": 1
                                                     }
                                                 }],
                                                 "filter": filter_clause
@@ -352,24 +473,48 @@ def hybrid_search(
             )
             return resp
         else:
-            # Alternative: Manual combination using kNN + text query
+            # Alternative: Manual combination using kNN + smart text query
+            parsed = _parse_medical_query(query)
+            medical_condition = parsed["condition"]
+            intent_keywords = parsed["intent_keywords"]
+            
+            text_should = []
+            
+            # Match medical condition
+            if medical_condition:
+                text_should.append({
+                    "bool": {
+                        "should": [
+                            {"match": {"disease": {"query": medical_condition, "boost": 3.0}}},
+                            {"match": {"title": {"query": medical_condition, "boost": 2.5}}},
+                            {"match": {"body": {"query": medical_condition, "boost": 1.5}}}
+                        ],
+                        "minimum_should_match": 1
+                    }
+                })
+            
+            # Boost intent matches
+            if intent_keywords:
+                for intent_word in intent_keywords:
+                    text_should.append({"match": {"section": {"query": intent_word, "boost": 2.5}}})
+            
+            # Fallback general search
+            text_should.append({
+                "multi_match": {
+                    "query": query,
+                    "fields": ["title^2", "body"],
+                    "type": "best_fields",
+                    "boost": 0.5
+                }
+            })
+            
             resp = client.search(
                 index=index,
                 body={
                     "size": size,
                     "query": {
                         "bool": {
-                            "should": [
-                                {
-                                    # Text search component
-                                    "multi_match": {
-                                        "query": query,
-                                        "fields": ["title^3", "disease^2.5", "section^2", "body"],
-                                        "type": "best_fields",
-                                        "boost": 1.0
-                                    }
-                                }
-                            ],
+                            "should": text_should,
                             "filter": filter_clause
                         }
                     },
@@ -649,14 +794,48 @@ def search_mixed_protocols(user_id: str, query: Optional[str] = None, size: int 
         user_results = search_user_protocols(user_id, query, user_size)
         user_hits = user_results.get("hits", {}).get("hits", [])
 
-        # Search global protocols
-        global_query = {
-            "multi_match": {
-                "query": query,
-                "fields": ["title^2", "body", "content", "tags"],
-                "type": "best_fields"
+        # Search global protocols with smart query
+        if query and query.strip():
+            parsed = _parse_medical_query(query)
+            medical_condition = parsed["condition"]
+            intent_keywords = parsed["intent_keywords"]
+            
+            must_clause = []
+            should_clause = []
+            
+            if medical_condition:
+                must_clause.append({
+                    "bool": {
+                        "should": [
+                            {"match": {"disease": {"query": medical_condition, "boost": 3.0}}},
+                            {"match": {"title": {"query": medical_condition, "boost": 2.5}}},
+                            {"match": {"body": {"query": medical_condition, "boost": 1.5}}}
+                        ],
+                        "minimum_should_match": 1
+                    }
+                })
+            
+            if intent_keywords:
+                for intent_word in intent_keywords:
+                    should_clause.append({"match": {"section": {"query": intent_word, "boost": 3.0}}})
+            
+            should_clause.append({
+                "multi_match": {
+                    "query": query,
+                    "fields": ["title^2", "body", "content"],
+                    "type": "best_fields",
+                    "boost": 0.5
+                }
+            })
+            
+            global_query = {
+                "bool": {
+                    "must": must_clause if must_clause else [{"match_all": {}}],
+                    "should": should_clause
+                }
             }
-        } if query and query.strip() else {"match_all": {}}
+        else:
+            global_query = {"match_all": {}}
 
         global_resp = client.search(
             index=global_index,
