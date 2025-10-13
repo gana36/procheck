@@ -12,6 +12,9 @@ export interface Message {
   searchMetadata?: SearchMetadata;
   followUpQuestions?: FollowUpQuestion[];
   isFollowUp?: boolean; // Indicates if this is a follow-up question to existing protocol
+  status?: 'pending' | 'sent' | 'failed' | 'retrying'; // Message delivery status
+  retryCount?: number; // Number of retry attempts
+  error?: string; // Error message if failed
 }
 
 export interface SearchMetadata {
