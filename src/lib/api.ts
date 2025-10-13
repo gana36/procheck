@@ -22,6 +22,15 @@ export type ChatResponse = {
   updated_protocol?: any;
 };
 
+export type CitationSource = {
+  id: number;
+  title: string;
+  organization: string;
+  source_url?: string;
+  excerpt: string;
+  relevance_score?: number;
+};
+
 export type ProtocolConversationRequest = {
   message: string;
   concept_title: string;
@@ -32,6 +41,8 @@ export type ProtocolConversationRequest = {
     role: 'user' | 'assistant';
     content: string;
   }>;
+  enable_context_search?: boolean; // Enable fresh context retrieval
+  user_id?: string; // For personalized search
 };
 
 export type FollowUpQuestion = {
@@ -42,7 +53,8 @@ export type FollowUpQuestion = {
 export type ProtocolConversationResponse = {
   answer: string;
   uncertainty_note?: string;
-  sources: string[];
+  sources: string[]; // Legacy: source texts
+  citations: CitationSource[]; // New: structured citations
   used_new_sources: boolean;
   follow_up_questions: FollowUpQuestion[];
   updated_protocol?: any;

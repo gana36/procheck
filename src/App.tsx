@@ -607,7 +607,9 @@ function App() {
   }, [saveCurrentConversation]);
 
   const handleFollowUpClick = (question: string) => {
-    handleSendMessage(question);
+    // Mark this as a follow-up to ensure it uses context search
+    // by appending a hidden marker that will be removed before sending
+    handleSendMessage(`__FOLLOWUP__${question}`);
   };
 
   // Helper functions for tab management
@@ -748,6 +750,13 @@ function App() {
 
 
   const handleSendMessage = async (content: string, skipDialogCheck: boolean = false) => {
+    // Check if this is a follow-up button click
+    const isFollowUpButtonClick = content.startsWith('__FOLLOWUP__');
+    if (isFollowUpButtonClick) {
+      content = content.replace('__FOLLOWUP__', '');
+      skipDialogCheck = true; // Always continue in same tab for follow-up buttons
+    }
+    
     // Validate and sanitize input
     const sanitized = sanitizeInput(content);
     const validation = validateMessageContent(sanitized);
@@ -777,7 +786,10 @@ function App() {
     content = sanitized;
     
     // Check if this is a follow-up question
-    const followUpCheck = isFollowUpQuestion(content, currentMessages);
+    // Force follow-up detection for button clicks
+    const followUpCheck = isFollowUpButtonClick 
+      ? { isFollowUp: true, lastProtocol: currentMessages.filter(m => m.type === 'assistant' && m.protocolData).pop()?.protocolData }
+      : isFollowUpQuestion(content, currentMessages);
     
     // Check if current tab has a protocol already
     const hasExistingProtocol = currentMessages.some(msg => msg.type === 'assistant' && msg.protocolData);
@@ -809,6 +821,10 @@ function App() {
     try {
       if (followUpCheck.isFollowUp && followUpCheck.lastProtocol) {
         // Handle as protocol conversation (follow-up in same tab)
+        console.log('🔄 Follow-up detected, using HYBRID SEARCH + citations');
+        console.log('📋 Protocol:', followUpCheck.lastProtocol.title);
+        console.log('❓ Follow-up question:', content);
+        
         const conversationHistory = currentMessages
           .filter(msg => msg.type === 'user' || (msg.type === 'assistant' && !msg.protocolData))
           .slice(-6) // Last 6 messages for context
@@ -822,8 +838,14 @@ function App() {
           concept_title: followUpCheck.lastProtocol.title,
           protocol_json: followUpCheck.lastProtocol,
           citations_list: followUpCheck.lastProtocol.citations.map(c => c.excerpt || c.source),
-          conversation_history: conversationHistory
+          conversation_history: conversationHistory,
+          enable_context_search: true, // Enable fresh context search
+          user_id: userId || undefined
         });
+        
+        console.log('✅ Follow-up response received');
+        console.log('📚 Citations:', conversationRes.citations?.length || 0);
+        console.log('🆕 Used new sources:', conversationRes.used_new_sources);
 
         const assistantMessage: Message = {
           id: generateMessageId(),
@@ -831,6 +853,9 @@ function App() {
           content: conversationRes.answer,
           timestamp: getUserTimestamp(),
           followUpQuestions: conversationRes.follow_up_questions,
+          citations: conversationRes.citations, // Add structured citations
+          uncertaintyNote: conversationRes.uncertainty_note,
+          usedNewSources: conversationRes.used_new_sources,
           isFollowUp: true,
         };
 

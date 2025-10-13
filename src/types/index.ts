@@ -11,6 +11,9 @@ export interface Message {
   protocolData?: ProtocolData;
   searchMetadata?: SearchMetadata;
   followUpQuestions?: FollowUpQuestion[];
+  citations?: CitationSource[]; // Structured citations for conversation responses
+  uncertaintyNote?: string; // Notes about limitations in source data
+  usedNewSources?: boolean; // Whether fresh context was retrieved
   isFollowUp?: boolean; // Indicates if this is a follow-up question to existing protocol
   status?: 'pending' | 'sent' | 'failed' | 'retrying'; // Message delivery status
   retryCount?: number; // Number of retry attempts
@@ -50,6 +53,15 @@ export interface Citation {
   region: string;
   url?: string;
   excerpt: string;
+}
+
+export interface CitationSource {
+  id: number;
+  title: string;
+  organization: string;
+  source_url?: string;
+  excerpt: string;
+  relevance_score?: number;
 }
 
 export interface ProtocolData {

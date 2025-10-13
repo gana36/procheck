@@ -79,7 +79,20 @@ export function detectFollowUp(content: string, messages: Message[]): FollowUpAn
   const overlap = [...protocolWords].filter(w => contentWords.has(w)).length;
   const topicSimilarity = protocolWords.size > 0 ? overlap / protocolWords.size : 0;
 
-  // Decision logic
+  // CRITICAL: Check if this is a completely different medical topic
+  // e.g., asking about "heart attack" when discussing "dengue"
+  const contextChanged = hasProtocolContextChanged(content, lastProtocol);
+  if (contextChanged) {
+    console.log(`🔄 Topic change detected: "${content}" is different from "${lastProtocol.title}"`);
+    return {
+      isFollowUp: false,
+      lastProtocol,
+      confidence: 0.95,
+      reason: 'Different medical topic detected (topic change)'
+    };
+  }
+
+  // Decision logic (only if topic hasn't changed)
   if (hasFollowUpKeyword && isShortQuestion) {
     return {
       isFollowUp: true,

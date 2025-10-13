@@ -1,7 +1,9 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import ChatMessage from './ChatMessage';
+import DateSeparator from './DateSeparator';
 import TypingIndicator from './TypingIndicator';
 import { Message } from '@/types';
+import { isSameDay, formatMessageDate } from '@/lib/date-utils';
 
 interface ChatMessageListProps {
   messages: Message[];
@@ -22,24 +24,46 @@ const ChatMessageList = memo(({
   onRetryMessage,
   isSavedProtocolMessage,
 }: ChatMessageListProps) => {
+  // Group messages with date separators
+  const messageElements = useMemo(() => {
+    const elements: JSX.Element[] = [];
+    
+    messages.forEach((message, index) => {
+      // Add date separator if this is the first message or date changed
+      const shouldShowDate = index === 0 || !isSameDay(messages[index - 1].timestamp, message.timestamp);
+      
+      if (shouldShowDate) {
+        elements.push(
+          <DateSeparator 
+            key={`date-${message.timestamp}`}
+            label={formatMessageDate(message.timestamp)}
+          />
+        );
+      }
+
+      // Add message
+      const isFirstUserMessage = message.type === 'user' && index === 0;
+      elements.push(
+        <div key={message.id}>
+          <ChatMessage
+            message={message}
+            onSaveToggle={() => onSaveToggle(message)}
+            onProtocolUpdate={onProtocolUpdate}
+            onFollowUpClick={onFollowUpClick}
+            onRetryMessage={onRetryMessage}
+            isFirstUserMessage={isFirstUserMessage}
+            isProtocolAlreadySaved={isSavedProtocolMessage(message)}
+          />
+        </div>
+      );
+    });
+
+    return elements;
+  }, [messages, onSaveToggle, onProtocolUpdate, onFollowUpClick, onRetryMessage, isSavedProtocolMessage]);
+
   return (
     <>
-      {messages.map((message, index) => {
-        const isFirstUserMessage = message.type === 'user' && index === 0;
-        return (
-          <div key={message.id}>
-            <ChatMessage
-              message={message}
-              onSaveToggle={() => onSaveToggle(message)}
-              onProtocolUpdate={onProtocolUpdate}
-              onFollowUpClick={onFollowUpClick}
-              onRetryMessage={onRetryMessage}
-              isFirstUserMessage={isFirstUserMessage}
-              isProtocolAlreadySaved={isSavedProtocolMessage(message)}
-            />
-          </div>
-        );
-      })}
+      {messageElements}
       {isLoading && <TypingIndicator />}
     </>
   );
