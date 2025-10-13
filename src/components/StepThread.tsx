@@ -16,19 +16,16 @@ const MAX_INPUT_LENGTH = 1000; // Maximum characters for step thread input
 export default function StepThread({ messages, onSendMessage, isLoading }: StepThreadProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const lastMessageRef = useRef<HTMLDivElement>(null);
   const threadContainerRef = useRef<HTMLDivElement>(null);
   const lastScrollMessageCountRef = useRef(0);
   const remainingChars = MAX_INPUT_LENGTH - input.length;
 
-  // Auto-scroll to START of thread when messages change (not to last message)
+  // Auto-scroll to bottom when messages change
   useEffect(() => {
-    // Only scroll when we have new messages AND we haven't already scrolled for this message count
     if (messages.length > 0 && 
         threadContainerRef.current && 
         messages.length > lastScrollMessageCountRef.current) {
-      // Scroll to START of thread container, not to last message
-      threadContainerRef.current.scrollTop = 0;
+      threadContainerRef.current.scrollTop = threadContainerRef.current.scrollHeight;
       lastScrollMessageCountRef.current = messages.length;
     }
   }, [messages, isLoading]);
@@ -54,12 +51,10 @@ export default function StepThread({ messages, onSendMessage, isLoading }: StepT
             Ask questions about this specific step...
           </p>
         ) : (
-          messages.map((msg, index) => {
-            const isLastMessage = index === messages.length - 1;
+          messages.map((msg) => {
             return (
               <div
                 key={msg.id}
-                ref={isLastMessage ? lastMessageRef : null}
                 className={`text-sm p-3 rounded-lg ${
                   msg.type === 'user'
                     ? 'bg-blue-50 text-blue-900 ml-4 border border-blue-100'

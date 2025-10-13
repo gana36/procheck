@@ -479,20 +479,9 @@ export function ChatProvider({ children, userId, onSendMessageHandler }: ChatPro
   }, []);
 
   const closeAllTabs = useCallback(async () => {
-    // Save all tabs before closing
-    if (userId) {
-      for (const tab of state.tabs) {
-        if (tab.type === 'chat' && tab.messages.length > 0) {
-          const lastUserMessage = [...tab.messages].reverse().find(m => m.type === 'user');
-          if (lastUserMessage) {
-            await saveCurrentConversation(tab.messages as EnhancedMessage[], lastUserMessage.content);
-          }
-        }
-      }
-    }
-
+    // No need to save - tabs are auto-saved on switch/close/message updates
     dispatch({ type: 'CLOSE_ALL_TABS' });
-  }, [state.tabs, userId]);
+  }, []);
 
   // Message management functions
   const addMessage = useCallback((tabId: string, message: EnhancedMessage) => {

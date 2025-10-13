@@ -8,8 +8,7 @@ import { Menu, X, LogOut, UserX, FileText, Plus, PanelLeftClose, PanelLeftOpen }
 import LandingScreen from '@/components/LandingScreen';
 import Sidebar from '@/components/Sidebar';
 import ChatInput from '@/components/ChatInput';
-import ChatMessage from '@/components/ChatMessage';
-import TypingIndicator from '@/components/TypingIndicator';
+import ChatContainer from '@/components/ChatContainer';
 import ProtocolTabs from '@/components/ProtocolTabs';
 import LoginPage from '@/components/auth/LoginPage';
 import SignupPage from '@/components/auth/SignupPage';
@@ -250,7 +249,6 @@ function App() {
     dangerous?: boolean;
   } | null>(null);
   const [savedProtocolsRefreshTrigger, setSavedProtocolsRefreshTrigger] = useState(0);
-  const [showScrollButton, setShowScrollButton] = useState(false);
   const [searchFilter, setSearchFilter] = useState<'all' | 'global' | 'user'>('all');
   const [showProtocolPreview, setShowProtocolPreview] = useState(false);
   const [previewProtocols, setPreviewProtocols] = useState<any[]>([]);
@@ -297,10 +295,6 @@ function App() {
     protocols?: any[];
     timestamp: number;
   }>>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messageCountRef = useRef(0);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
-  const lastAssistantMessageRef = useRef<HTMLDivElement>(null);
   const isThreadInteractionRef = useRef(false);
 
   // Cache for loaded conversations to prevent redundant fetches with LRU eviction
@@ -333,39 +327,6 @@ function App() {
   
   // Abort controller for managing in-flight requests
   const abortControllerRef = useRef<AbortController | null>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const scrollToLastAssistant = () => {
-    console.log('scrollToLastAssistant called, lastAssistantMessageRef:', !!lastAssistantMessageRef.current);
-    // Scroll to START of last assistant message, not to bottom
-    if (lastAssistantMessageRef.current) {
-      console.log('Scrolling to last assistant message');
-      // Check if this is a protocol message
-      const hasProtocol = lastAssistantMessageRef.current.querySelector('[data-protocol-card]');
-      console.log('Last assistant message has protocol:', !!hasProtocol);
-      lastAssistantMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  };
-
-  const scrollCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    // Throttle scroll checks to prevent excessive re-renders
-    if (scrollCheckTimeoutRef.current) return;
-    
-    scrollCheckTimeoutRef.current = setTimeout(() => {
-      const target = e.currentTarget;
-      // FIX: Check if target and its properties exist before accessing
-      if (target && target.scrollHeight !== null && target.scrollTop !== null && target.clientHeight !== null) {
-        const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 100;
-        setShowScrollButton(!isAtBottom);
-      }
-      scrollCheckTimeoutRef.current = null;
-    }, 150);
-  };
 
   const handleStartSearch = () => {
     if (currentUser) {
@@ -803,33 +764,6 @@ function App() {
     }
   }, [activeTabId]);
 
-  // Scroll effect - placed after tab helpers to avoid dependency issues
-  useEffect(() => {
-    console.log('Messages useEffect triggered:', {
-      messagesLength: messages.length,
-      messageCountRef: messageCountRef.current,
-      isThreadInteraction: isThreadInteractionRef.current
-    });
-    
-    // CRITICAL: If this is a thread interaction, NEVER scroll
-    if (isThreadInteractionRef.current) {
-      console.log('Thread interaction detected - NOT scrolling');
-      isThreadInteractionRef.current = false;
-      return; // Exit early - don't scroll at all
-    }
-    
-    // Only scroll when new messages are added, not when existing messages are updated
-    if (messages.length > messageCountRef.current) {
-      console.log('New message detected - scrolling to last assistant');
-      // Scroll to START of new assistant message instead of bottom
-      setTimeout(() => {
-        scrollToLastAssistant();
-      }, 100);
-      messageCountRef.current = messages.length;
-    } else {
-      console.log('No scroll condition met');
-    }
-  }, [messages]);
 
   const handleSendMessage = async (content: string, skipDialogCheck: boolean = false) => {
     // Get current messages before any state changes
@@ -1334,21 +1268,10 @@ CITATION REQUIREMENT:
     setShowCloseAllDialog(true);
   }, []);
 
-  const confirmCloseAllTabs = useCallback(async () => {
+  const confirmCloseAllTabs = useCallback(() => {
     setShowCloseAllDialog(false);
     
-    // Save all tabs before closing
-    if (userId) {
-      for (const tab of tabs) {
-        if (tab.type === 'chat' && tab.messages.length > 0) {
-          const lastUserMessage = [...tab.messages].reverse().find(m => m.type === 'user');
-          if (lastUserMessage) {
-            await saveCurrentConversation(tab.messages, lastUserMessage.content);
-          }
-        }
-      }
-    }
-
+    // No need to save - tabs are auto-saved on switch/close/message updates
     // Reset to a single empty tab
     const defaultTab: ConversationTab = {
       id: generateTabId(),
@@ -1361,7 +1284,7 @@ CITATION REQUIREMENT:
     
     setTabs([defaultTab]);
     setActiveTabId(defaultTab.id);
-  }, [tabs, userId]);
+  }, []);
 
   const handleRecentSearch = useCallback(async (conversationId: string) => {
     if (!userId) return;
@@ -1427,8 +1350,6 @@ CITATION REQUIREMENT:
           protocolData: msg.protocol_data,
         }));
 
-        // Prevent auto-scroll by temporarily increasing message count
-        messageCountRef.current = loadedMessages.length;
         // Cache the loaded conversation with LRU eviction
         addToCache(conversationId, loadedMessages);
         // Update new tab with loaded messages
@@ -1445,13 +1366,6 @@ CITATION REQUIREMENT:
               : tab
           )
         );
-        
-        // Scroll to top after a brief delay
-        setTimeout(() => {
-          if (chatContainerRef.current) {
-            chatContainerRef.current.scrollTop = 0;
-          }
-        }, 100);
       }
     } catch (error) {
       console.error('Failed to load conversation:', error);
@@ -2305,12 +2219,19 @@ CITATION REQUIREMENT:
           onCloseAll={handleCloseAllTabs}
         />
 
-        <div
-          ref={chatContainerRef}
-          className="flex-1 overflow-y-auto p-4 space-y-4 relative"
-          onScroll={handleScroll}
-          key={`content-${showProtocolPreview}-${Date.now()}`}
-        >
+        {activeTab?.type === 'chat' ? (
+          <ChatContainer
+            messages={messages}
+            isLoading={isLoading}
+            isThreadInteraction={isThreadInteractionRef.current}
+            onSaveToggle={handleSaveToggle}
+            onProtocolUpdate={handleProtocolUpdate}
+            onFollowUpClick={handleFollowUpClick}
+            onRetryMessage={handleRetryMessage}
+            isSavedProtocolMessage={isSavedProtocolMessage}
+          />
+        ) : (
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 relative" key={`content-${activeTabId}`}>
           {/* User Protocol Index View - REMOVED - Now using tab system */}
           {false && (
             <div className="max-w-4xl mx-auto">
@@ -3193,123 +3114,73 @@ CITATION REQUIREMENT:
             </div>
           )}
 
-          {!showProtocolPreview && activeTab?.type === 'chat' && messages.length === 0 && (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <div className="text-6xl mb-4">🏥</div>
-                <h2 className="text-2xl font-semibold text-slate-900 mb-2">
-                  Welcome to ProCheck
-                </h2>
-                <p className="text-slate-600 max-w-md">
-                  Ask me about any medical protocol and I'll provide you with
-                  comprehensive, clinically cited guidelines.
-                </p>
-              </div>
-            </div>
-          )}
-          {activeTab?.type === 'chat' && (
-            <>
-              {messages.map((message, index) => {
-                const isLastAssistant = message.type === 'assistant' && index === messages.length - 1;
-                const isFirstUserMessage = message.type === 'user' && index === 0;
-                return (
-                  <div
-                    key={message.id}
-                    ref={isLastAssistant ? lastAssistantMessageRef : null}
-                  >
-                    <ChatMessage
-                      message={message}
-                      onSaveToggle={handleSaveToggle}
-                      onProtocolUpdate={handleProtocolUpdate}
-                      onFollowUpClick={handleFollowUpClick}
-                      onRetryMessage={handleRetryMessage}
-                      isFirstUserMessage={isFirstUserMessage}
-                      isProtocolAlreadySaved={isSavedProtocolMessage(message)}
-                    />
-                  </div>
-                );
-              })}
-              {isLoading && <TypingIndicator />}
-            </>
-          )}
-          <div ref={messagesEndRef} />
-          
-          {/* Scroll to Bottom Button */}
-          {showScrollButton && (
-            <button
-              onClick={scrollToBottom}
-              className="fixed bottom-24 right-8 bg-slate-700 hover:bg-slate-800 text-white rounded-full p-3 shadow-lg transition-all z-10 flex items-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-              </svg>
-              <span className="text-sm font-medium">Scroll to Bottom</span>
-            </button>
-          )}
 
-          {/* Notification Panel */}
-          {notifications.length > 0 && (
-            <div className="fixed top-20 right-8 space-y-3 z-50 max-w-sm">
-              {notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  className="bg-white border border-slate-200 rounded-lg shadow-lg p-4 cursor-pointer hover:shadow-xl transition-all"
-                  onClick={() => handleNotificationClick(notification)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-2">
-                        {notification.type === 'upload_ready' ? (
-                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                        ) : (
-                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                        )}
-                        <h3 className="text-sm font-semibold text-slate-900">
-                          {notification.title}
-                        </h3>
-                      </div>
-                      <p className="text-sm text-slate-600 mb-3">
-                        {notification.message}
-                      </p>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          size="sm"
-                          className="bg-teal-600 hover:bg-teal-700 text-white text-xs"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleNotificationClick(notification);
-                          }}
-                        >
-                          {notification.type === 'upload_ready' ? 'View Protocols' : 'View Result'}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-xs text-slate-500 hover:text-slate-700"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeNotification(notification.id);
-                          }}
-                        >
-                          Dismiss
-                        </Button>
-                      </div>
+          </div>
+        )}
+        
+        {/* Notification Panel - outside chat container */}
+        {notifications.length > 0 && (
+          <div className="fixed top-20 right-8 space-y-3 z-50 max-w-sm">
+            {notifications.map((notification) => (
+              <div
+                key={notification.id}
+                className="bg-white border border-slate-200 rounded-lg shadow-lg p-4 cursor-pointer hover:shadow-xl transition-all"
+                onClick={() => handleNotificationClick(notification)}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2 mb-2">
+                      {notification.type === 'upload_ready' ? (
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                      ) : (
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                      )}
+                      <h3 className="text-sm font-semibold text-slate-900">
+                        {notification.title}
+                      </h3>
                     </div>
-                    <button
-                      className="text-slate-400 hover:text-slate-600 ml-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeNotification(notification.id);
-                      }}
-                    >
-                      ×
-                    </button>
+                    <p className="text-sm text-slate-600 mb-3">
+                      {notification.message}
+                    </p>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        size="sm"
+                        className="bg-teal-600 hover:bg-teal-700 text-white text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleNotificationClick(notification);
+                        }}
+                      >
+                        {notification.type === 'upload_ready' ? 'View Protocols' : 'View Result'}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs text-slate-500 hover:text-slate-700"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeNotification(notification.id);
+                        }}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
                   </div>
+                  <button
+                    className="text-slate-400 hover:text-slate-600 ml-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeNotification(notification.id);
+                    }}
+                  >
+                    ×
+                  </button>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
+        
         {!showProtocolPreview && activeTab?.type === 'chat' && (
           <ChatInput
             onSendMessage={handleSendMessage}
