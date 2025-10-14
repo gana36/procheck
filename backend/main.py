@@ -370,13 +370,16 @@ async def protocol_conversation(payload: ProtocolConversationRequest):
             protocol_json=payload.protocol_json,
             citations_list=payload.citations_list,
             filters_json=payload.filters_json,
-            conversation_history=history
+            conversation_history=history,
+            enable_context_search=payload.enable_context_search,
+            user_id=payload.user_id
         )
         
         return ProtocolConversationResponse(
             answer=result.get("answer", ""),
             uncertainty_note=result.get("uncertainty_note"),
             sources=result.get("sources", []),
+            citations=result.get("citations", []),
             used_new_sources=result.get("used_new_sources", False),
             follow_up_questions=[
                 {"text": q["text"], "category": q.get("category")} 

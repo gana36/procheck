@@ -70,17 +70,29 @@ class ProtocolConversationRequest(BaseModel):
     citations_list: List[str]  # Available citations
     filters_json: Optional[Dict[str, Any]] = None  # User filters if any
     conversation_history: Optional[List[ChatMessage]] = []  # Chat history
+    enable_context_search: bool = True  # Whether to search for additional context
+    user_id: Optional[str] = None  # For personalized search
 
 class FollowUpQuestion(BaseModel):
     """Individual follow-up question suggestion"""
     text: str
     category: Optional[str] = None  # e.g., "dosage", "symptoms", "complications"
 
+class CitationSource(BaseModel):
+    """Structured citation source"""
+    id: int
+    title: str
+    organization: str
+    source_url: Optional[str] = None
+    excerpt: str
+    relevance_score: Optional[float] = None
+
 class ProtocolConversationResponse(BaseModel):
     """Response for protocol-level conversation"""
     answer: str
     uncertainty_note: Optional[str] = None
-    sources: List[str] = []  # List of sources used
+    sources: List[str] = []  # Legacy: List of source texts
+    citations: List[CitationSource] = []  # New: Structured citations
     used_new_sources: bool = False  # Whether new retrieval was needed
     follow_up_questions: List[FollowUpQuestion] = []
     updated_protocol: Optional[Dict[str, Any]] = None

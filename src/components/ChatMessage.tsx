@@ -6,8 +6,8 @@ import {
 import { Message } from '@/types';
 import ProtocolCard from './ProtocolCard';
 import MessageStatus from './MessageStatus';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import FormattedMessage from './FormattedMessage';
+import CitationsDropdown from './CitationsDropdown';
 
 interface ChatMessageProps {
   message: Message;
@@ -120,7 +120,7 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, o
 
   if (message.type === 'user') {
     return (
-      <div className={`flex justify-end mb-6 ${isFirstUserMessage ? 'sticky top-0 z-30 bg-slate-50 pb-4 pt-4 border-b border-slate-200 shadow-sm' : ''}`}>
+      <div data-message-id={message.id} className={`flex justify-end mb-6 ${isFirstUserMessage ? 'sticky top-0 z-30 bg-slate-50 pb-4 pt-4 border-b border-slate-200 shadow-sm' : ''}`}>
         <div className="max-w-[75%]">
           <div className="flex items-end justify-end space-x-3">
             <div className="flex flex-col items-end">
@@ -151,7 +151,7 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, o
   const ThemeIcon = theme.icon;
 
   return (
-    <div className="flex justify-start mb-6">
+    <div data-message-id={message.id} className="flex justify-start mb-6 transition-all duration-300 rounded-lg">
       <div className="max-w-[95%] w-full">
         <div className="flex items-start space-x-3">
           <div className="flex-shrink-0 mt-1">
@@ -194,29 +194,26 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, o
                       const IconComponent = theme.icon;
                       return <IconComponent className={`h-5 w-5 ${theme.iconColor} flex-shrink-0 mt-0.5`} />;
                     })()}
-                    <div className="text-sm leading-relaxed text-slate-800 font-medium prose prose-sm prose-slate max-w-none">
-                      <ReactMarkdown 
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          // Style paragraphs
-                          p: ({children}) => <p className="mb-3 last:mb-0 text-slate-800">{children}</p>,
-                          // Style lists
-                          ul: ({children}) => <ul className="list-disc list-inside mb-3 space-y-1 text-slate-700">{children}</ul>,
-                          ol: ({children}) => <ol className="list-decimal list-inside mb-3 space-y-1 text-slate-700">{children}</ol>,
-                          li: ({children}) => <li className="text-slate-700">{children}</li>,
-                          // Style strong/bold - make them stand out more
-                          strong: ({children}) => <strong className="font-bold text-slate-900 bg-yellow-100 px-1 py-0.5 rounded border border-yellow-200">{children}</strong>,
-                          // Style emphasis/italic
-                          em: ({children}) => <em className="italic text-slate-700">{children}</em>,
-                          // Style code
-                          code: ({children}) => <code className="bg-slate-200 px-2 py-1 rounded text-xs font-mono text-slate-800">{children}</code>,
-                        }}
-                      >
-                        {message.content}
-                      </ReactMarkdown>
+                    <div className="text-sm leading-relaxed text-slate-800 font-medium prose prose-sm prose-slate max-w-none flex-1">
+                      <FormattedMessage 
+                        content={message.content}
+                        citations={message.citations}
+                        className=""
+                      />
                     </div>
                   </div>
                 </CardContent>
+                
+                {/* Citations Dropdown - Show if citations exist */}
+                {message.citations && message.citations.length > 0 && (
+                  <CardContent className="pt-0 px-5 pb-5">
+                    <CitationsDropdown
+                      citations={message.citations}
+                      uncertaintyNote={message.uncertaintyNote}
+                      usedNewSources={message.usedNewSources}
+                    />
+                  </CardContent>
+                )}
               </Card>
             )}
             

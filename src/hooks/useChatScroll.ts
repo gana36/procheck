@@ -105,11 +105,31 @@ export function useChatScroll({ messageCount, isThreadInteraction = false }: Use
     };
   }, [isAtBottom]);
 
+  // Scroll to top
+  const scrollToTop = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    isAutoScrollingRef.current = true;
+    
+    requestAnimationFrame(() => {
+      container.scrollTo({
+        top: 0,
+        behavior,
+      });
+      
+      setTimeout(() => {
+        isAutoScrollingRef.current = false;
+      }, behavior === 'smooth' ? 500 : 0);
+    });
+  }, []);
+
   return {
     containerRef,
     messagesEndRef,
     showScrollButton,
     scrollToBottom,
+    scrollToTop,
     handleScroll,
   };
 }

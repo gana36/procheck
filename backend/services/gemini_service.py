@@ -16,8 +16,8 @@ def _ensure_client():
     _model = genai.GenerativeModel(
         model_name=settings.GEMINI_MODEL,
         generation_config={
-            "max_output_tokens": 2048,
-            "temperature": 0.7,
+            "max_output_tokens": 4096,  # Increased for detailed protocols
+            "temperature": 0.3,  # Lower for more consistent structured output
             "top_p": 0.95,
             "top_k": 40,
         },
@@ -49,6 +49,55 @@ def _extract_text(response: Any) -> str:
     except Exception:
         pass
     return ""
+
+
+def _validate_protocol_response(data: Dict[str, Any]) -> tuple[bool, str]:
+    """
+    Validate that a protocol response has complete data.
+    Returns (is_valid, reason_if_invalid)
+    """
+    if not isinstance(data, dict):
+        return False, "Response is not a dictionary"
+    
+    checklist = data.get("checklist", [])
+    if not checklist:
+        return False, "Checklist is empty"
+    
+    citations = data.get("citations", [])
+    
+    # Count incomplete steps
+    incomplete_steps = 0
+    missing_explanations = 0
+    missing_citations = 0
+    
+    for item in checklist:
+        if not isinstance(item, dict):
+            incomplete_steps += 1
+            continue
+        
+        explanation = item.get("explanation", "").strip()
+        citation = item.get("citation", 0)
+        
+        if not explanation or len(explanation) < 10:
+            missing_explanations += 1
+        
+        if citation == 0:
+            missing_citations += 1
+    
+    total_steps = len(checklist)
+    
+    # If more than 50% of steps are incomplete, reject
+    if missing_explanations > total_steps * 0.5:
+        return False, f"{missing_explanations}/{total_steps} steps missing explanations"
+    
+    if missing_citations > total_steps * 0.5:
+        return False, f"{missing_citations}/{total_steps} steps missing citations"
+    
+    # Check if citations array is empty
+    if not citations or len(citations) == 0:
+        return False, "Citations array is empty"
+    
+    return True, ""
 
 
 def _clean_checklist_step(text: str) -> str:
@@ -138,224 +187,175 @@ def summarize_checklist(title: str, context_snippets: List[str], instructions: s
     # Classify query intent for smart templating
     intent = classify_query_intent(title)
     
-    # Base instructions - STRICT SOURCE-BASED GENERATION
+    # Concise instructions - STRICT SOURCE-BASED GENERATION
     base_instructions = [
-        "You are a medical AI assistant. Your ONLY job is to extract information from the provided sources below.",
+        "Extract a medical protocol from the provided sources. Use ONLY information in the [Source N] snippets.",
         "",
-        "⚠️ CRITICAL RULES - VIOLATING THESE IS UNACCEPTABLE:",
-        "1. ONLY use information EXPLICITLY stated in the [Source N] snippets below",
-        "2. DO NOT add any information from your general knowledge",
-        "3. DO NOT make assumptions or extrapolate beyond what the sources say",
-        "4. If the sources don't contain information about the query, create fewer steps (3-4 is fine)",
-        "5. Every single fact MUST come from the provided sources",
+        "⚠️ CRITICAL RULES:",
+        "1. ONLY use information EXPLICITLY in sources below",
+        "2. EVERY step needs: 'text' (action), 'explanation' (2-3 sentences), 'citation' (1-6)",
+        "3. NO empty explanations, NO citation=0, NO made-up content",
         "",
-        "RESPONSE FORMAT:",
-        "1. Each step has TWO parts:",
-        "   - 'text': Short action (under 15 words) extracted from sources",
-        "   - 'explanation': Detailed how-to (2-3 sentences) extracted from sources",
-        "2. REPHRASE in your own words but DON'T add new information",
-        "3. EXTRACT the citation number from [Source N] tags",
-        "4. ONLY include information DIRECTLY related to the query '{title}'",
+        "OUTPUT FORMAT (JSON only, no markdown):",
+        '{"title": "X", "checklist": [{"step": 1, "text": "Brief action", "explanation": "Detailed how-to from source", "citation": 1}], "citations": ["Source 1 text", "Source 2 text"]}',
         "",
-        "EXAMPLE:",
-        "BAD: \"Dengue symptoms include high fever 39-40°C, severe headache...\"",
-        "GOOD:",
-        '{',
-        '  "text": "Monitor fever and headache",',
-        '  "explanation": "Check patient temperature regularly. Dengue typically causes high fever (39-40°C) along with severe frontal headache and pain behind the eyes. Document fever patterns and intensity.",',
-        '  "citation": 1',
-        '}',
-        "",
-        "Output format:",
-        '{"title": "X", "checklist": [{"step": 1, "text": "action", "explanation": "how to do it", "citation": 1}], "citations": []}',
-        "",
-        "NO markdown, NO code blocks, ONLY the JSON object.",
+        "EXAMPLE STEP:",
+        '{"step": 1, "text": "Monitor fever and headache", "explanation": "Check temperature regularly. Dengue causes high fever (39-40°C) with severe frontal headache. Document patterns.", "citation": 1}',
     ]
     
-    # Intent-specific templates
-    if intent == 'emergency':
-        prompt_parts = base_instructions + [
-            "",
-            "⚠️ EMERGENCY PROTOCOL FORMAT:",
-            "- Start with IMMEDIATE ACTIONS (call 911, position patient, etc.)",
-            "- Include critical warning signs to watch for",
-            "- Each step: urgent, clear command (e.g., 'Call emergency services immediately')",
-            "- Add severity indicators where relevant",
-            "- Keep steps SHORT (max 20 words) and ACTIONABLE",
-        ]
-    elif intent == 'symptoms':
-        prompt_parts = base_instructions + [
-            "",
-            "📋 SYMPTOMS GUIDE FORMAT:",
-            "- Start with EARLY symptoms and timeline (e.g., 'Within 2-5 days: fever, headache')",
-            "- Progress to LATER symptoms if applicable",
-            "- Include severity levels (mild/moderate/severe) where relevant",
-            "- Mention WHEN to seek medical attention",
-            "- Group related symptoms together",
-        ]
-    elif intent == 'treatment':
-        prompt_parts = base_instructions + [
-            "",
-            "💊 TREATMENT PROTOCOL FORMAT:",
-            "- Start with FIRST-LINE interventions",
-            "- Include specific actions (e.g., 'Administer paracetamol 500mg every 6 hours')",
-            "- Progress logically through treatment steps",
-            "- Mention monitoring requirements",
-            "- Each step: specific, actionable medical instruction",
-        ]
-    elif intent == 'diagnosis':
-        prompt_parts = base_instructions + [
-            "",
-            "🔬 DIAGNOSTIC APPROACH FORMAT:",
-            "- Start with CLINICAL ASSESSMENT (history, examination)",
-            "- List KEY diagnostic criteria or tests",
-            "- Include differential diagnoses if relevant",
-            "- Mention specific test values or findings",
-            "- Each step: diagnostic action or criterion",
-        ]
-    elif intent == 'prevention':
-        prompt_parts = base_instructions + [
-            "",
-            "🛡️ PREVENTION GUIDE FORMAT:",
-            "- Start with PRIMARY prevention measures",
-            "- Include practical, actionable steps (e.g., 'Use mosquito repellent containing DEET')",
-            "- Prioritize most effective interventions first",
-            "- Mention risk factors to avoid",
-            "- Each step: preventive action",
-        ]
-    else:  # general
-        prompt_parts = base_instructions + [
-            "",
-            "📌 GENERAL PROTOCOL FORMAT:",
-            "- Synthesize key information from context",
-            "- Each step: clear, actionable medical point",
-            "- Organize logically (assessment → intervention → follow-up)",
-            "- Keep steps concise (max 20 words)",
-            "- Focus on practical clinical guidance",
-        ]
+    # Intent-specific templates (concise)
+    intent_hints = {
+        'emergency': "Start with immediate actions (call 911, etc.). Keep steps urgent and short.",
+        'symptoms': "List symptoms chronologically. Include severity levels and when to seek help.",
+        'treatment': "Start with first-line treatments. Include specific dosages/instructions.",
+        'diagnosis': "Clinical assessment → diagnostic tests → criteria. Be specific.",
+        'prevention': "Primary prevention first. Practical, actionable steps.",
+        'general': "Logical flow: assessment → intervention → follow-up. Stay concise."
+    }
     
-    prompt_parts.extend([
+    prompt_parts = base_instructions + [
         "",
-        "SYNTHESIS REQUIREMENTS:",
-        "- DO NOT copy numbered lists from context (e.g., '1. Assess... 2. Order...')",
-        "- REPHRASE and CONDENSE information in your own words",
-        "- Each step should be ONE clear action (max 15 words)",
-        "- COMBINE related information from multiple sources",
-        "- Remove redundancy and wordiness",
+        f"HINT: {intent_hints.get(intent, intent_hints['general'])}",
         "",
-        "CITATION REQUIREMENTS:",
-        "- Each step MUST have a 'citation' field (1, 2, 3...)",
-        "- Extract source number from [Source N] in context",
-        "- If synthesizing multiple sources, cite the primary one",
-        "",
-        "⛔ ABSOLUTE FILTERING RULES:",
-        "- If a source discusses a DIFFERENT disease/condition, SKIP IT ENTIRELY",
-        "- Example: Query is 'dengue treatment', source mentions COVID-19 → IGNORE that source",
-        "- ONLY extract information that DIRECTLY answers the query: {title}",
-        "- DO NOT include general medical advice not in the sources",
-        "- DO NOT add safety warnings unless they're in the sources",
-        "- Better to have 3-4 accurate steps from sources than 10 steps with made-up content",
-        "",
-        "✅ VALIDATION CHECKLIST:",
-        "Before including any step, ask yourself:",
-        "- Is this EXACTLY from one of the [Source N] snippets? ✓",
-        "- Does this DIRECTLY relate to '{title}'? ✓",
-        "- Did I cite the correct [Source N]? ✓",
-        "- Did I avoid adding my own medical knowledge? ✓",
-    ])
+        "⛔ FILTERS:",
+        "- Skip sources about DIFFERENT conditions",
+        "- Only info DIRECTLY related to: {title}",
+        "- 3-4 accurate steps better than 10 with made-up content",
+    ]
     
+    prompt_parts.append("")
+    prompt_parts.append(f"━━━ QUERY: {title}")
     if region:
-        prompt_parts.append(f"Region: {region}.")
+        prompt_parts.append(f"Region: {region}")
     if year:
-        prompt_parts.append(f"Year: {year}.")
+        prompt_parts.append(f"Year: {year}")
     if instructions:
-        prompt_parts.append(f"Instructions: {instructions}")
-
+        prompt_parts.append(f"Note: {instructions}")
     prompt_parts.append("")
-    prompt_parts.append("="*80)
-    prompt_parts.append(f"QUERY: {title}")
-    prompt_parts.append("="*80)
-    prompt_parts.append("")
-    prompt_parts.append("🔍 AVAILABLE SOURCES (These are your ONLY source of truth):")
-    prompt_parts.append("Each source is labeled [Source N]. You MUST cite the source number.")
-    prompt_parts.append("")
+    prompt_parts.append("━━━ SOURCES (cite as [Source N]):")
     
-    # Add sources with clear separation
+    # Add sources
     for i, snippet in enumerate(context_snippets[:6], 1):
-        prompt_parts.append(f"━━━ SOURCE [{i}] ━━━")
-        prompt_parts.append(snippet)
+        prompt_parts.append(f"[Source {i}] {snippet}")
         prompt_parts.append("")
-    
-    prompt_parts.append("="*80)
-    prompt_parts.append("⚠️ REMINDER: Use ONLY the information above. Do NOT add external knowledge.")
-    prompt_parts.append(f"⚠️ REMINDER: Only include steps relevant to: {title}")
-    prompt_parts.append("="*80)
 
     prompt = "\n".join(prompt_parts)
     
-    response = _model.generate_content(prompt)
-    text = _extract_text(response)
-
     import json
-    if text:
-        # Try to parse JSON, fixing common issues
+    
+    # Retry up to 2 times for incomplete responses
+    max_retries = 2
+    last_error = None
+    
+    for attempt in range(max_retries):
         try:
-            # Remove markdown code blocks if present
-            cleaned_text = text.strip()
-            if cleaned_text.startswith("```json"):
-                cleaned_text = cleaned_text[7:]
-            if cleaned_text.startswith("```"):
-                cleaned_text = cleaned_text[3:]
-            if cleaned_text.endswith("```"):
-                cleaned_text = cleaned_text[:-3]
-            cleaned_text = cleaned_text.strip()
+            response = _model.generate_content(prompt)
+            text = _extract_text(response)
             
-            # Try to fix incomplete JSON by adding closing braces
-            if not cleaned_text.endswith("}"):
-                # Count opening vs closing braces
-                open_braces = cleaned_text.count("{")
-                close_braces = cleaned_text.count("}")
-                if open_braces > close_braces:
-                    # Add missing closing braces
-                    cleaned_text += "]}" * (open_braces - close_braces)
+            if not text:
+                last_error = "Empty response from model"
+                continue
             
-            data = json.loads(cleaned_text)
-            out_title = str(data.get("title", title)).strip() or title
-            raw_items = data.get("checklist", [])
-            checklist: List[Dict[str, Any]] = []
-            
-            for idx, item in enumerate(raw_items, start=1):
-                if isinstance(item, dict):
-                    step_num = int(item.get("step", idx))
-                    step_text = _clean_checklist_step(item.get("text", ""))
-                    explanation = item.get("explanation", "")
-                    citation = item.get("citation", 0)  # Get citation number
-                else:
-                    step_num = idx
-                    step_text = _clean_checklist_step(str(item))
-                    explanation = ""
-                    citation = 0
+            # Try to parse JSON, fixing common issues
+            try:
+                # Remove markdown code blocks if present
+                cleaned_text = text.strip()
+                if cleaned_text.startswith("```json"):
+                    cleaned_text = cleaned_text[7:]
+                if cleaned_text.startswith("```"):
+                    cleaned_text = cleaned_text[3:]
+                if cleaned_text.endswith("```"):
+                    cleaned_text = cleaned_text[:-3]
+                cleaned_text = cleaned_text.strip()
                 
-                if step_text and len(step_text) > 3:  # Only include meaningful steps
-                    checklist.append({
-                        "step": step_num, 
-                        "text": step_text,
-                        "explanation": explanation,
-                        "citation": citation if isinstance(citation, int) else 0
-                    })
-            
-            citations = data.get("citations", [])
-            if not isinstance(citations, list):
-                citations = []
-            citations = [str(c).strip() for c in citations if str(c).strip()]
-            
-            return {
-                "title": out_title,
-                "checklist": checklist,
-                "citations": citations,
-            }
+                # Try to fix incomplete JSON by adding closing braces
+                if not cleaned_text.endswith("}"):
+                    # Count opening vs closing braces
+                    open_braces = cleaned_text.count("{")
+                    close_braces = cleaned_text.count("}")
+                    if open_braces > close_braces:
+                        # Add missing closing braces
+                        cleaned_text += "]}" * (open_braces - close_braces)
+                
+                data = json.loads(cleaned_text)
+                
+                # Validate the response quality
+                is_valid, validation_msg = _validate_protocol_response(data)
+                
+                if not is_valid:
+                    last_error = f"Incomplete response: {validation_msg}"
+                    print(f"⚠️ Attempt {attempt + 1}/{max_retries}: {last_error}")
+                    print(f"📊 Protocol title: '{title}'")
+                    print(f"📊 Steps in response: {len(data.get('checklist', []))}")
+                    print(f"📊 Citations in response: {len(data.get('citations', []))}")
+                    
+                    if attempt < max_retries - 1:
+                        # Add stronger reminder to the prompt for retry
+                        prompt += "\n\n⚠️⚠️⚠️ CRITICAL: Previous response was incomplete. You MUST include:\n"
+                        prompt += "1. 'explanation' field (2-3 sentences) for EVERY step\n"
+                        prompt += "2. 'citation' field (1, 2, 3...) for EVERY step\n"
+                        prompt += "3. 'citations' array with full source text\n"
+                        prompt += "DO NOT leave these fields empty!\n"
+                        print(f"🔄 Retrying with enhanced prompt...")
+                        continue
+                    # On last attempt, accept but log warning
+                    print(f"⚠️ WARNING: Using incomplete response after {max_retries} attempts: {validation_msg}")
+                    print(f"⚠️ This is the issue reported by the user - protocol has empty explanations/citations")
+                
+                # Parse and clean the data
+                out_title = str(data.get("title", title)).strip() or title
+                raw_items = data.get("checklist", [])
+                checklist: List[Dict[str, Any]] = []
+                
+                for idx, item in enumerate(raw_items, start=1):
+                    if isinstance(item, dict):
+                        step_num = int(item.get("step", idx))
+                        step_text = _clean_checklist_step(item.get("text", ""))
+                        explanation = item.get("explanation", "").strip()
+                        citation = item.get("citation", 0)  # Get citation number
+                    else:
+                        step_num = idx
+                        step_text = _clean_checklist_step(str(item))
+                        explanation = ""
+                        citation = 0
+                    
+                    if step_text and len(step_text) > 3:  # Only include meaningful steps
+                        checklist.append({
+                            "step": step_num, 
+                            "text": step_text,
+                            "explanation": explanation,
+                            "citation": citation if isinstance(citation, int) else 0
+                        })
+                
+                citations = data.get("citations", [])
+                if not isinstance(citations, list):
+                    citations = []
+                citations = [str(c).strip() for c in citations if str(c).strip()]
+                
+                result = {
+                    "title": out_title,
+                    "checklist": checklist,
+                    "citations": citations,
+                }
+                
+                print(f"✅ Successfully generated protocol (attempt {attempt + 1}/{max_retries})")
+                return result
+                
+            except json.JSONDecodeError as e:
+                last_error = f"JSON parse error: {str(e)}"
+                print(f"⚠️ Attempt {attempt + 1}/{max_retries}: {last_error}")
+                if attempt < max_retries - 1:
+                    continue
+                # Fall through to fallback
+                
         except Exception as e:
-            pass  # Silently continue to fallback
+            last_error = str(e)
+            print(f"⚠️ Attempt {attempt + 1}/{max_retries} failed: {last_error}")
+            if attempt < max_retries - 1:
+                continue
+            # Fall through to fallback
+    
+    print(f"❌ All {max_retries} attempts failed. Last error: {last_error}. Using fallback.")
 
     # Fallback: create concise steps from context
     fallback_steps = []
@@ -505,10 +505,19 @@ def _analyze_question_type(message: str, protocol_title: str) -> Dict[str, Any]:
     message_words = set(message_lower.split())
     topic_overlap = len(protocol_words & message_words) / len(protocol_words) if protocol_words else 0
     
+    # Special cases for follow-up questions
+    is_clarification = any(word in message_lower for word in [
+        'differentiate', 'explain', 'clarify', 'detail', 'specific', 'more about',
+        'tell me', 'what about', 'how do', 'mild', 'severe', 'compare'
+    ])
+    
+    # Very permissive for follow-ups: assume related unless obviously different disease
+    is_related = topic_overlap > 0.2 or len(message) < 120 or is_clarification or detected_categories
+    
     return {
         'categories': detected_categories,
         'primary_category': detected_categories[0] if detected_categories else 'general',
-        'is_related_topic': topic_overlap > 0.3 or len(message) < 100,  # Short questions usually related
+        'is_related_topic': is_related,
         'topic_overlap': topic_overlap
     }
 
@@ -604,14 +613,129 @@ def protocol_conversation_chat(
     protocol_json: Dict[str, Any],
     citations_list: List[str],
     filters_json: Optional[Dict[str, Any]] = None,
-    conversation_history: Optional[List[Dict[str, str]]] = None
+    conversation_history: Optional[List[Dict[str, str]]] = None,
+    enable_context_search: bool = True,
+    user_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Handle protocol-level conversational chat.
-    Users can ask follow-up questions about the entire protocol/concept.
-    Enhanced with intelligent context detection and smart follow-up generation.
+    Handle protocol-level conversational chat with optional context search.
+    
+    Args:
+        message: User's follow-up question
+        concept_title: Main protocol/concept title
+        protocol_json: Current protocol data
+        citations_list: Existing protocol citations
+        filters_json: Optional search filters
+        conversation_history: Previous messages
+        enable_context_search: If True, searches for additional context
+        user_id: For personalized search
+    
+    Returns:
+        Dict with answer, citations, sources, follow-up questions
     """
     _ensure_client()
+    
+    # Fresh context search for long conversations
+    additional_sources = []
+    additional_citations = []
+    used_new_sources = False
+    
+    print(f"🔎 protocol_conversation_chat called with enable_context_search={enable_context_search}")
+    
+    if enable_context_search:
+        try:
+            from services.elasticsearch_service import hybrid_search
+            
+            # FULL HYBRID SEARCH for follow-up question
+            # Strategy: ALWAYS combine protocol context + follow-up question
+            # This ensures we get specific info while maintaining topical relevance
+            
+            # Extract key terms from protocol title (remove common words and punctuation)
+            import re
+            # Remove punctuation first, then split
+            cleaned_title = re.sub(r'[^\w\s]', ' ', concept_title.lower())  # Replace with space, not empty
+            protocol_keywords = ' '.join([
+                word for word in cleaned_title.split() 
+                if word and word not in ['what', 'are', 'the', 'of', 'for', 'how', 'to', 'is', 'a', 'an', 'do', 'i']
+            ]).strip()
+            
+            print(f"🔧 Cleaned title: '{concept_title}' → '{cleaned_title}' → keywords: '{protocol_keywords}'")
+            
+            # ENHANCED: Detect comparison/differentiation questions and expand query
+            message_lower = message.lower()
+            is_comparison = any(keyword in message_lower for keyword in [
+                'differentiate', 'difference', 'compare', 'vs', 'versus', 'between'
+            ])
+            
+            # Check if it's specifically about mild vs severe
+            is_mild_severe = ('mild' in message_lower and 'severe' in message_lower)
+            
+            print(f"🔍 Question analysis: comparison={is_comparison}, mild_vs_severe={is_mild_severe}")
+            
+            if is_comparison and is_mild_severe:
+                # For mild vs severe comparison, search for BOTH explicitly
+                search_query = f"{protocol_keywords} mild symptoms treatment OR {protocol_keywords} severe symptoms emergency warning signs"
+                print(f"🔀 Detected MILD VS SEVERE comparison - searching for both severity levels")
+            elif is_comparison:
+                # General comparison - keep question intact
+                search_query = f"{protocol_keywords} {message}"
+                print(f"🔀 Detected comparison question - combined search")
+            else:
+                # Regular follow-up
+                search_query = f"{protocol_keywords} {message}"
+            
+            print(f"🔍 HYBRID SEARCH for follow-up: '{message}'")
+            print(f"📋 Protocol context: '{concept_title}' → keywords: '{protocol_keywords}'")
+            print(f"🎯 Combined search query: '{search_query}'")
+            
+            # Use full hybrid search (semantic + keyword) with more results
+            search_result = hybrid_search(
+                query=search_query,
+                size=8,  # Get more results for better coverage
+                filters=filters_json or {}
+            )
+            
+            if search_result and not search_result.get("error"):
+                hits = search_result.get("hits", {}).get("hits", [])
+                print(f"📊 Hybrid search returned {len(hits)} results")
+                
+                for idx, hit in enumerate(hits[:6], start=len(citations_list) + 1):  # Take top 6
+                    source = hit.get("_source", {})
+                    title = source.get("title", "")
+                    body = source.get("body", "")
+                    organization = source.get("organization", "")
+                    url = source.get("source_url", "")
+                    score = hit.get("_score", 0)
+                    
+                    # Add to additional sources
+                    source_text = f"{title} ({organization}): {body[:300]}"
+                    additional_sources.append(source_text)
+                    
+                    # Add structured citation
+                    additional_citations.append({
+                        "id": idx,
+                        "title": title,
+                        "organization": organization,
+                        "source_url": url,
+                        "excerpt": body[:400],
+                        "relevance_score": score
+                    })
+                
+                if additional_sources:
+                    used_new_sources = True
+                    print(f"✅ Found {len(additional_sources)} additional sources via HYBRID search")
+                    print(f"🎯 Top result: {hits[0].get('_source', {}).get('title', 'N/A')[:60]}...")
+                    # Show all new source titles for debugging
+                    for idx, hit in enumerate(hits[:6], 1):
+                        title = hit.get('_source', {}).get('title', 'N/A')
+                        print(f"   [{idx}] {title}")
+            else:
+                print(f"⚠️ No results from hybrid search")
+        except Exception as e:
+            print(f"⚠️ Hybrid search failed: {e}")
+            import traceback
+            traceback.print_exc()
+            # Continue without additional sources
     
     if conversation_history is None:
         conversation_history = []
@@ -626,6 +750,9 @@ def protocol_conversation_chat(
             f"{msg.get('role', 'user').upper()}: {msg.get('content', '')}"
             for msg in conversation_history[-8:]  # Last 8 messages for context
         ])
+    
+    # Combine all sources FIRST (before using in prompt)
+    all_sources = citations_list + additional_sources if used_new_sources else citations_list
     
     # Format protocol data
     protocol_text = f"Title: {protocol_json.get('title', concept_title)}\n"
@@ -643,12 +770,34 @@ def protocol_conversation_chat(
                 protocol_text += f" [Source {citation}]"
             protocol_text += "\n"
     
-    # Format citations
+    # Format citations - PRIORITIZE new search results for follow-up questions
     citations_text = ""
-    if citations_list:
+    
+    if used_new_sources and additional_sources:
+        # Show NEW sources FIRST and in FULL (for follow-up questions)
+        # Map to actual citation IDs from additional_citations
+        citations_text = "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        citations_text += "🆕 NEW SOURCES (From fresh search - USE THESE FIRST):\n"
+        citations_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        for idx, citation_obj in enumerate(additional_citations):
+            citation_id = citation_obj.get('id', idx + 1)
+            title = citation_obj.get('title', 'Unknown')
+            excerpt = citation_obj.get('excerpt', '')
+            # Show with actual citation ID
+            citations_text += f"\n[{citation_id}] {title}\n{excerpt}\n"
+        
+        # Then show original sources as reference (if any)
+        if citations_list:
+            citations_text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            citations_text += "📚 ORIGINAL PROTOCOL SOURCES (Background context):\n"
+            citations_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            for i, citation in enumerate(citations_list[:3], 1):
+                citations_text += f"[Original {i}] {citation[:150]}...\n"
+    else:
+        # No new sources - just show original
         citations_text = "\nAvailable Sources:\n"
-        for i, citation in enumerate(citations_list[:5], 1):
-            citations_text += f"[Source {i}] {citation[:200]}...\n"
+        for i, citation in enumerate(citations_list[:8], 1):
+            citations_text += f"[Source {i}] {citation[:250]}...\n"
     
     # Format filters if any
     filters_text = ""
@@ -667,134 +816,216 @@ def protocol_conversation_chat(
         'complications': 'Explain risk factors, early warning signs, and prevention strategies.',
         'safety': 'Emphasize contraindications, warning signs, and when to seek help.',
         'procedure': 'Give step-by-step instructions, required materials, and technique tips.',
-        'comparison': 'Compare approaches objectively with evidence-based pros and cons.',
+        'comparison': 'Compare approaches objectively with evidence-based pros and cons. Use side-by-side comparison format.',
         'rationale': 'Explain the medical reasoning, evidence basis, and clinical decision factors.'
     }
     
+    # Detect if this is a comparison question (mild vs severe, etc.)
+    is_comparison_question = any(keyword in message.lower() for keyword in [
+        'differentiate', 'difference', 'compare', 'vs', 'versus', 'between', 'mild vs severe'
+    ])
+    
     category_hint = category_guidance.get(question_category, 'Provide comprehensive, evidence-based information.')
     
-    prompt = f"""You are ProCheck's clinical assistant. Current protocol context: "{concept_title}".
+    # Add special instructions for comparison questions
+    if is_comparison_question:
+        category_hint += "\n\n⚠️ COMPARISON FORMAT REQUIRED:\n"
+        category_hint += "Structure your answer as:\n"
+        category_hint += "**Mild/Early Stage:** [describe from sources] [Source N]\n"
+        category_hint += "**Severe/Advanced Stage:** [describe from sources] [Source N]\n"
+        category_hint += "**Key Differences:** [highlight distinguishing factors] [Source N]"
+    
+    # Simple prompt - lists for everything except tables
+    if is_comparison_question:
+        format_instruction = "Use a markdown TABLE to compare (| Column1 | Column2 |)."
+    else:
+        format_instruction = "Format as a BULLETED LIST using - for each point."
+    
+    prompt = f"""Answer this question about {concept_title}: {message}
 
-🔍 QUESTION ANALYSIS:
-- Category: {question_category}
-- Related to current protocol: {is_related}
-- Topic overlap: {question_analysis['topic_overlap']:.0%}
-
-🎯 RESPONSE STRATEGY:
-{category_hint}
-
-⚠️ CRITICAL INSTRUCTIONS:
-1. The user is asking about "{concept_title}" protocol
-2. You MUST answer using ONLY the Available Sources below
-3. If the question is about a DIFFERENT medical condition → Return ONLY "NEW_SEARCH_NEEDED"
-4. DO NOT add information from your general medical knowledge
-5. If sources don't fully answer the question, say so in the Uncertainty note
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CURRENT PROTOCOL CONTEXT:
-{protocol_text}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-AVAILABLE SOURCES (Your ONLY source of information):
+Available sources:
 {citations_text}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-{f"Recent Conversation:{chr(10)}{history_text}{chr(10)}" if history_text else ""}
+{f"Previous conversation:{chr(10)}{history_text}{chr(10)}" if history_text else ""}
+Answer using information from the sources above. {format_instruction} Use **bold** for key medical terms. Cite sources as [N].
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-USER QUESTION: {message}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Answer:**
+<your answer>
 
-📋 RESPONSE REQUIREMENTS:
+**Follow-up questions:**
+- <question 1>
+- <question 2>
+- <question 3>"""
 
-1. **Topic Check:**
-   - Same/related condition → Normal response
-   - Different condition (e.g., heart attack when discussing dengue) → Return "NEW_SEARCH_NEEDED"
-   - If uncertain → Continue conversation
-
-2. **Formatting (CRITICAL):**
-   - Use **bold** for: medical terms, symptoms, medications, dosages, warnings
-   - Use bullet points (- ) for lists
-   - Use numbered lists (1. 2. 3.) for sequential steps
-   - Cite sources inline: [Source 1], [Source 2]
-   - Keep paragraphs short (2-4 sentences max)
-
-3. **Content Structure (USE ONLY SOURCE INFORMATION):**
-   - Start with direct answer (1-2 sentences) - FROM SOURCES
-   - Provide clinical rationale (why/how) - FROM SOURCES  
-   - Include practical considerations (when/where/how much) - FROM SOURCES
-   - Add safety notes ONLY if they're in the sources
-   - If sources don't cover an aspect, DON'T make it up
-
-4. **Evidence & Uncertainty (MANDATORY):**
-   - EVERY fact must cite a source: [Source N]
-   - If you're using information not from sources → DON'T include it
-   - If sources don't fully answer the question → Add uncertainty note
-   - If sources conflict → Mention both perspectives with citations
-   - Prefer quantitative data from sources (percentages, time frames)
-
-5. **Follow-up Questions:**
-   - Generate 3-5 SMART questions
-   - Avoid repeating the current question topic
-   - Cover unexplored aspects of the protocol
-   - Be specific to "{concept_title}" (not generic)
-   - Categories to consider: dosage, symptoms, timing, complications, safety, procedure
-
-📤 OUTPUT FORMAT:
-
-Answer:
-<2-6 sentences with **bold medical terms**, inline [Source N] citations, proper markdown>
-
-Uncertainty (omit if none):
-<brief note about limited/conflicting evidence>
-
-Sources:
-- [1] <citation details>
-- [2] <citation details>
-
-Suggested follow-ups:
-- <Question about unexplored aspect 1>
-- <Question about unexplored aspect 2>
-- <Question about unexplored aspect 3>
-- <Question about clinical consideration>
-- <Question about practical application>
-
-🎯 EXAMPLE RESPONSE:
-
-Answer:
-**Paracetamol** (acetaminophen) is the recommended antipyretic for **dengue fever**, typically dosed at **500-1000mg every 6 hours** for adults [Source 1]. **Avoid NSAIDs** (aspirin, ibuprofen) as they increase bleeding risk due to platelet dysfunction in dengue [Source 2]. Monitor for **warning signs** such as severe abdominal pain or persistent vomiting, which indicate progression to severe dengue [Source 1].
-
-Sources:
-- [1] WHO Dengue Guidelines 2009
-- [2] CDC Dengue Treatment Recommendations
-
-Suggested follow-ups:
-- What symptoms indicate I need to reduce or stop paracetamol?
-- How long should I continue fever monitoring?
-- What are the early warning signs of dengue hemorrhagic fever?
-- When should platelet counts be checked?
-- What fluid intake is recommended during dengue recovery?
-
-Now provide your response:"""
+    # Debug logging
+    print(f"📝 Prompt: {len(prompt)} chars, {len(all_sources)} sources")
+    if used_new_sources:
+        print(f"🔍 New search: {len(additional_sources)} sources, IDs: {[c.get('id') for c in additional_citations]}")
 
     try:
         response = _model.generate_content(prompt)
         answer_text = _extract_text(response)
         
+        print(f"🤖 AI Response: {answer_text[:200]}..." if len(answer_text) > 200 else f"🤖 AI Response: {answer_text}")
+        
         if not answer_text:
+            print("❌ Empty response from AI - using fallback")
             return _fallback_conversation_response(message, concept_title)
         
-        # Parse the structured response
-        return _parse_conversation_response(answer_text, citations_list)
+        # Parse the structured response directly (NO second AI call)
+        result = _parse_conversation_response(answer_text, all_sources)
+        result["used_new_sources"] = used_new_sources
+        result["citations"] = additional_citations
+        return result
         
     except Exception as e:
+        print(f"❌ Exception in protocol_conversation_chat: {e}")
+        import traceback
+        traceback.print_exc()
         return _fallback_conversation_response(message, concept_title)
+
+
+def _format_response_with_markdown(raw_response: str, question: str, is_comparison: bool) -> str:
+    """
+    Format AI response with proper markdown structure using a second AI call.
+    Ensures tables for comparisons, lists for differences, proper headers, etc.
+    """
+    _ensure_client()
+    
+    question_lower = question.lower()
+    
+    # Detect question type
+    is_comparison_question = is_comparison or any(keyword in question_lower for keyword in [
+        'differentiate', 'difference', 'compare', 'vs', 'versus', 'between'
+    ])
+    is_list_question = any(keyword in question_lower for keyword in [
+        'what are', 'list', 'types', 'kinds', 'categories', 'warning signs', 'symptoms'
+    ])
+    is_how_question = question_lower.startswith('how')
+    
+    # Build formatting instructions based on question type
+    if is_comparison_question:
+        format_instruction = """Format the response as a COMPARISON using this structure:
+
+Use a markdown TABLE for side-by-side comparison (adapt column names based on what's being compared):
+
+| Characteristic | Mild/Early Stage | Severe/Advanced Stage |
+|----------------|-----------------|----------------------|
+| Symptoms | Mild chest pressure, brief [1] | Intense crushing pain, prolonged [2] |
+| Urgency | Monitor closely [3] | Immediate 911 call [4] |
+| Duration | Minutes [5] | Sustained, worsening [6] |
+
+**Key Differences:**
+- **Severity**: Mild cases present with... [1] while severe cases show... [2]
+- **Time Sensitivity**: Early intervention for mild [3], immediate emergency care for severe [4]
+- **Risk Level**: Lower immediate danger [5] vs life-threatening emergency [6]
+
+**When to Escalate:**
+- Brief explanation of when mild becomes severe [7]
+
+Use **bold** for emphasis.
+Create clear distinctions between the two being compared.
+Preserve all [N] citation numbers from the original response."""
+        
+    elif is_list_question:
+        format_instruction = """Format the response as a STRUCTURED LIST with a brief intro:
+
+Start with a one-sentence summary, then list items:
+
+The critical warning signs of a heart attack include: [7]
+
+**Primary Warning Signs:**
+- **Chest Discomfort**: Uncomfortable pressure, squeezing, or pain in the center of the chest lasting more than a few minutes [7]
+- **Shortness of Breath**: May occur with or without chest discomfort [8]
+- **Upper Body Discomfort**: Pain or discomfort in arms, back, neck, jaw, or stomach [9]
+
+**Additional Symptoms:**
+- Cold sweat, nausea, or lightheadedness [10]
+
+Use **bold** for important medical terms.
+Group related items under descriptive headers.
+Preserve all [N] citation numbers from the original response."""
+        
+    elif is_how_question:
+        format_instruction = """Format the response as STEP-BY-STEP instructions:
+
+**Steps:**
+
+1. **Step 1**: Description with citations [1]
+2. **Step 2**: Description with citations [2]
+3. **Step 3**: Description with citations [3]
+
+Use numbered lists for sequential steps.
+Preserve all [N] citation numbers from the original response."""
+        
+    else:
+        format_instruction = """Format the response with CLEAR STRUCTURE:
+
+Use headers, bold text, and bullet points:
+
+**Main Point**: Brief intro [1]
+
+**Key Information:**
+- Point 1 with citations [2]
+- Point 2 with citations [3]
+
+Use **bold** for medical terms and important concepts.
+Preserve all [N] citation numbers from the original response."""
+    
+    formatting_prompt = f"""You are a markdown formatting expert. Format this medical response to be clear and well-structured.
+
+ORIGINAL QUESTION: {question}
+
+RAW RESPONSE TO FORMAT:
+{raw_response}
+
+FORMATTING REQUIREMENTS:
+{format_instruction}
+
+CRITICAL RULES:
+1. Keep ALL citation numbers [N] exactly as they appear
+2. Use proper markdown syntax (tables, lists, bold, headers)
+3. Keep the content IDENTICAL - only improve structure
+4. Do NOT add new information
+5. Do NOT remove any citations
+6. Return ONLY the formatted response, no explanations
+
+FORMATTED RESPONSE:"""
+
+    try:
+        print(f"🎨 Question type: {'comparison' if is_comparison_question else 'list' if is_list_question else 'how-to' if is_how_question else 'general'}")
+        print(f"📤 Sending formatting request to AI...")
+        
+        formatting_response = _model.generate_content(formatting_prompt)
+        formatted_text = _extract_text(formatting_response)
+        
+        print(f"📥 Received formatted response (length: {len(formatted_text)} chars)")
+        
+        # Verify citations weren't lost
+        import re
+        original_citations = set(re.findall(r'\[(\d+)\]', raw_response))
+        formatted_citations = set(re.findall(r'\[(\d+)\]', formatted_text))
+        
+        if len(formatted_citations) < len(original_citations) * 0.8:  # Lost more than 20% of citations
+            print(f"⚠️ Formatting lost citations ({len(formatted_citations)}/{len(original_citations)}) - using original")
+            return raw_response
+            
+        print(f"✅ Formatted response with {len(formatted_citations)} citations preserved")
+        print(f"📊 Preview: {formatted_text[:150]}...")
+        return formatted_text
+        
+    except Exception as e:
+        print(f"⚠️ Formatting failed: {e} - using original response")
+        import traceback
+        traceback.print_exc()
+        return raw_response
 
 
 def _parse_conversation_response(response_text: str, citations_list: List[str]) -> Dict[str, Any]:
     """Parse the structured conversation response from Gemini"""
     response_text = response_text.strip()
+    
+    print(f"🔍 Parsing AI response (length: {len(response_text)} chars)")
     
     # Check for special NEW_SEARCH_NEEDED response first
     if "NEW_SEARCH_NEEDED" in response_text:
@@ -815,41 +1046,115 @@ def _parse_conversation_response(response_text: str, citations_list: List[str]) 
     follow_ups = []
     
     current_section = None
+    has_structured_format = False
     
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-            
-        if line.startswith("Answer:"):
-            current_section = "answer"
-            continue
-        elif line.startswith("Uncertainty"):
-            current_section = "uncertainty"
-            continue
-        elif line.startswith("Sources:"):
-            current_section = "sources"
-            continue
-        elif line.startswith("Suggested follow-ups:"):
-            current_section = "follow_ups"
-            continue
+    # Check if response has structured format
+    if any(line.strip().lower().startswith(("answer:", "**answer")) for line in lines):
+        has_structured_format = True
+    
+    # If no structured format, try to extract answer and follow-ups directly
+    if not has_structured_format:
+        print("⚠️ No structured format detected - using fallback parsing")
+        # Split at follow-up questions
+        response_parts = response_text.split('**Follow-up questions:**')
+        if len(response_parts) == 1:
+            response_parts = response_text.split('Follow-up questions:')
         
-        if current_section == "answer":
-            answer += line + " "
-        elif current_section == "uncertainty":
-            uncertainty = line
-        elif current_section == "sources" and line.startswith("- "):
-            sources.append(line[2:])  # Remove "- " prefix
-        elif current_section == "follow_ups" and line.startswith("- "):
-            follow_up_text = line[2:]  # Remove "- " prefix
-            if follow_up_text:
-                follow_ups.append({
-                    "text": follow_up_text,
-                    "category": _categorize_follow_up(follow_up_text)
-                })
+        # Everything before follow-up questions is the answer
+        answer = response_parts[0].strip()
+        
+        # Extract follow-up questions if they exist
+        if len(response_parts) > 1:
+            follow_up_section = response_parts[1]
+            for line in follow_up_section.split('\n'):
+                line = line.strip()
+                if line.startswith('- ') or line.startswith('* '):
+                    question = line[2:].strip()
+                    if question:
+                        follow_ups.append({
+                            "text": question,
+                            "category": _categorize_follow_up(question)
+                        })
+    else:
+        # Parse structured format
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Flexible matching - handle both "Answer:" and "**Answer:**"
+            if line.lower().startswith("answer:") or line.lower().startswith("**answer"):
+                current_section = "answer"
+                # If answer is on the same line, extract it
+                if ":" in line:
+                    answer_part = line.split(":", 1)[1].strip()
+                    if answer_part and not answer_part.startswith("*"):
+                        answer = answer_part + " "
+                continue
+            elif line.lower().startswith("uncertainty") or line.lower().startswith("**uncertainty"):
+                current_section = "uncertainty"
+                continue
+            elif line.lower().startswith("sources:") or line.lower().startswith("**sources"):
+                current_section = "sources"
+                continue
+            elif "follow-up" in line.lower() and ("question" in line.lower() or "suggested" in line.lower()):
+                # Matches: "Follow-up questions:", "**Follow-up questions:**", "Suggested follow-ups:"
+                current_section = "follow_ups"
+                continue
+            
+            if current_section == "answer":
+                # Preserve markdown formatting - keep line breaks
+                # Check for section headers (e.g., **Mild Stage:** or **Key Differences:**)
+                is_header = ("**" in line and ":" in line) or line.startswith("**")
+                is_bullet = line.startswith("-") or line.startswith("* ")
+                
+                if is_header:
+                    # Section header - preserve with double line break before
+                    answer += "\n\n" + line + "\n"
+                elif is_bullet:
+                    # Bullet point - preserve with single line break
+                    answer += "\n" + line
+                elif not line.strip():
+                    # Empty line - preserve as paragraph break
+                    answer += "\n"
+                else:
+                    # Regular text - append with space, but preserve line breaks between sentences
+                    if answer and not answer.endswith("\n"):
+                        answer += " " + line
+                    else:
+                        answer += line + " "
+            elif current_section == "uncertainty":
+                uncertainty = line
+            elif current_section == "sources" and line.startswith("- "):
+                sources.append(line[2:])  # Remove "- " prefix
+            elif current_section == "follow_ups" and line.startswith("- "):
+                follow_up_text = line[2:]  # Remove "- " prefix
+                if follow_up_text:
+                    follow_ups.append({
+                        "text": follow_up_text,
+                        "category": _categorize_follow_up(follow_up_text)
+                    })
+    
+    # Clean up the answer: remove extra spaces, normalize line breaks
+    parsed_answer = answer.strip()
+    if parsed_answer:
+        # Replace multiple spaces with single space
+        import re
+        parsed_answer = re.sub(r' +', ' ', parsed_answer)
+        # Clean up line breaks
+        parsed_answer = re.sub(r'\n\n+', '\n\n', parsed_answer)  # Max 2 line breaks
+        parsed_answer = parsed_answer.strip()
+    else:
+        parsed_answer = "I can help you with questions about this protocol."
+    
+    print(f"✅ Parsed answer: {parsed_answer[:150]}...")
+    print(f"📚 Parsed sources: {len(sources)}")
+    print(f"❓ Parsed follow-ups: {len(follow_ups)}")
+    if len(follow_ups) == 0:
+        print("⚠️ WARNING: No follow-up questions detected! Check AI response format.")
     
     return {
-        "answer": answer.strip() or "I can help you with questions about this protocol.",
+        "answer": parsed_answer,
         "uncertainty_note": uncertainty,
         "sources": sources,
         "used_new_sources": False,  # For now, we're using existing sources
