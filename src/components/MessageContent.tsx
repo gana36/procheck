@@ -1,5 +1,6 @@
 import { memo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { parseInlineCitations } from '@/lib/citation-utils';
 import { CitationSource } from '@/types';
 
@@ -20,17 +21,37 @@ function MessageContent({ content, citations, className = '' }: MessageContentPr
     return (
       <div className={className}>
         <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
           components={{
-            p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-            ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1">{children}</ul>,
-            ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1">{children}</ol>,
-            li: ({ children }) => <li className="text-slate-700">{children}</li>,
-            strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
-            code: ({ children }) => (
-              <code className="px-1.5 py-0.5 bg-slate-100 text-slate-800 rounded text-sm font-mono">
-                {children}
-              </code>
+            p: ({ node, ...props }) => <p className="mb-3 last:mb-0 leading-relaxed" {...props} />,
+            ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-3 space-y-1.5" {...props} />,
+            ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-3 space-y-1.5" {...props} />,
+            li: ({ node, ...props }) => <li className="text-slate-700 leading-relaxed" {...props} />,
+            strong: ({ node, ...props }) => <strong className="font-semibold text-slate-900" {...props} />,
+            em: ({ node, ...props }) => <em className="italic text-slate-700" {...props} />,
+            h1: ({ node, ...props }) => <h1 className="text-2xl font-bold text-slate-900 mb-3 mt-4 first:mt-0" {...props} />,
+            h2: ({ node, ...props }) => <h2 className="text-xl font-bold text-slate-900 mb-3 mt-4 first:mt-0" {...props} />,
+            h3: ({ node, ...props }) => <h3 className="text-lg font-semibold text-slate-900 mb-2 mt-3 first:mt-0" {...props} />,
+            h4: ({ node, ...props }) => <h4 className="text-base font-semibold text-slate-900 mb-2 mt-3 first:mt-0" {...props} />,
+            code: ({ node, inline, className, ...props }: any) => 
+              inline ? (
+                <code className="px-1.5 py-0.5 bg-slate-100 text-slate-800 rounded text-sm font-mono" {...props} />
+              ) : (
+                <code className="block px-4 py-3 bg-slate-100 text-slate-800 rounded-lg text-sm font-mono my-3 overflow-x-auto" {...props} />
+              ),
+            pre: ({ node, ...props }) => <pre className="bg-slate-100 rounded-lg p-4 my-3 overflow-x-auto" {...props} />,
+            blockquote: ({ node, ...props }) => <blockquote className="border-l-4 border-slate-300 pl-4 italic text-slate-600 my-3" {...props} />,
+            hr: ({ node, ...props }) => <hr className="border-slate-200 my-4" {...props} />,
+            table: ({ node, ...props }) => (
+              <div className="overflow-x-auto my-4">
+                <table className="min-w-full border-collapse border border-slate-300 rounded-lg overflow-hidden shadow-sm" {...props} />
+              </div>
             ),
+            thead: ({ node, ...props }) => <thead className="bg-slate-700 text-white" {...props} />,
+            tbody: ({ node, ...props }) => <tbody className="bg-white" {...props} />,
+            tr: ({ node, ...props }) => <tr className="border-b border-slate-200 hover:bg-slate-50 transition-colors" {...props} />,
+            th: ({ node, ...props }) => <th className="border border-slate-300 px-4 py-3 text-left font-semibold text-sm" {...props} />,
+            td: ({ node, ...props }) => <td className="border border-slate-300 px-4 py-3 text-slate-700 text-sm" {...props} />,
           }}
         >
           {content}
@@ -51,15 +72,16 @@ function MessageContent({ content, citations, className = '' }: MessageContentPr
           return (
             <ReactMarkdown
               key={index}
+              remarkPlugins={[remarkGfm]}
               components={{
                 // Preserve paragraphs as block elements if there are line breaks
-                p: ({ children }) => hasLineBreaks || isHeader 
-                  ? <p className="mb-3 last:mb-0">{children}</p>
+                p: ({ node, children, ...props }) => hasLineBreaks || isHeader 
+                  ? <p className="mb-3 last:mb-0 leading-relaxed" {...props}>{children}</p>
                   : <span className="inline">{children}</span>,
-                ul: ({ children }) => <ul className="list-disc pl-5 my-2 space-y-1 block">{children}</ul>,
-                ol: ({ children }) => <ol className="list-decimal pl-5 my-2 space-y-1 block">{children}</ol>,
-                li: ({ children }) => <li className="text-slate-700">{children}</li>,
-                strong: ({ children }) => {
+                ul: ({ node, ...props }) => <ul className="list-disc pl-5 my-2 space-y-1.5 block" {...props} />,
+                ol: ({ node, ...props }) => <ol className="list-decimal pl-5 my-2 space-y-1.5 block" {...props} />,
+                li: ({ node, ...props }) => <li className="text-slate-700 leading-relaxed" {...props} />,
+                strong: ({ node, children, ...props }) => {
                   // Check if this strong tag is a section header
                   const childText = String(children);
                   const isSectionHeader = childText.includes(':') && (
@@ -69,14 +91,33 @@ function MessageContent({ content, citations, className = '' }: MessageContentPr
                     childText.includes('Treatment')
                   );
                   return isSectionHeader 
-                    ? <strong className="block font-bold text-slate-900 text-base mt-4 mb-2 first:mt-0">{children}</strong>
-                    : <strong className="font-semibold text-slate-900">{children}</strong>;
+                    ? <strong className="block font-bold text-slate-900 text-base mt-4 mb-2 first:mt-0" {...props}>{children}</strong>
+                    : <strong className="font-semibold text-slate-900" {...props}>{children}</strong>;
                 },
-                code: ({ children }) => (
-                  <code className="px-1.5 py-0.5 bg-slate-100 text-slate-800 rounded text-sm font-mono">
-                    {children}
-                  </code>
+                em: ({ node, ...props }) => <em className="italic text-slate-700" {...props} />,
+                h1: ({ node, ...props }) => <h1 className="text-2xl font-bold text-slate-900 mb-3 mt-4 first:mt-0" {...props} />,
+                h2: ({ node, ...props }) => <h2 className="text-xl font-bold text-slate-900 mb-3 mt-4 first:mt-0" {...props} />,
+                h3: ({ node, ...props }) => <h3 className="text-lg font-semibold text-slate-900 mb-2 mt-3 first:mt-0" {...props} />,
+                h4: ({ node, ...props }) => <h4 className="text-base font-semibold text-slate-900 mb-2 mt-3 first:mt-0" {...props} />,
+                code: ({ node, inline, className, ...props }: any) => 
+                  inline ? (
+                    <code className="px-1.5 py-0.5 bg-slate-100 text-slate-800 rounded text-sm font-mono" {...props} />
+                  ) : (
+                    <code className="block px-4 py-3 bg-slate-100 text-slate-800 rounded-lg text-sm font-mono my-3 overflow-x-auto" {...props} />
+                  ),
+                pre: ({ node, ...props }) => <pre className="bg-slate-100 rounded-lg p-4 my-3 overflow-x-auto" {...props} />,
+                blockquote: ({ node, ...props }) => <blockquote className="border-l-4 border-slate-300 pl-4 italic text-slate-600 my-3" {...props} />,
+                hr: ({ node, ...props }) => <hr className="border-slate-200 my-4" {...props} />,
+                table: ({ node, ...props }) => (
+                  <div className="overflow-x-auto my-4">
+                    <table className="min-w-full border-collapse border border-slate-300 rounded-lg overflow-hidden shadow-sm" {...props} />
+                  </div>
                 ),
+                thead: ({ node, ...props }) => <thead className="bg-slate-700 text-white" {...props} />,
+                tbody: ({ node, ...props }) => <tbody className="bg-white" {...props} />,
+                tr: ({ node, ...props }) => <tr className="border-b border-slate-200 hover:bg-slate-50 transition-colors" {...props} />,
+                th: ({ node, ...props }) => <th className="border border-slate-300 px-4 py-3 text-left font-semibold text-sm" {...props} />,
+                td: ({ node, ...props }) => <td className="border border-slate-300 px-4 py-3 text-slate-700 text-sm" {...props} />,
               }}
             >
               {part.content}

@@ -859,16 +859,10 @@ function App() {
           isFollowUp: true,
         };
 
-        // Get latest messages again before updating
-        const activeTab = getActiveTab();
-        const messagesBeforeUpdate = (activeTab?.type === 'chat' ? activeTab.messages : []) || [];
+        // Use current messages array (includes userMessage) instead of refetching
+        const updatedUserMessage = { ...userMessage, status: 'sent' as const };
+        const newMessages = [...currentMessages, updatedUserMessage, assistantMessage];
         
-        // Mark user message as sent
-        const updatedMessages = messagesBeforeUpdate.map(msg =>
-          msg.id === userMessage.id ? { ...msg, status: 'sent' as const } : msg
-        );
-        
-        const newMessages = [...updatedMessages, assistantMessage];
         updateActiveTab({
           messages: newMessages,
           isLoading: false

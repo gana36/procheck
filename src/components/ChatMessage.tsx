@@ -6,7 +6,7 @@ import {
 import { Message } from '@/types';
 import ProtocolCard from './ProtocolCard';
 import MessageStatus from './MessageStatus';
-import MessageContent from './MessageContent';
+import FormattedMessage from './FormattedMessage';
 import CitationsDropdown from './CitationsDropdown';
 
 interface ChatMessageProps {
@@ -195,7 +195,7 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, o
                       return <IconComponent className={`h-5 w-5 ${theme.iconColor} flex-shrink-0 mt-0.5`} />;
                     })()}
                     <div className="text-sm leading-relaxed text-slate-800 font-medium prose prose-sm prose-slate max-w-none flex-1">
-                      <MessageContent 
+                      <FormattedMessage 
                         content={message.content}
                         citations={message.citations}
                         className=""

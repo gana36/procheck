@@ -187,171 +187,57 @@ def summarize_checklist(title: str, context_snippets: List[str], instructions: s
     # Classify query intent for smart templating
     intent = classify_query_intent(title)
     
-    # Base instructions - STRICT SOURCE-BASED GENERATION
+    # Concise instructions - STRICT SOURCE-BASED GENERATION
     base_instructions = [
-        "You are a medical AI assistant. Your ONLY job is to extract information from the provided sources below.",
+        "Extract a medical protocol from the provided sources. Use ONLY information in the [Source N] snippets.",
         "",
-        "⚠️ CRITICAL RULES - VIOLATING THESE IS UNACCEPTABLE:",
-        "1. ONLY use information EXPLICITLY stated in the [Source N] snippets below",
-        "2. DO NOT add any information from your general knowledge",
-        "3. DO NOT make assumptions or extrapolate beyond what the sources say",
-        "4. If the sources don't contain information about the query, create fewer steps (3-4 is fine)",
-        "5. Every single fact MUST come from the provided sources",
+        "⚠️ CRITICAL RULES:",
+        "1. ONLY use information EXPLICITLY in sources below",
+        "2. EVERY step needs: 'text' (action), 'explanation' (2-3 sentences), 'citation' (1-6)",
+        "3. NO empty explanations, NO citation=0, NO made-up content",
         "",
-        "🚨 MANDATORY FIELDS - DO NOT SKIP THESE:",
-        "1. EVERY step MUST have 'explanation' field with 2-3 sentences (NOT EMPTY!)",
-        "2. EVERY step MUST have 'citation' field with a number 1-6 (NOT 0!)",
-        "3. The 'citations' array MUST contain the full source text from each [Source N] used",
+        "OUTPUT FORMAT (JSON only, no markdown):",
+        '{"title": "X", "checklist": [{"step": 1, "text": "Brief action", "explanation": "Detailed how-to from source", "citation": 1}], "citations": ["Source 1 text", "Source 2 text"]}',
         "",
-        "RESPONSE FORMAT:",
-        "1. Each step has THREE MANDATORY parts:",
-        "   - 'text': Short action (under 15 words) extracted from sources",
-        "   - 'explanation': Detailed how-to (2-3 sentences) - REQUIRED, NOT EMPTY!",
-        "   - 'citation': Source number (1, 2, 3...) - REQUIRED, NOT 0!",
-        "2. REPHRASE in your own words but DON'T add new information",
-        "3. EXTRACT the citation number from [Source N] tags",
-        "4. ONLY include information DIRECTLY related to the query '{title}'",
-        "",
-        "EXAMPLE:",
-        "BAD: \"Dengue symptoms include high fever 39-40°C, severe headache...\"",
-        "BAD: {\"text\": \"Monitor fever\", \"explanation\": \"\", \"citation\": 0}",
-        "",
-        "GOOD:",
-        '{',
-        '  "text": "Monitor fever and headache",',
-        '  "explanation": "Check patient temperature regularly. Dengue typically causes high fever (39-40°C) along with severe frontal headache and pain behind the eyes. Document fever patterns and intensity.",',
-        '  "citation": 1',
-        '}',
-        "",
-        "Output format:",
-        '{"title": "X", "checklist": [{"step": 1, "text": "action", "explanation": "how to do it", "citation": 1}], "citations": ["Source 1 full text", "Source 2 full text"]}',
-        "",
-        "⚠️ VALIDATION: Before submitting, verify:",
-        "- ALL steps have non-empty 'explanation' (at least 10 characters)",
-        "- ALL steps have 'citation' > 0",
-        "- The 'citations' array is NOT empty",
-        "",
-        "NO markdown, NO code blocks, ONLY the JSON object.",
+        "EXAMPLE STEP:",
+        '{"step": 1, "text": "Monitor fever and headache", "explanation": "Check temperature regularly. Dengue causes high fever (39-40°C) with severe frontal headache. Document patterns.", "citation": 1}',
     ]
     
-    # Intent-specific templates
-    if intent == 'emergency':
-        prompt_parts = base_instructions + [
-            "",
-            "⚠️ EMERGENCY PROTOCOL FORMAT:",
-            "- Start with IMMEDIATE ACTIONS (call 911, position patient, etc.)",
-            "- Include critical warning signs to watch for",
-            "- Each step: urgent, clear command (e.g., 'Call emergency services immediately')",
-            "- Add severity indicators where relevant",
-            "- Keep steps SHORT (max 20 words) and ACTIONABLE",
-        ]
-    elif intent == 'symptoms':
-        prompt_parts = base_instructions + [
-            "",
-            "📋 SYMPTOMS GUIDE FORMAT:",
-            "- Start with EARLY symptoms and timeline (e.g., 'Within 2-5 days: fever, headache')",
-            "- Progress to LATER symptoms if applicable",
-            "- Include severity levels (mild/moderate/severe) where relevant",
-            "- Mention WHEN to seek medical attention",
-            "- Group related symptoms together",
-        ]
-    elif intent == 'treatment':
-        prompt_parts = base_instructions + [
-            "",
-            "💊 TREATMENT PROTOCOL FORMAT:",
-            "- Start with FIRST-LINE interventions",
-            "- Include specific actions (e.g., 'Administer paracetamol 500mg every 6 hours')",
-            "- Progress logically through treatment steps",
-            "- Mention monitoring requirements",
-            "- Each step: specific, actionable medical instruction",
-        ]
-    elif intent == 'diagnosis':
-        prompt_parts = base_instructions + [
-            "",
-            "🔬 DIAGNOSTIC APPROACH FORMAT:",
-            "- Start with CLINICAL ASSESSMENT (history, examination)",
-            "- List KEY diagnostic criteria or tests",
-            "- Include differential diagnoses if relevant",
-            "- Mention specific test values or findings",
-            "- Each step: diagnostic action or criterion",
-        ]
-    elif intent == 'prevention':
-        prompt_parts = base_instructions + [
-            "",
-            "🛡️ PREVENTION GUIDE FORMAT:",
-            "- Start with PRIMARY prevention measures",
-            "- Include practical, actionable steps (e.g., 'Use mosquito repellent containing DEET')",
-            "- Prioritize most effective interventions first",
-            "- Mention risk factors to avoid",
-            "- Each step: preventive action",
-        ]
-    else:  # general
-        prompt_parts = base_instructions + [
-            "",
-            "📌 GENERAL PROTOCOL FORMAT:",
-            "- Synthesize key information from context",
-            "- Each step: clear, actionable medical point",
-            "- Organize logically (assessment → intervention → follow-up)",
-            "- Keep steps concise (max 20 words)",
-            "- Focus on practical clinical guidance",
-        ]
+    # Intent-specific templates (concise)
+    intent_hints = {
+        'emergency': "Start with immediate actions (call 911, etc.). Keep steps urgent and short.",
+        'symptoms': "List symptoms chronologically. Include severity levels and when to seek help.",
+        'treatment': "Start with first-line treatments. Include specific dosages/instructions.",
+        'diagnosis': "Clinical assessment → diagnostic tests → criteria. Be specific.",
+        'prevention': "Primary prevention first. Practical, actionable steps.",
+        'general': "Logical flow: assessment → intervention → follow-up. Stay concise."
+    }
     
-    prompt_parts.extend([
+    prompt_parts = base_instructions + [
         "",
-        "SYNTHESIS REQUIREMENTS:",
-        "- DO NOT copy numbered lists from context (e.g., '1. Assess... 2. Order...')",
-        "- REPHRASE and CONDENSE information in your own words",
-        "- Each step should be ONE clear action (max 15 words)",
-        "- COMBINE related information from multiple sources",
-        "- Remove redundancy and wordiness",
+        f"HINT: {intent_hints.get(intent, intent_hints['general'])}",
         "",
-        "CITATION REQUIREMENTS:",
-        "- Each step MUST have a 'citation' field (1, 2, 3...)",
-        "- Extract source number from [Source N] in context",
-        "- If synthesizing multiple sources, cite the primary one",
-        "",
-        "⛔ ABSOLUTE FILTERING RULES:",
-        "- If a source discusses a DIFFERENT disease/condition, SKIP IT ENTIRELY",
-        "- Example: Query is 'dengue treatment', source mentions COVID-19 → IGNORE that source",
-        "- ONLY extract information that DIRECTLY answers the query: {title}",
-        "- DO NOT include general medical advice not in the sources",
-        "- DO NOT add safety warnings unless they're in the sources",
-        "- Better to have 3-4 accurate steps from sources than 10 steps with made-up content",
-        "",
-        "✅ VALIDATION CHECKLIST:",
-        "Before including any step, ask yourself:",
-        "- Is this EXACTLY from one of the [Source N] snippets? ✓",
-        "- Does this DIRECTLY relate to '{title}'? ✓",
-        "- Did I cite the correct [Source N]? ✓",
-        "- Did I avoid adding my own medical knowledge? ✓",
-    ])
+        "⛔ FILTERS:",
+        "- Skip sources about DIFFERENT conditions",
+        "- Only info DIRECTLY related to: {title}",
+        "- 3-4 accurate steps better than 10 with made-up content",
+    ]
     
+    prompt_parts.append("")
+    prompt_parts.append(f"━━━ QUERY: {title}")
     if region:
-        prompt_parts.append(f"Region: {region}.")
+        prompt_parts.append(f"Region: {region}")
     if year:
-        prompt_parts.append(f"Year: {year}.")
+        prompt_parts.append(f"Year: {year}")
     if instructions:
-        prompt_parts.append(f"Instructions: {instructions}")
-
+        prompt_parts.append(f"Note: {instructions}")
     prompt_parts.append("")
-    prompt_parts.append("="*80)
-    prompt_parts.append(f"QUERY: {title}")
-    prompt_parts.append("="*80)
-    prompt_parts.append("")
-    prompt_parts.append("🔍 AVAILABLE SOURCES (These are your ONLY source of truth):")
-    prompt_parts.append("Each source is labeled [Source N]. You MUST cite the source number.")
-    prompt_parts.append("")
+    prompt_parts.append("━━━ SOURCES (cite as [Source N]):")
     
-    # Add sources with clear separation
+    # Add sources
     for i, snippet in enumerate(context_snippets[:6], 1):
-        prompt_parts.append(f"━━━ SOURCE [{i}] ━━━")
-        prompt_parts.append(snippet)
+        prompt_parts.append(f"[Source {i}] {snippet}")
         prompt_parts.append("")
-    
-    prompt_parts.append("="*80)
-    prompt_parts.append("⚠️ REMINDER: Use ONLY the information above. Do NOT add external knowledge.")
-    prompt_parts.append(f"⚠️ REMINDER: Only include steps relevant to: {title}")
-    prompt_parts.append("="*80)
 
     prompt = "\n".join(prompt_parts)
     
@@ -949,54 +835,32 @@ def protocol_conversation_chat(
         category_hint += "**Severe/Advanced Stage:** [describe from sources] [Source N]\n"
         category_hint += "**Key Differences:** [highlight distinguishing factors] [Source N]"
     
-    prompt = f"""Answer this question about "{concept_title}": {message}
+    # Simple prompt - lists for everything except tables
+    if is_comparison_question:
+        format_instruction = "Use a markdown TABLE to compare (| Column1 | Column2 |)."
+    else:
+        format_instruction = "Format as a BULLETED LIST using - for each point."
+    
+    prompt = f"""Answer this question about {concept_title}: {message}
 
-Use the sources provided below to give a detailed answer.
-
-{category_hint if is_comparison_question else ""}
-
-CRITICAL - You MUST respond in this format:
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CURRENT PROTOCOL CONTEXT:
-{protocol_text}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-AVAILABLE SOURCES (Your ONLY source of information):
+Available sources:
 {citations_text}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-{f"Recent Conversation:{chr(10)}{history_text}{chr(10)}" if history_text else ""}
+{f"Previous conversation:{chr(10)}{history_text}{chr(10)}" if history_text else ""}
+Answer using information from the sources above. {format_instruction} Use **bold** for key medical terms. Cite sources as [N].
 
 **Answer:**
-<Answer using the format below>
-
-{f"**Mild/Early Stage:**{chr(10)}Description with citations [6] [7]{chr(10)}{chr(10)}**Severe/Advanced Stage:**{chr(10)}Description with citations [10]{chr(10)}{chr(10)}**Key Differences:**{chr(10)}Comparison [6] [10]" if is_comparison_question else "Provide 2-4 sentences with **bold** terms and citations [6] [7] [10]"}
+<your answer>
 
 **Follow-up questions:**
 - <question 1>
-- <question 2>  
-- <question 3>
+- <question 2>
+- <question 3>"""
 
-CRITICAL FORMATTING:
-1. Use **bold** for medical terms (fever, symptoms, etc.)
-2. Each section header (**Mild Stage:**) on its own line
-3. Blank line after headers
-4. Cite using the [NUMBER] shown in sources above (e.g., [6], [10], [11])
-5. Do NOT write [NEW Source 1] - use the actual number like [6]
-
-Answer: {message}"""
-
-    # Debug logging (all_sources already defined above)
-    print(f"📝 Prompt length: {len(prompt)} chars")
-    print(f"📚 Total sources available: {len(all_sources)}")
+    # Debug logging
+    print(f"📝 Prompt: {len(prompt)} chars, {len(all_sources)} sources")
     if used_new_sources:
-        print(f"   - Original sources: {len(citations_list)}")
-        print(f"   - New sources: {len(additional_sources)}")
-        # Show actual citation IDs
-        citation_ids = [c.get('id', '?') for c in additional_citations]
-        print(f"   - Citation IDs in prompt: {citation_ids}")
+        print(f"🔍 New search: {len(additional_sources)} sources, IDs: {[c.get('id') for c in additional_citations]}")
 
     try:
         response = _model.generate_content(prompt)
@@ -1008,7 +872,7 @@ Answer: {message}"""
             print("❌ Empty response from AI - using fallback")
             return _fallback_conversation_response(message, concept_title)
         
-        # Parse the structured response and add citations
+        # Parse the structured response directly (NO second AI call)
         result = _parse_conversation_response(answer_text, all_sources)
         result["used_new_sources"] = used_new_sources
         result["citations"] = additional_citations
@@ -1019,6 +883,142 @@ Answer: {message}"""
         import traceback
         traceback.print_exc()
         return _fallback_conversation_response(message, concept_title)
+
+
+def _format_response_with_markdown(raw_response: str, question: str, is_comparison: bool) -> str:
+    """
+    Format AI response with proper markdown structure using a second AI call.
+    Ensures tables for comparisons, lists for differences, proper headers, etc.
+    """
+    _ensure_client()
+    
+    question_lower = question.lower()
+    
+    # Detect question type
+    is_comparison_question = is_comparison or any(keyword in question_lower for keyword in [
+        'differentiate', 'difference', 'compare', 'vs', 'versus', 'between'
+    ])
+    is_list_question = any(keyword in question_lower for keyword in [
+        'what are', 'list', 'types', 'kinds', 'categories', 'warning signs', 'symptoms'
+    ])
+    is_how_question = question_lower.startswith('how')
+    
+    # Build formatting instructions based on question type
+    if is_comparison_question:
+        format_instruction = """Format the response as a COMPARISON using this structure:
+
+Use a markdown TABLE for side-by-side comparison (adapt column names based on what's being compared):
+
+| Characteristic | Mild/Early Stage | Severe/Advanced Stage |
+|----------------|-----------------|----------------------|
+| Symptoms | Mild chest pressure, brief [1] | Intense crushing pain, prolonged [2] |
+| Urgency | Monitor closely [3] | Immediate 911 call [4] |
+| Duration | Minutes [5] | Sustained, worsening [6] |
+
+**Key Differences:**
+- **Severity**: Mild cases present with... [1] while severe cases show... [2]
+- **Time Sensitivity**: Early intervention for mild [3], immediate emergency care for severe [4]
+- **Risk Level**: Lower immediate danger [5] vs life-threatening emergency [6]
+
+**When to Escalate:**
+- Brief explanation of when mild becomes severe [7]
+
+Use **bold** for emphasis.
+Create clear distinctions between the two being compared.
+Preserve all [N] citation numbers from the original response."""
+        
+    elif is_list_question:
+        format_instruction = """Format the response as a STRUCTURED LIST with a brief intro:
+
+Start with a one-sentence summary, then list items:
+
+The critical warning signs of a heart attack include: [7]
+
+**Primary Warning Signs:**
+- **Chest Discomfort**: Uncomfortable pressure, squeezing, or pain in the center of the chest lasting more than a few minutes [7]
+- **Shortness of Breath**: May occur with or without chest discomfort [8]
+- **Upper Body Discomfort**: Pain or discomfort in arms, back, neck, jaw, or stomach [9]
+
+**Additional Symptoms:**
+- Cold sweat, nausea, or lightheadedness [10]
+
+Use **bold** for important medical terms.
+Group related items under descriptive headers.
+Preserve all [N] citation numbers from the original response."""
+        
+    elif is_how_question:
+        format_instruction = """Format the response as STEP-BY-STEP instructions:
+
+**Steps:**
+
+1. **Step 1**: Description with citations [1]
+2. **Step 2**: Description with citations [2]
+3. **Step 3**: Description with citations [3]
+
+Use numbered lists for sequential steps.
+Preserve all [N] citation numbers from the original response."""
+        
+    else:
+        format_instruction = """Format the response with CLEAR STRUCTURE:
+
+Use headers, bold text, and bullet points:
+
+**Main Point**: Brief intro [1]
+
+**Key Information:**
+- Point 1 with citations [2]
+- Point 2 with citations [3]
+
+Use **bold** for medical terms and important concepts.
+Preserve all [N] citation numbers from the original response."""
+    
+    formatting_prompt = f"""You are a markdown formatting expert. Format this medical response to be clear and well-structured.
+
+ORIGINAL QUESTION: {question}
+
+RAW RESPONSE TO FORMAT:
+{raw_response}
+
+FORMATTING REQUIREMENTS:
+{format_instruction}
+
+CRITICAL RULES:
+1. Keep ALL citation numbers [N] exactly as they appear
+2. Use proper markdown syntax (tables, lists, bold, headers)
+3. Keep the content IDENTICAL - only improve structure
+4. Do NOT add new information
+5. Do NOT remove any citations
+6. Return ONLY the formatted response, no explanations
+
+FORMATTED RESPONSE:"""
+
+    try:
+        print(f"🎨 Question type: {'comparison' if is_comparison_question else 'list' if is_list_question else 'how-to' if is_how_question else 'general'}")
+        print(f"📤 Sending formatting request to AI...")
+        
+        formatting_response = _model.generate_content(formatting_prompt)
+        formatted_text = _extract_text(formatting_response)
+        
+        print(f"📥 Received formatted response (length: {len(formatted_text)} chars)")
+        
+        # Verify citations weren't lost
+        import re
+        original_citations = set(re.findall(r'\[(\d+)\]', raw_response))
+        formatted_citations = set(re.findall(r'\[(\d+)\]', formatted_text))
+        
+        if len(formatted_citations) < len(original_citations) * 0.8:  # Lost more than 20% of citations
+            print(f"⚠️ Formatting lost citations ({len(formatted_citations)}/{len(original_citations)}) - using original")
+            return raw_response
+            
+        print(f"✅ Formatted response with {len(formatted_citations)} citations preserved")
+        print(f"📊 Preview: {formatted_text[:150]}...")
+        return formatted_text
+        
+    except Exception as e:
+        print(f"⚠️ Formatting failed: {e} - using original response")
+        import traceback
+        traceback.print_exc()
+        return raw_response
 
 
 def _parse_conversation_response(response_text: str, citations_list: List[str]) -> Dict[str, Any]:
@@ -1046,64 +1046,94 @@ def _parse_conversation_response(response_text: str, citations_list: List[str]) 
     follow_ups = []
     
     current_section = None
+    has_structured_format = False
     
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+    # Check if response has structured format
+    if any(line.strip().lower().startswith(("answer:", "**answer")) for line in lines):
+        has_structured_format = True
+    
+    # If no structured format, try to extract answer and follow-ups directly
+    if not has_structured_format:
+        print("⚠️ No structured format detected - using fallback parsing")
+        # Split at follow-up questions
+        response_parts = response_text.split('**Follow-up questions:**')
+        if len(response_parts) == 1:
+            response_parts = response_text.split('Follow-up questions:')
         
-        # Flexible matching - handle both "Answer:" and "**Answer:**"
-        if line.lower().startswith("answer:") or line.lower().startswith("**answer"):
-            current_section = "answer"
-            # If answer is on the same line, extract it
-            if ":" in line:
-                answer_part = line.split(":", 1)[1].strip()
-                if answer_part and not answer_part.startswith("*"):
-                    answer = answer_part + " "
-            continue
-        elif line.lower().startswith("uncertainty") or line.lower().startswith("**uncertainty"):
-            current_section = "uncertainty"
-            continue
-        elif line.lower().startswith("sources:") or line.lower().startswith("**sources"):
-            current_section = "sources"
-            continue
-        elif "follow-up" in line.lower() and ("question" in line.lower() or "suggested" in line.lower()):
-            # Matches: "Follow-up questions:", "**Follow-up questions:**", "Suggested follow-ups:"
-            current_section = "follow_ups"
-            continue
+        # Everything before follow-up questions is the answer
+        answer = response_parts[0].strip()
         
-        if current_section == "answer":
-            # Preserve markdown formatting - keep line breaks
-            # Check for section headers (e.g., **Mild Stage:** or **Key Differences:**)
-            is_header = ("**" in line and ":" in line) or line.startswith("**")
-            is_bullet = line.startswith("-") or line.startswith("* ")
+        # Extract follow-up questions if they exist
+        if len(response_parts) > 1:
+            follow_up_section = response_parts[1]
+            for line in follow_up_section.split('\n'):
+                line = line.strip()
+                if line.startswith('- ') or line.startswith('* '):
+                    question = line[2:].strip()
+                    if question:
+                        follow_ups.append({
+                            "text": question,
+                            "category": _categorize_follow_up(question)
+                        })
+    else:
+        # Parse structured format
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
             
-            if is_header:
-                # Section header - preserve with double line break before
-                answer += "\n\n" + line + "\n"
-            elif is_bullet:
-                # Bullet point - preserve with single line break
-                answer += "\n" + line
-            elif not line.strip():
-                # Empty line - preserve as paragraph break
-                answer += "\n"
-            else:
-                # Regular text - append with space, but preserve line breaks between sentences
-                if answer and not answer.endswith("\n"):
-                    answer += " " + line
+            # Flexible matching - handle both "Answer:" and "**Answer:**"
+            if line.lower().startswith("answer:") or line.lower().startswith("**answer"):
+                current_section = "answer"
+                # If answer is on the same line, extract it
+                if ":" in line:
+                    answer_part = line.split(":", 1)[1].strip()
+                    if answer_part and not answer_part.startswith("*"):
+                        answer = answer_part + " "
+                continue
+            elif line.lower().startswith("uncertainty") or line.lower().startswith("**uncertainty"):
+                current_section = "uncertainty"
+                continue
+            elif line.lower().startswith("sources:") or line.lower().startswith("**sources"):
+                current_section = "sources"
+                continue
+            elif "follow-up" in line.lower() and ("question" in line.lower() or "suggested" in line.lower()):
+                # Matches: "Follow-up questions:", "**Follow-up questions:**", "Suggested follow-ups:"
+                current_section = "follow_ups"
+                continue
+            
+            if current_section == "answer":
+                # Preserve markdown formatting - keep line breaks
+                # Check for section headers (e.g., **Mild Stage:** or **Key Differences:**)
+                is_header = ("**" in line and ":" in line) or line.startswith("**")
+                is_bullet = line.startswith("-") or line.startswith("* ")
+                
+                if is_header:
+                    # Section header - preserve with double line break before
+                    answer += "\n\n" + line + "\n"
+                elif is_bullet:
+                    # Bullet point - preserve with single line break
+                    answer += "\n" + line
+                elif not line.strip():
+                    # Empty line - preserve as paragraph break
+                    answer += "\n"
                 else:
-                    answer += line + " "
-        elif current_section == "uncertainty":
-            uncertainty = line
-        elif current_section == "sources" and line.startswith("- "):
-            sources.append(line[2:])  # Remove "- " prefix
-        elif current_section == "follow_ups" and line.startswith("- "):
-            follow_up_text = line[2:]  # Remove "- " prefix
-            if follow_up_text:
-                follow_ups.append({
-                    "text": follow_up_text,
-                    "category": _categorize_follow_up(follow_up_text)
-                })
+                    # Regular text - append with space, but preserve line breaks between sentences
+                    if answer and not answer.endswith("\n"):
+                        answer += " " + line
+                    else:
+                        answer += line + " "
+            elif current_section == "uncertainty":
+                uncertainty = line
+            elif current_section == "sources" and line.startswith("- "):
+                sources.append(line[2:])  # Remove "- " prefix
+            elif current_section == "follow_ups" and line.startswith("- "):
+                follow_up_text = line[2:]  # Remove "- " prefix
+                if follow_up_text:
+                    follow_ups.append({
+                        "text": follow_up_text,
+                        "category": _categorize_follow_up(follow_up_text)
+                    })
     
     # Clean up the answer: remove extra spaces, normalize line breaks
     parsed_answer = answer.strip()
