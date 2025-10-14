@@ -18,10 +18,10 @@ import NetworkStatusBanner from '@/components/NetworkStatusBanner';
 import { Message, ProtocolData, ProtocolStep, Citation, SearchMetadata, AppTab, ConversationTab, ProtocolTab, ProtocolIndexTab } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocol, ConversationMessage, protocolConversationChat, deleteUserData } from '@/lib/api';
-import { deleteUser } from 'firebase/auth';
+import { deleteUser, EmailAuthProvider, reauthenticateWithCredential, GoogleAuthProvider, reauthenticateWithPopup } from 'firebase/auth';
 import { generateMessageId, generateConversationId, generateTabId } from '@/lib/id-generator';
 import { formatErrorMessage } from '@/lib/error-handler';
-import { approveAndIndexUpload, getUploadPreview, regenerateProtocol, regenerateUploadProtocols, getUserUploadedProtocols, deleteUserProtocol, deleteAllUserProtocols } from '@/lib/api';
+import { approveAndIndexUpload, getUploadPreview, regenerateProtocol, regenerateUploadProtocols, getUserUploadedProtocols, deleteUserProtocol, deleteAllUserProtocols, deleteUploadPreview } from '@/lib/api';
 import { detectFollowUp, validateMessageContent, sanitizeInput } from '@/lib/chat-utils';
 
 // Memoized regeneration form to prevent re-renders
@@ -184,6 +184,7 @@ function App() {
   };
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmError, setDeleteConfirmError] = useState('');
   const [showNewTabDialog, setShowNewTabDialog] = useState(false);
 
   // Profile modal state - moved from Sidebar to prevent reset on re-renders
@@ -747,6 +748,40 @@ function App() {
       console.error('Failed to persist active tab to localStorage:', error);
     }
   }, [activeTabId]);
+
+  // Clear localStorage when user changes (handles account deletion + re-signup)
+  useEffect(() => {
+    const lastUserId = localStorage.getItem('procheck_last_user_id');
+
+    if (userId && lastUserId && userId !== lastUserId) {
+      // Different user logged in - clear all cached data
+      console.log('🔄 User changed from', lastUserId, 'to', userId, '- clearing all cached data');
+
+      // Clear ALL localStorage and sessionStorage
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key) keysToRemove.push(key);
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      sessionStorage.clear();
+
+      // Set the new user ID
+      localStorage.setItem('procheck_last_user_id', userId);
+
+      console.log('🔄 Reloading page to reset all module-level state...');
+      // Reload the page to reset all state
+      window.location.reload();
+    } else if (userId && !lastUserId) {
+      // First time login or after cache clear
+      console.log('✅ First login for user:', userId);
+      localStorage.setItem('procheck_last_user_id', userId);
+    } else if (!userId && lastUserId) {
+      // User logged out - clear the tracking
+      console.log('👋 User logged out');
+      localStorage.removeItem('procheck_last_user_id');
+    }
+  }, [userId]);
 
 
   const handleSendMessage = async (content: string, skipDialogCheck: boolean = false) => {
@@ -2031,7 +2066,40 @@ CITATION REQUIREMENT:
   const handleConfirmDeleteAccount = async () => {
     if (!currentUser) return;
 
+    const passwordInput = document.getElementById('deletePasswordInput') as HTMLInputElement;
+    const password = passwordInput?.value || '';
+
     try {
+      // Re-authenticate user before deletion
+      console.log('Re-authenticating user...');
+
+      // Check if user signed in with Google
+      const isGoogleUser = currentUser.providerData.some(
+        provider => provider.providerId === 'google.com'
+      );
+
+      if (isGoogleUser) {
+        // Re-authenticate with Google popup
+        const provider = new GoogleAuthProvider();
+        await reauthenticateWithPopup(currentUser, provider);
+      } else {
+        // Re-authenticate with email/password
+        if (!password) {
+          setDeleteConfirmError('Please enter your password to confirm deletion.');
+          return;
+        }
+
+        if (!currentUser.email) {
+          setDeleteConfirmError('Could not verify your email address.');
+          return;
+        }
+
+        const credential = EmailAuthProvider.credential(currentUser.email, password);
+        await reauthenticateWithCredential(currentUser, credential);
+      }
+
+      console.log('Re-authentication successful');
+
       // First delete user's uploaded protocols from Elasticsearch
       console.log('Deleting user protocols from Elasticsearch...');
       try {
@@ -2050,16 +2118,40 @@ CITATION REQUIREMENT:
       console.log('Deleting Firebase Auth account...');
       await deleteUser(currentUser);
 
+      // Clear all local state and storage
+      console.log('Clearing all local storage and session data...');
+      localStorage.clear();
+      sessionStorage.clear();
+
+      // Reset tabs to default state
+      console.log('Resetting tabs and UI state...');
+      setTabs([{
+        id: generateTabId(),
+        title: 'New Protocol',
+        type: 'chat' as const,
+        messages: [],
+        conversationId: generateConversationId(),
+        isLoading: false
+      }]);
+
       setShowDeleteModal(false);
       console.log('Account deleted successfully');
+
+      // Redirect to landing page
+      navigate('/');
     } catch (error: any) {
       console.error('Failed to delete account:', error);
-      if (error.code === 'auth/requires-recent-login') {
+      if (error.code === 'auth/wrong-password') {
+        setDeleteConfirmError('Incorrect password. Please try again.');
+      } else if (error.code === 'auth/requires-recent-login') {
         setErrorMessage('For security reasons, please log out and log back in before deleting your account.');
+        setShowErrorDialog(true);
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        setDeleteConfirmError('Google sign-in was cancelled. Please try again.');
       } else {
         setErrorMessage(`Failed to delete account: ${error.message || 'Unknown error'}. Please try again.`);
+        setShowErrorDialog(true);
       }
-      setShowErrorDialog(true);
     }
   };
 
@@ -2516,8 +2608,20 @@ CITATION REQUIREMENT:
                       {isRegenerating ? 'Regenerating...' : 'Regenerate Protocols'}
                     </button>
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         console.log('🗑️ Clear Generated Protocols clicked');
+
+                        try {
+                          // Call backend to delete preview file if we have an upload ID
+                          if (currentUser && generatedUploadId) {
+                            console.log(`📡 Calling delete upload preview API for upload ID: ${generatedUploadId}`);
+                            await deleteUploadPreview(currentUser.uid, generatedUploadId);
+                            console.log('✅ Preview file deleted from backend');
+                          }
+                        } catch (error) {
+                          console.error('⚠️ Failed to delete preview file from backend:', error);
+                          // Continue with frontend cleanup even if backend call fails
+                        }
 
                         // Clear the generated protocols from state (no confirmation needed - they're temporary)
                         setGeneratedProtocols([]);
@@ -3252,19 +3356,61 @@ CITATION REQUIREMENT:
                 <p className="text-sm text-slate-600">This action cannot be undone. All your data will be permanently deleted.</p>
               </div>
             </div>
-            <div className="mb-4">
-              <p className="text-sm text-slate-700 mb-2">Type <span className="font-semibold">DELETE</span> to confirm:</p>
-              <input
-                type="text"
-                placeholder="Type DELETE here"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                id="deleteConfirmInput"
-              />
+            <div className="space-y-4 mb-4">
+              {/* Password input for email/password users */}
+              {currentUser && !currentUser.providerData.some(p => p.providerId === 'google.com') && (
+                <div>
+                  <p className="text-sm text-slate-700 mb-2">Enter your password to confirm:</p>
+                  <input
+                    type="password"
+                    placeholder="Your password"
+                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+                      deleteConfirmError
+                        ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                        : 'border-slate-300 focus:ring-red-500 focus:border-red-500'
+                    }`}
+                    id="deletePasswordInput"
+                    onChange={() => setDeleteConfirmError('')}
+                  />
+                </div>
+              )}
+
+              {/* Google users message */}
+              {currentUser && currentUser.providerData.some(p => p.providerId === 'google.com') && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-800">
+                    You'll be asked to sign in with Google to confirm this action.
+                  </p>
+                </div>
+              )}
+
+              {/* DELETE confirmation text */}
+              <div>
+                <p className="text-sm text-slate-700 mb-2">Type <span className="font-semibold">DELETE</span> to confirm:</p>
+                <input
+                  type="text"
+                  placeholder="Type DELETE here"
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+                    deleteConfirmError
+                      ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                      : 'border-slate-300 focus:ring-red-500 focus:border-red-500'
+                  }`}
+                  id="deleteConfirmInput"
+                  onChange={() => setDeleteConfirmError('')}
+                />
+              </div>
+
+              {deleteConfirmError && (
+                <p className="text-sm text-red-600">{deleteConfirmError}</p>
+              )}
             </div>
             <div className="flex space-x-3 justify-end">
               <Button
                 variant="outline"
-                onClick={() => setShowDeleteModal(false)}
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteConfirmError('');
+                }}
                 className="px-4 py-2"
               >
                 Cancel
@@ -3273,10 +3419,10 @@ CITATION REQUIREMENT:
                 onClick={() => {
                   const input = document.getElementById('deleteConfirmInput') as HTMLInputElement;
                   if (input?.value === 'DELETE') {
+                    setDeleteConfirmError('');
                     handleConfirmDeleteAccount();
                   } else {
-                    setErrorMessage('Please type DELETE to confirm account deletion.');
-                    setShowErrorDialog(true);
+                    setDeleteConfirmError('Please type DELETE to confirm account deletion.');
                   }
                 }}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white"

@@ -37,7 +37,7 @@ class DocumentProcessor:
         self.upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads')
         # Ensure the upload directory exists
         os.makedirs(self.upload_dir, exist_ok=True)
-        print(f"📁 Upload directory: {self.upload_dir}")
+        # print(f"📁 Upload directory: {self.upload_dir}")
 
         # Track active upload tasks for immediate cancellation
         self.active_tasks = {}  # upload_key -> asyncio.Task
@@ -298,26 +298,12 @@ class DocumentProcessor:
         return chunks
 
     async def generate_protocols_from_chunks(self, chunks: List[Dict[str, Any]], user_id: str, upload_id: str, custom_prompt: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Generate protocols from semantic chunks using Gemini"""
-        # print(f"🚀 ENTERING generate_protocols_from_chunks with {len(chunks)} chunks for user {user_id}")
+        """Generate protocols from semantic chunks using dedicated upload protocol generator"""
         protocols = []
 
         try:
-            # Import Gemini service
-            from .gemini_service import summarize_checklist
-
-            # Test Gemini service availability
-            # print("🧪 Testing Gemini service availability...")
-            try:
-                test_result = summarize_checklist(
-                    title="Test Protocol",
-                    context_snippets=["[Test] Patient presents with fever. Administer acetaminophen 500mg every 6 hours."],
-                    instructions="Extract any medical protocols from this test content."
-                )
-                # print(f"✅ Gemini service test successful: {test_result}")
-            except Exception as test_error:
-                # print(f"❌ Gemini service test failed: {str(test_error)}")
-                raise test_error
+            # Import dedicated upload protocol generator
+            from .upload_protocol_generator import generate_protocol_from_chunk
 
             # Multi-pass protocol generation
             protocol_types = [
@@ -327,54 +313,29 @@ class DocumentProcessor:
                 {"focus": "prevention", "prompt": "Extract preventive protocols and prophylactic measures"}
             ]
 
+            print(f"📊 Processing {len(chunks[:5])} chunks with {len(protocol_types)} protocol types")
+
             for chunk in chunks[:5]:  # Process first 5 chunks to avoid overwhelming
                 chunk_text = chunk['text']
                 source_file = chunk['source_file']
-                # print(f"🔍 Processing chunk from {source_file}, text length: {len(chunk_text)}")
-                # print(f"📝 Chunk preview: {chunk_text[:200]}...")
 
                 for protocol_type in protocol_types:
                     try:
-                        # Create context snippet for Gemini
-                        context_snippet = f"[User Document: {source_file}] {chunk_text}"
+                        # Check for cancellation before each protocol generation
+                        if self._is_upload_cancelled(user_id, upload_id):
+                            print(f"🚫 Upload {upload_id} cancelled during protocol generation")
+                            return protocols
 
-                        # Construct instructions with optional custom prompt
-                        base_instructions = f"""
-                        {protocol_type['prompt']} from the provided medical document.
-
-                        IMPORTANT REQUIREMENTS:
-                        - Only extract protocols that are explicitly described in the document
-                        - Each step must be a specific, actionable medical procedure
-                        - Include explanations for complex procedures
-                        - Assign citation references to source document
-                        - If no relevant {protocol_type['focus']} protocols are found, return empty checklist
-
-                        Focus on {protocol_type['focus']} procedures only.
-                        """
-
-                        if custom_prompt and custom_prompt.strip():
-                            final_instructions = f"""
-                            {base_instructions}
-
-                            ADDITIONAL USER INSTRUCTIONS:
-                            {custom_prompt.strip()}
-
-                            Please incorporate these specific user requirements while maintaining the above base requirements.
-                            """
-                        else:
-                            final_instructions = base_instructions
-
-                        # Generate protocol using existing Gemini service
-                        result = summarize_checklist(
-                            title=f"{protocol_type['focus'].title()} Protocol from {source_file}",
-                            context_snippets=[context_snippet],
-                            instructions=final_instructions,
+                        # Generate protocol using dedicated service
+                        result = generate_protocol_from_chunk(
+                            chunk_text=chunk_text,
+                            source_file=source_file,
+                            protocol_type=protocol_type['focus'],
+                            protocol_focus=protocol_type['prompt'],
+                            custom_prompt=custom_prompt,
                             region="User Defined",
                             year=datetime.now().year
                         )
-
-                        # print(f"📤 Gemini response for {protocol_type['focus']}: {result}")
-                        # print(f"📊 Result has checklist: {bool(result.get('checklist'))}, length: {len(result.get('checklist', []))}")
 
                         # Only add if we found actual protocols
                         if result.get("checklist") and len(result["checklist"]) > 0:
@@ -400,19 +361,23 @@ class DocumentProcessor:
                                 "intent": protocol_type['focus']
                             }
                             protocols.append(protocol)
-                            # print(f"✅ Generated {protocol_type['focus']} protocol from {source_file}")
+                            print(f"✅ Added {protocol_type['focus']} protocol from {source_file}")
+                        else:
+                            print(f"⚠️  No {protocol_type['focus']} protocol generated from {source_file} (empty checklist)")
 
                     except Exception as e:
                         print(f"⚠️  Failed to generate {protocol_type['focus']} protocol from {source_file}: {str(e)}")
                         continue
 
-        except ImportError:
-            print("⚠️  Gemini service not available, using mock protocols")
-            # Fallback to mock protocols if Gemini service is not available
+        except ImportError as ie:
+            print(f"⚠️  Upload protocol generator not available: {str(ie)}, using mock protocols")
+            # Fallback to mock protocols if service is not available
             return await self._generate_mock_protocols(chunks, user_id)
 
         except Exception as e:
             print(f"❌ Error in protocol generation: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return await self._generate_mock_protocols(chunks, user_id)
 
         print(f"🏥 Successfully generated {len(protocols)} protocols from {len(chunks)} chunks")
@@ -1055,6 +1020,9 @@ class DocumentProcessor:
                     # Clean up any temporary files
                     await self.cleanup_temp_files(upload_id)
 
+                    # Clean up preview file
+                    await self.delete_preview_file(user_id, upload_id)
+
                     return True
                 else:
                     print(f"⚠️ Upload {upload_id} task already completed")
@@ -1065,6 +1033,53 @@ class DocumentProcessor:
 
         except Exception as e:
             print(f"❌ Error cancelling upload {upload_id}: {str(e)}")
+            return False
+
+    async def delete_preview_file(self, user_id: str, upload_id: str) -> bool:
+        """
+        Delete ALL preview JSON files for a user (used for Clear All)
+
+        Args:
+            user_id: Firebase Auth user ID
+            upload_id: Upload identifier (can be None to delete all user previews)
+
+        Returns:
+            bool: True if any files were deleted, False otherwise
+        """
+        try:
+            preview_dir = os.path.join(self.upload_dir, 'previews')
+
+            if not os.path.exists(preview_dir):
+                print(f"⚠️ Preview directory not found: {preview_dir}")
+                return False
+
+            deleted_count = 0
+
+            # Get all JSON files in preview directory
+            for filename in os.listdir(preview_dir):
+                if not filename.endswith('.json'):
+                    continue
+
+                # Check if this file belongs to the user
+                if filename.startswith(f"{user_id}_"):
+                    filepath = os.path.join(preview_dir, filename)
+                    try:
+                        os.remove(filepath)
+                        deleted_count += 1
+                        print(f"🧹 Deleted preview file: {filename}")
+                    except Exception as file_error:
+                        print(f"⚠️ Failed to delete {filename}: {str(file_error)}")
+                        continue
+
+            if deleted_count > 0:
+                print(f"✅ Deleted {deleted_count} preview file(s) for user {user_id}")
+                return True
+            else:
+                print(f"⚠️ No preview files found for user {user_id}")
+                return False
+
+        except Exception as e:
+            print(f"❌ Error deleting preview files: {str(e)}")
             return False
 
     def _is_upload_cancelled(self, user_id: str, upload_id: str) -> bool:
