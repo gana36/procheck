@@ -4,14 +4,13 @@
  */
 
 import { useCallback, useRef } from 'react';
-import { Message, ProtocolData } from '@/types';
+import { Message } from '@/types';
 import {
   detectFollowUp,
   classifyQueryIntent,
   getIntentPrefix,
   generateFollowUpQuestions,
   isDuplicateMessage,
-  extractAskedTopics,
   validateMessageContent,
   sanitizeInput,
   hasProtocolContextChanged,
@@ -25,7 +24,7 @@ export interface UseChatOperationsOptions {
 }
 
 export function useChatOperations(options: UseChatOperationsOptions) {
-  const { messages, onShowNewTabDialog, onError } = options;
+  const { messages, onError } = options;
   
   // Track last analysis to avoid re-computation
   const lastAnalysisRef = useRef<{
@@ -126,7 +125,6 @@ export function useChatOperations(options: UseChatOperationsOptions) {
    * Prepare follow-up questions based on context
    */
   const prepareFollowUpQuestions = useCallback((intent: string, protocolTitle: string) => {
-    const askedTopics = extractAskedTopics(messages);
     const askedQuestions = messages
       .filter(m => m.type === 'user')
       .map(m => m.content);
