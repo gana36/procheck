@@ -115,7 +115,7 @@ const getCachedProtocols = (userId: string) => {
     if (cached) {
       const { data, expires } = JSON.parse(cached);
       if (Date.now() < expires) {
-        console.log('✅ Using cached user protocols');
+        
         return data;
       } else {
         console.log('⏰ Cache expired, will fetch fresh data');
