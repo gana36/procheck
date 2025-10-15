@@ -616,8 +616,8 @@ class DocumentProcessor:
                 "message": "Protocol regeneration failed"
             }
 
-    async def store_protocols_for_preview(self, user_id: str, upload_id: str, protocols: List[Dict[str, Any]]) -> None:
-        """Store generated protocols temporarily for user preview"""
+    async def store_protocols_for_preview(self, user_id: str, upload_id: str, protocols: List[Dict[str, Any]], status: str = "completed") -> None:
+        """Store generated protocols temporarily for user preview with status"""
         try:
             import json
 
@@ -625,19 +625,27 @@ class DocumentProcessor:
             preview_dir = os.path.join(self.upload_dir, 'previews')
             os.makedirs(preview_dir, exist_ok=True)
 
+            # Create preview data with status
+            preview_data = {
+                "status": status,  # 'completed', 'cancelled', or 'error'
+                "protocols": protocols,
+                "upload_id": upload_id,
+                "created_at": datetime.now().isoformat()
+            }
+
             # Store protocols as JSON file
             preview_file = os.path.join(preview_dir, f"{user_id}_{upload_id}.json")
             with open(preview_file, 'w', encoding='utf-8') as f:
-                json.dump(protocols, f, indent=2, ensure_ascii=False)
+                json.dump(preview_data, f, indent=2, ensure_ascii=False)
 
-            print(f"💾 Stored {len(protocols)} protocols for preview at {preview_file}")
+            print(f"💾 Stored {len(protocols)} protocols for preview at {preview_file} with status '{status}'")
 
         except Exception as e:
             print(f"❌ Error storing protocols for preview: {str(e)}")
             raise
 
-    async def get_preview_protocols(self, user_id: str, upload_id: str) -> List[Dict[str, Any]]:
-        """Retrieve stored protocols for preview"""
+    async def get_preview_protocols(self, user_id: str, upload_id: str) -> Dict[str, Any]:
+        """Retrieve stored protocols for preview with status"""
         try:
             import json
 
@@ -657,25 +665,44 @@ class DocumentProcessor:
                 print(f"⚠️ Preview file not found: {preview_file}")
                 print(f"🔍 Expected filename: {user_id}_{upload_id}.json")
                 # No preview file = no protocols to show
-                return []
+                return {"status": "not_found", "protocols": []}
 
             with open(preview_file, 'r', encoding='utf-8') as f:
-                protocols = json.load(f)
+                data = json.load(f)
 
-            print(f"📖 Retrieved {len(protocols)} protocols from preview")
-            return protocols
+            # Handle both old format (just array) and new format (object with status)
+            if isinstance(data, list):
+                # Old format - just an array of protocols
+                print(f"📖 Retrieved {len(data)} protocols from preview (old format)")
+                return {"status": "completed", "protocols": data}
+            else:
+                # New format - object with status and protocols
+                protocols = data.get("protocols", [])
+                status = data.get("status", "completed")
+                print(f"📖 Retrieved {len(protocols)} protocols from preview with status '{status}'")
+                return {"status": status, "protocols": protocols}
 
         except Exception as e:
             print(f"❌ Error retrieving preview protocols: {str(e)}")
-            return []
+            return {"status": "error", "protocols": []}
 
     async def approve_and_index_protocols(self, user_id: str, upload_id: str) -> Dict[str, Any]:
         """Index the approved protocols to Elasticsearch"""
         try:
             # Get protocols from preview
-            protocols = await self.get_preview_protocols(user_id, upload_id)
+            preview_data = await self.get_preview_protocols(user_id, upload_id)
+            protocols = preview_data.get("protocols", [])
 
             if not protocols:
+                # Clean up preview file even when there are no protocols
+                try:
+                    preview_file = os.path.join(self.upload_dir, 'previews', f"{user_id}_{upload_id}.json")
+                    if os.path.exists(preview_file):
+                        os.remove(preview_file)
+                        print(f"🧹 Cleaned up preview file (no protocols): {preview_file}")
+                except Exception as cleanup_error:
+                    print(f"⚠️ Failed to cleanup preview file: {str(cleanup_error)}")
+
                 return {
                     "success": False,
                     "message": "No protocols found for indexing"
@@ -727,7 +754,8 @@ class DocumentProcessor:
             print(f"🔄 Starting upload protocols regeneration for upload {upload_id}")
 
             # Get the original protocols from preview
-            original_protocols = await self.get_preview_protocols(user_id, upload_id)
+            preview_data = await self.get_preview_protocols(user_id, upload_id)
+            original_protocols = preview_data.get("protocols", [])
 
             if not original_protocols:
                 return {
@@ -937,8 +965,8 @@ class DocumentProcessor:
                     # Clean up any temporary files
                     await self.cleanup_temp_files(upload_id)
 
-                    # Clean up preview file
-                    await self.delete_preview_file(user_id, upload_id)
+                    # Store cancelled status in preview file instead of deleting
+                    await self.store_protocols_for_preview(user_id, upload_id, [], status="cancelled")
 
                     print(f"✅ Upload {upload_id} cancellation completed")
                     return True

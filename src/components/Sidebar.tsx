@@ -1087,22 +1087,35 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       } else {
         // Send notification for automatic upload completion
         if (onNotifyUploadReady) {
-          // Check if protocols were cancelled (0 protocols)
-          if (preview.protocols.length === 0) {
+          // Extract protocols array (handle both old and new format)
+          const protocols = Array.isArray(preview.protocols) ? preview.protocols : (preview.protocols || []);
+          const status = preview.status || 'completed';
+
+          // Check status field to determine the correct notification
+          if (status === 'cancelled') {
             onNotifyUploadReady({
               type: 'upload_ready',
               title: '🚫 Upload Cancelled',
               message: 'Protocol generation was cancelled successfully.',
               uploadId,
-              protocols: preview.protocols
+              protocols
+            });
+          } else if (protocols.length === 0) {
+            // Upload completed but no relevant protocols found
+            onNotifyUploadReady({
+              type: 'upload_ready',
+              title: 'ℹ️ No Protocols Found',
+              message: 'No relevant medical protocols were found in the uploaded documents.',
+              uploadId,
+              protocols
             });
           } else {
             onNotifyUploadReady({
               type: 'upload_ready',
               title: '🎉 Protocols Ready!',
-              message: `Your ${preview.protocols.length} protocol${preview.protocols.length === 1 ? '' : 's'} have been generated and are ready for review.`,
+              message: `Your ${protocols.length} protocol${protocols.length === 1 ? '' : 's'} have been generated and are ready for review.`,
               uploadId,
-              protocols: preview.protocols
+              protocols
             });
           }
         }

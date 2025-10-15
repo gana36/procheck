@@ -653,7 +653,19 @@ function App() {
         await saveCurrentConversation(tabToClose.messages, lastUserMessage.content);
       }
     }
-    
+
+    // Clean up preview file when closing generated-protocols tab
+    if (tabToClose && tabToClose.type === 'generated-protocols' && currentUser && generatedUploadId) {
+      try {
+        await deleteUploadPreview(currentUser.uid, generatedUploadId);
+        console.log('🧹 Cleaned up preview file on tab close:', generatedUploadId);
+        setGeneratedUploadId(null);
+        setGeneratedProtocols([]);
+      } catch (error) {
+        console.error('⚠️ Failed to cleanup preview file:', error);
+      }
+    }
+
     setTabs(prevTabs => {
       const newTabs = prevTabs.filter(tab => tab.id !== tabId);
 
@@ -1704,26 +1716,38 @@ CITATION REQUIREMENT:
 
   // Generated protocols handler
   const handleShowGeneratedProtocols = useCallback(async (uploadId: string, protocols: any[], keepProfileOpen = false) => {
+    // Fetch preview to get status
+    let protocolStatus = 'completed';
+    if (currentUser) {
+      try {
+        const preview = await getUploadPreview(currentUser.uid, uploadId);
+        protocolStatus = preview.status || 'completed';
+      } catch (error) {
+        console.error('Failed to get preview status:', error);
+      }
+    }
+
     // Check if a generated protocols tab already exists
     const existingProtocolTab = tabs.find(tab => tab.type === 'generated-protocols');
 
     if (existingProtocolTab) {
-      // Update existing tab with new protocols
+      // Update existing tab with new protocols and status
       setTabs(prevTabs =>
         prevTabs.map(tab =>
           tab.type === 'generated-protocols'
-            ? { ...tab, protocols, isLoading: false } as ProtocolTab
+            ? { ...tab, protocols, status: protocolStatus, isLoading: false } as ProtocolTab
             : tab
         )
       );
       setActiveTabId(existingProtocolTab.id);
     } else {
-      // Create new protocol tab
+      // Create new protocol tab with status
       const newProtocolTab: ProtocolTab = {
         id: generateTabId(),
         title: 'Generated Protocols',
         type: 'generated-protocols',
         protocols,
+        status: protocolStatus,
         isLoading: false
       };
 
@@ -2599,12 +2623,19 @@ CITATION REQUIREMENT:
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <h1 className="text-2xl font-bold text-slate-900">
-                        {activeTab.protocols.length === 0 ? '🚫 Upload Cancelled' : 'Generated Protocols'}
+                        {activeTab.status === 'cancelled'
+                          ? '🚫 Upload Cancelled'
+                          : activeTab.protocols.length === 0
+                            ? 'ℹ️ No Protocols Found'
+                            : 'Generated Protocols'
+                        }
                       </h1>
                       <p className="text-slate-600">
-                        {activeTab.protocols.length === 0
+                        {activeTab.status === 'cancelled'
                           ? 'Protocol generation was cancelled. No protocols were generated.'
-                          : `${activeTab.protocols.length} protocols generated from your upload. Review and approve to add to your index.`
+                          : activeTab.protocols.length === 0
+                            ? 'No relevant medical protocols were found in the uploaded documents.'
+                            : `${activeTab.protocols.length} protocols generated from your upload. Review and approve to add to your index.`
                         }
                       </p>
                     </div>

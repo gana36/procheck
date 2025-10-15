@@ -907,6 +907,7 @@ export async function getUploadPreview(userId: string, uploadId: string): Promis
   success: boolean;
   upload_id: string;
   protocols: any[];
+  status?: string;  // Upload status: 'completed', 'cancelled', etc.
   total: number;
 }> {
   const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/upload-preview/${encodeURIComponent(uploadId)}`);

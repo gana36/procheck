@@ -818,12 +818,15 @@ async def get_upload_preview(user_id: str, upload_id: str):
         # Use global processor to maintain cancellation state
 
         # Get stored protocols for this upload
-        protocols = await document_processor.get_preview_protocols(user_id, upload_id)
+        preview_data = await document_processor.get_preview_protocols(user_id, upload_id)
+        protocols = preview_data.get("protocols", [])
+        status = preview_data.get("status", "completed")
 
         return {
             "success": True,
             "upload_id": upload_id,
             "protocols": protocols,
+            "status": status,
             "total": len(protocols)
         }
 
