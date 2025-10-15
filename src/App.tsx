@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Menu, X, LogOut, UserX, FileText, Plus } from 'lucide-react';
+import { Menu, X, LogOut, UserX, FileText, Plus, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import LandingScreen from '@/components/LandingScreen';
 import Sidebar from '@/components/Sidebar';
 import ChatInput from '@/components/ChatInput';
@@ -18,11 +18,87 @@ import NetworkStatusBanner from '@/components/NetworkStatusBanner';
 import { Message, ProtocolData, ProtocolStep, Citation, SearchMetadata, AppTab, ConversationTab, ProtocolTab, ProtocolIndexTab } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { searchProtocols, generateProtocol, saveConversation, getConversation, getSavedProtocol, ConversationMessage, protocolConversationChat, deleteUserData } from '@/lib/api';
-import { deleteUser, EmailAuthProvider, reauthenticateWithCredential, GoogleAuthProvider, reauthenticateWithPopup } from 'firebase/auth';
+import { deleteUser } from 'firebase/auth';
 import { generateMessageId, generateConversationId, generateTabId } from '@/lib/id-generator';
 import { formatErrorMessage } from '@/lib/error-handler';
-import { approveAndIndexUpload, getUploadPreview, regenerateUploadProtocols, getUserUploadedProtocols, deleteUserProtocol, deleteAllUserProtocols, deleteUploadPreview } from '@/lib/api';
+import { approveAndIndexUpload, getUploadPreview, regenerateProtocol, regenerateUploadProtocols, getUserUploadedProtocols, deleteUserProtocol, deleteAllUserProtocols } from '@/lib/api';
 import { detectFollowUp, validateMessageContent, sanitizeInput } from '@/lib/chat-utils';
+
+// Memoized regeneration form to prevent re-renders
+const RegenerationForm = memo(({
+  regenerationPrompt,
+  onPromptChange,
+  onCancel,
+  onRegenerate,
+  isRegenerating
+}: {
+  regenerationPrompt: string;
+  onPromptChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onCancel: () => void;
+  onRegenerate: () => void;
+  isRegenerating: boolean;
+}) => {
+  // Create a ref to maintain the textarea element
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  return (
+  <div className="space-y-4">
+    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+      <h3 className="text-sm font-medium text-yellow-800 mb-2">
+        🔄 Regenerate Protocols
+      </h3>
+      <p className="text-sm text-yellow-700">
+        Provide new instructions to regenerate these protocols with different focus or requirements.
+      </p>
+    </div>
+
+    <div>
+      <label htmlFor="regeneration-prompt" className="block text-sm font-medium text-slate-900 mb-2">
+        Custom Instructions
+      </label>
+      <textarea
+        ref={textareaRef}
+        id="regeneration-prompt"
+        value={regenerationPrompt}
+        onChange={onPromptChange}
+        placeholder="Enter your regeneration instructions here..."
+        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none text-sm"
+        rows={3}
+        disabled={isRegenerating}
+      />
+      <p className="text-xs text-slate-500 mt-1">
+        Specify how you want the protocols to be regenerated. The AI will use these instructions to create new versions.
+      </p>
+    </div>
+
+    <div className="flex space-x-3">
+      <Button
+        onClick={onCancel}
+        variant="outline"
+        disabled={isRegenerating}
+      >
+        Cancel
+      </Button>
+      <Button
+        onClick={onRegenerate}
+        className="bg-teal-600 hover:bg-teal-700 text-white"
+        disabled={!regenerationPrompt.trim() || isRegenerating}
+      >
+        {isRegenerating ? (
+          <>
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+            Regenerating...
+          </>
+        ) : (
+          <>
+            🔄 Regenerate Protocols
+          </>
+        )}
+      </Button>
+    </div>
+  </div>
+  );
+});
 
 // Simple Regeneration Modal - no re-rendering issues
 function RegenerationModal({ isOpen, isRegenerating, onCancel, onRegenerate }: {
@@ -108,7 +184,6 @@ function App() {
   };
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteConfirmError, setDeleteConfirmError] = useState('');
   const [showNewTabDialog, setShowNewTabDialog] = useState(false);
 
   // Profile modal state - moved from Sidebar to prevent reset on re-renders
@@ -143,9 +218,8 @@ function App() {
       console.error('Failed to restore tabs from localStorage:', error);
     }
     // Default tab if nothing in storage
-    const defaultTabId = generateTabId();
     return [{
-      id: defaultTabId,
+      id: generateTabId(),
       title: 'New Protocol',
       type: 'chat' as const,
       messages: [],
@@ -153,28 +227,17 @@ function App() {
       isLoading: false
     }];
   });
-
+  
   const [activeTabId, setActiveTabId] = useState(() => {
     try {
-      // First check if there's a saved active tab
       const savedActiveTab = localStorage.getItem('procheck_active_tab');
       if (savedActiveTab) {
         return savedActiveTab;
       }
-
-      // Then check if there are saved tabs and use the first one's ID
-      const savedTabs = localStorage.getItem('procheck_tabs');
-      if (savedTabs) {
-        const parsed = JSON.parse(savedTabs) as AppTab[];
-        if (parsed.length > 0 && parsed[0].id) {
-          return parsed[0].id;
-        }
-      }
     } catch (error) {
       console.error('Failed to restore active tab from localStorage:', error);
     }
-    // Fallback: generate a new ID (will be synced with default tab in useEffect)
-    return generateTabId();
+    return tabs[0]?.id || generateTabId();
   });
 
   // Confirmation modal states
@@ -195,48 +258,9 @@ function App() {
   const [regenerationPrompt, setRegenerationPrompt] = useState('Focus on specific aspects like pediatric considerations, emergency protocols, or detailed contraindications');
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isRegenerated, setIsRegenerated] = useState(false);
-
-  // User-specific protocols state (keyed by userId)
-  const [userIndexProtocolsByUser, setUserIndexProtocolsByUser] = useState<Record<string, any[]>>({});
-  const [generatedProtocolsByUser, setGeneratedProtocolsByUser] = useState<Record<string, any[]>>({});
-  const [generatedUploadIdByUser, setGeneratedUploadIdByUser] = useState<Record<string, string | null>>({});
-
-  // Get current user's protocols
-  const userIndexProtocols = userId ? (userIndexProtocolsByUser[userId] || []) : [];
-  const generatedProtocols = userId ? (generatedProtocolsByUser[userId] || []) : [];
-  const generatedUploadId = userId ? (generatedUploadIdByUser[userId] || null) : null;
-
-  // Helper functions to update user-specific protocols
-  const setUserIndexProtocols = (protocolsOrUpdater: any[] | ((prev: any[]) => any[])) => {
-    if (!userId) return;
-    if (typeof protocolsOrUpdater === 'function') {
-      setUserIndexProtocolsByUser(prev => {
-        const currentProtocols = prev[userId] || [];
-        const updatedProtocols = protocolsOrUpdater(currentProtocols);
-        return { ...prev, [userId]: updatedProtocols };
-      });
-    } else {
-      setUserIndexProtocolsByUser(prev => ({ ...prev, [userId]: protocolsOrUpdater }));
-    }
-  };
-
-  const setGeneratedProtocols = (protocolsOrUpdater: any[] | ((prev: any[]) => any[])) => {
-    if (!userId) return;
-    if (typeof protocolsOrUpdater === 'function') {
-      setGeneratedProtocolsByUser(prev => {
-        const currentProtocols = prev[userId] || [];
-        const updatedProtocols = protocolsOrUpdater(currentProtocols);
-        return { ...prev, [userId]: updatedProtocols };
-      });
-    } else {
-      setGeneratedProtocolsByUser(prev => ({ ...prev, [userId]: protocolsOrUpdater }));
-    }
-  };
-
-  const setGeneratedUploadId = (uploadId: string | null) => {
-    if (!userId) return;
-    setGeneratedUploadIdByUser(prev => ({ ...prev, [userId]: uploadId }));
-  };
+  const [userIndexProtocols, setUserIndexProtocols] = useState<any[]>([]);
+  const [generatedProtocols, setGeneratedProtocols] = useState<any[]>([]);
+  const [generatedUploadId, setGeneratedUploadId] = useState<string | null>(null);
 
   // Upload state - moved from Sidebar for persistence across navigation
   const [isUploading, setIsUploading] = useState(false);
@@ -706,15 +730,6 @@ function App() {
     };
   };
 
-  // Ensure activeTabId always points to a valid tab
-  useEffect(() => {
-    const activeTabExists = tabs.some(tab => tab.id === activeTabId);
-    if (!activeTabExists && tabs.length > 0) {
-      console.log('⚠️ Active tab not found, switching to first tab:', tabs[0].id);
-      setActiveTabId(tabs[0].id);
-    }
-  }, [tabs, activeTabId]);
-
   // Persist tabs to localStorage whenever they change
   useEffect(() => {
     try {
@@ -732,63 +747,6 @@ function App() {
       console.error('Failed to persist active tab to localStorage:', error);
     }
   }, [activeTabId]);
-
-  // Clear localStorage when user changes (handles account deletion + re-signup)
-  useEffect(() => {
-    const lastUserId = localStorage.getItem('procheck_last_user_id');
-
-    if (userId && lastUserId && userId !== lastUserId) {
-      // Different user logged in - clear all cached data
-      // Clear ALL localStorage and sessionStorage
-      const keysToRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key) keysToRemove.push(key);
-      }
-      keysToRemove.forEach(key => localStorage.removeItem(key));
-      sessionStorage.clear();
-
-      // Clear ALL user-specific protocol state
-      setUserIndexProtocolsByUser({});
-      setGeneratedProtocolsByUser({});
-      setGeneratedUploadIdByUser({});
-
-      // Set the new user ID
-      localStorage.setItem('procheck_last_user_id', userId);
-
-      // Reload the page to reset all state
-      window.location.reload();
-    } else if (userId && !lastUserId) {
-      // First time login or after cache clear
-      localStorage.setItem('procheck_last_user_id', userId);
-    } else if (!userId && lastUserId) {
-      // User logged out - clear the tracking
-      localStorage.removeItem('procheck_last_user_id');
-    }
-  }, [userId]);
-
-  // Load user's uploaded protocols when userId changes (only if not already loaded)
-  useEffect(() => {
-    const loadUserProtocols = async () => {
-      if (!userId || !currentUser) return;
-
-      // Check if protocols are already loaded for this user
-      if (userIndexProtocolsByUser[userId]?.length > 0) {
-        return;
-      }
-
-      try {
-        const response = await getUserUploadedProtocols(userId, 50);
-        if (response.success && response.protocols) {
-          setUserIndexProtocols(response.protocols);
-        }
-      } catch (error) {
-        console.error('Failed to load user protocols:', error);
-      }
-    };
-
-    loadUserProtocols();
-  }, [userId, currentUser]); // Only depend on userId and currentUser to avoid infinite loops
 
 
   const handleSendMessage = async (content: string, skipDialogCheck: boolean = false) => {
@@ -2007,6 +1965,11 @@ CITATION REQUIREMENT:
     setRegenerationPrompt('');
   }, []);
 
+  const handlePromptChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setRegenerationPrompt(e.target.value);
+  }, []);
+
+
   // Notification handlers
   const addNotification = useCallback((notification: Omit<typeof notifications[0], 'id' | 'timestamp'>) => {
     const newNotification = {
@@ -2018,6 +1981,7 @@ CITATION REQUIREMENT:
 
     // If this notification contains generated protocols, update the state
     if (notification.type === 'upload_ready' && notification.uploadId && notification.protocols) {
+      console.log('🔔 Notification received with protocols, updating generated protocols state');
       setGeneratedProtocols(notification.protocols);
       setGeneratedUploadId(notification.uploadId);
     }
@@ -2026,7 +1990,7 @@ CITATION REQUIREMENT:
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== newNotification.id));
     }, 10000);
-  }, [userId, setGeneratedProtocols, setGeneratedUploadId]);
+  }, []);
 
   const removeNotification = useCallback((id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
@@ -2056,23 +2020,6 @@ CITATION REQUIREMENT:
   const handleConfirmLogout = async () => {
     try {
       await logout();
-
-      // Reset tabs to default state after logout
-      const defaultTabId = generateTabId();
-      setTabs([{
-        id: defaultTabId,
-        title: 'New Protocol',
-        type: 'chat' as const,
-        messages: [],
-        conversationId: generateConversationId(),
-        isLoading: false
-      }]);
-
-      // Reset active tab to the new default tab
-      setActiveTabId(defaultTabId);
-
-      // No need to clear generated protocols - they're now user-specific!
-
       setShowLogoutModal(false);
     } catch (error) {
       console.error('Failed to log out:', error);
@@ -2084,105 +2031,35 @@ CITATION REQUIREMENT:
   const handleConfirmDeleteAccount = async () => {
     if (!currentUser) return;
 
-    const passwordInput = document.getElementById('deletePasswordInput') as HTMLInputElement;
-    const password = passwordInput?.value || '';
-
     try {
-      // Re-authenticate user before deletion
-      // Check if user signed in with Google
-      const isGoogleUser = currentUser.providerData.some(
-        provider => provider.providerId === 'google.com'
-      );
-
-      if (isGoogleUser) {
-        // Re-authenticate with Google popup
-        const provider = new GoogleAuthProvider();
-        await reauthenticateWithPopup(currentUser, provider);
-      } else {
-        // Re-authenticate with email/password
-        if (!password) {
-          setDeleteConfirmError('Please enter your password to confirm deletion.');
-          return;
-        }
-
-        if (!currentUser.email) {
-          setDeleteConfirmError('Could not verify your email address.');
-          return;
-        }
-
-        const credential = EmailAuthProvider.credential(currentUser.email, password);
-        await reauthenticateWithCredential(currentUser, credential);
-      }
-
       // First delete user's uploaded protocols from Elasticsearch
+      console.log('Deleting user protocols from Elasticsearch...');
       try {
-        await deleteAllUserProtocols(currentUser.uid);
+        const protocolsResult = await deleteAllUserProtocols(currentUser.uid);
+        console.log('Elasticsearch protocols deletion result:', protocolsResult);
       } catch (protocolError) {
-        console.warn('Failed to delete Elasticsearch protocols:', protocolError);
+        console.warn('Failed to delete Elasticsearch protocols, continuing with account deletion:', protocolError);
       }
 
       // Then delete user data from Firestore backend (conversations and saved protocols)
-      await deleteUserData(currentUser.uid);
+      console.log('Deleting user data from Firestore...');
+      const backendResult = await deleteUserData(currentUser.uid);
+      console.log('Firestore deletion result:', backendResult);
 
       // Finally delete Firebase Auth user account
+      console.log('Deleting Firebase Auth account...');
       await deleteUser(currentUser);
 
-      // Clear all local state and storage
-      localStorage.clear();
-      sessionStorage.clear();
-
-      // Reset tabs to default state
-      const defaultTabId = generateTabId();
-      setTabs([{
-        id: defaultTabId,
-        title: 'New Protocol',
-        type: 'chat' as const,
-        messages: [],
-        conversationId: generateConversationId(),
-        isLoading: false
-      }]);
-      setActiveTabId(defaultTabId);
-
-      // Clear ALL user-specific protocol state
-      setUserIndexProtocolsByUser({});
-      setGeneratedProtocolsByUser({});
-      setGeneratedUploadIdByUser({});
-
-      // Clear any other user-related state
-      setNotifications([]);
-      setShowProtocolPreview(false);
-      setPreviewProtocols([]);
-      setPreviewUploadId(null);
-
       setShowDeleteModal(false);
-
-      // Redirect to landing page
-      navigate('/');
+      console.log('Account deleted successfully');
     } catch (error: any) {
       console.error('Failed to delete account:', error);
-
-      // Clear the delete modal state
-      setShowDeleteModal(false);
-
-      if (error.code === 'auth/wrong-password') {
-        setDeleteConfirmError('Incorrect password. Please try again.');
-        setShowDeleteModal(true); // Keep modal open for retry
-      } else if (error.code === 'auth/requires-recent-login') {
+      if (error.code === 'auth/requires-recent-login') {
         setErrorMessage('For security reasons, please log out and log back in before deleting your account.');
-        setShowErrorDialog(true);
-      } else if (error.code === 'auth/popup-closed-by-user') {
-        setDeleteConfirmError('Google sign-in was cancelled. Please try again.');
-        setShowDeleteModal(true); // Keep modal open for retry
-      } else if (error.code === 'auth/invalid-credential') {
-        setDeleteConfirmError('Invalid password. Please check your password and try again.');
-        setShowDeleteModal(true); // Keep modal open for retry
-      } else if (error.code === 'auth/too-many-requests') {
-        setErrorMessage('Too many failed attempts. Please try again later or reset your password.');
-        setShowErrorDialog(true);
       } else {
         setErrorMessage(`Failed to delete account: ${error.message || 'Unknown error'}. Please try again.`);
-        setShowErrorDialog(true);
       }
+      setShowErrorDialog(true);
     }
   };
 
@@ -2639,20 +2516,8 @@ CITATION REQUIREMENT:
                       {isRegenerating ? 'Regenerating...' : 'Regenerate Protocols'}
                     </button>
                     <button
-                      onClick={async () => {
+                      onClick={() => {
                         console.log('🗑️ Clear Generated Protocols clicked');
-
-                        try {
-                          // Call backend to delete preview file if we have an upload ID
-                          if (currentUser && generatedUploadId) {
-                            console.log(`📡 Calling delete upload preview API for upload ID: ${generatedUploadId}`);
-                            await deleteUploadPreview(currentUser.uid, generatedUploadId);
-                            console.log('✅ Preview file deleted from backend');
-                          }
-                        } catch (error) {
-                          console.error('⚠️ Failed to delete preview file from backend:', error);
-                          // Continue with frontend cleanup even if backend call fails
-                        }
 
                         // Clear the generated protocols from state (no confirmation needed - they're temporary)
                         setGeneratedProtocols([]);
@@ -3387,61 +3252,19 @@ CITATION REQUIREMENT:
                 <p className="text-sm text-slate-600">This action cannot be undone. All your data will be permanently deleted.</p>
               </div>
             </div>
-            <div className="space-y-4 mb-4">
-              {/* Password input for email/password users */}
-              {currentUser && !currentUser.providerData.some(p => p.providerId === 'google.com') && (
-                <div>
-                  <p className="text-sm text-slate-700 mb-2">Enter your password to confirm:</p>
-                  <input
-                    type="password"
-                    placeholder="Your password"
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
-                      deleteConfirmError
-                        ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                        : 'border-slate-300 focus:ring-red-500 focus:border-red-500'
-                    }`}
-                    id="deletePasswordInput"
-                    onChange={() => setDeleteConfirmError('')}
-                  />
-                </div>
-              )}
-
-              {/* Google users message */}
-              {currentUser && currentUser.providerData.some(p => p.providerId === 'google.com') && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-sm text-blue-800">
-                    You'll be asked to sign in with Google to confirm this action.
-                  </p>
-                </div>
-              )}
-
-              {/* DELETE confirmation text */}
-              <div>
-                <p className="text-sm text-slate-700 mb-2">Type <span className="font-semibold">DELETE</span> to confirm:</p>
-                <input
-                  type="text"
-                  placeholder="Type DELETE here"
-                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
-                    deleteConfirmError
-                      ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                      : 'border-slate-300 focus:ring-red-500 focus:border-red-500'
-                  }`}
-                  id="deleteConfirmInput"
-                  onChange={() => setDeleteConfirmError('')}
-                />
-              </div>
-
-              {deleteConfirmError && (
-                <p className="text-sm text-red-600">{deleteConfirmError}</p>
-              )}
+            <div className="mb-4">
+              <p className="text-sm text-slate-700 mb-2">Type <span className="font-semibold">DELETE</span> to confirm:</p>
+              <input
+                type="text"
+                placeholder="Type DELETE here"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                id="deleteConfirmInput"
+              />
             </div>
             <div className="flex space-x-3 justify-end">
               <Button
                 variant="outline"
-                onClick={() => {
-                  setShowDeleteModal(false);
-                  setDeleteConfirmError('');
-                }}
+                onClick={() => setShowDeleteModal(false)}
                 className="px-4 py-2"
               >
                 Cancel
@@ -3450,10 +3273,10 @@ CITATION REQUIREMENT:
                 onClick={() => {
                   const input = document.getElementById('deleteConfirmInput') as HTMLInputElement;
                   if (input?.value === 'DELETE') {
-                    setDeleteConfirmError('');
                     handleConfirmDeleteAccount();
                   } else {
-                    setDeleteConfirmError('Please type DELETE to confirm account deletion.');
+                    setErrorMessage('Please type DELETE to confirm account deletion.');
+                    setShowErrorDialog(true);
                   }
                 }}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white"

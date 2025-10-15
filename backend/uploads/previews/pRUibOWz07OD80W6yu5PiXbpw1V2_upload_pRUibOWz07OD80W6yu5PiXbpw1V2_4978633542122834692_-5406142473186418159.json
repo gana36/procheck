@@ -1,0 +1,242 @@
+[
+  {
+    "protocol_id": "user_pRUibOWz07OD80W6yu5PiXbpw1V2_0_prevention",
+    "title": "Prevention Protocol from test_folder/covid19riskandfactors.pdf",
+    "steps": [
+      {
+        "step": 1,
+        "text": "Stay current with COVID-19 vaccinations.",
+        "explanation": "Keeping up to date with COVID-19 vaccines is crucial, particularly for older adults and individuals with underlying health conditions, to minimize the risk of severe illness.",
+        "citation": 1
+      },
+      {
+        "step": 2,
+        "text": "Adhere to general preventive measures.",
+        "explanation": "Following standard preventive measures, such as mask-wearing and social distancing, is important, especially for those at higher risk due to age or medical conditions.",
+        "citation": 1
+      }
+    ],
+    "citations": [
+      {
+        "id": 1,
+        "source": "test_folder/covid19riskandfactors.pdf",
+        "excerpt": "People with Certain Medical Conditions and COVID-19 Risk Factors\nFor Everyone\nJune 11, 2025\nEspañol\nWhat to know\n• If you have any medical conditions listed below, you are more likely to get very sick\nwith COVID-19.\n• This list does not include all conditions.\n• If you have symptoms consistent with ...",
+        "organization": "User Upload",
+        "year": "2025",
+        "region": "User Defined"
+      }
+    ],
+    "source_type": "user",
+    "user_id": "pRUibOWz07OD80W6yu5PiXbpw1V2",
+    "created_at": "2025-10-08T22:32:00.235104",
+    "region": "User Defined",
+    "organization": "Custom Protocol",
+    "intent": "prevention"
+  },
+  {
+    "protocol_id": "user_pRUibOWz07OD80W6yu5PiXbpw1V2_1_treatment",
+    "title": "Treatment Protocol from test_folder/covid19riskandfactors.pdf",
+    "steps": [
+      {
+        "step": 1,
+        "text": "Seek treatment within 5-7 days of symptom onset",
+        "explanation": "Initiate treatment as soon as possible, ideally within 5 to 7 days from when symptoms first appear. Early treatment significantly reduces the risk of hospitalization and mortality associated with COVID-19.",
+        "citation": 1
+      },
+      {
+        "step": 2,
+        "text": "Consider visiting a Test to Treat location",
+        "explanation": "Explore the option of visiting a Test to Treat location. These sites offer immediate testing and, if positive, provide on-the-spot treatment for COVID-19, streamlining the process and ensuring timely intervention.",
+        "citation": 1
+      },
+      {
+        "step": 3,
+        "text": "Consult with a healthcare provider about vaccination",
+        "explanation": "Parents of children aged 6 months to 17 years should consult with a healthcare provider to discuss the benefits of COVID-19 vaccination. Discussing vaccination options with a healthcare provider can help parents make informed decisions.",
+        "citation": 1
+      }
+    ],
+    "citations": [
+      {
+        "id": 1,
+        "source": "test_folder/covid19riskandfactors.pdf",
+        "excerpt": "e with\ndisabilities.\nSpecific information on children and teens\nPeople of all ages, including children and teens, can get very sick from COVID-19,\nespecially those with underlying medical conditions. This includes children and teens with:\n• Medical complexity\n• Genetic, neurologic, or metabolic cond...",
+        "organization": "User Upload",
+        "year": "2025",
+        "region": "User Defined"
+      }
+    ],
+    "source_type": "user",
+    "user_id": "pRUibOWz07OD80W6yu5PiXbpw1V2",
+    "created_at": "2025-10-08T22:32:02.792598",
+    "region": "User Defined",
+    "organization": "Custom Protocol",
+    "intent": "treatment"
+  },
+  {
+    "protocol_id": "user_pRUibOWz07OD80W6yu5PiXbpw1V2_2_prevention",
+    "title": "Prevention Protocol from test_folder/covid19riskandfactors.pdf",
+    "steps": [
+      {
+        "step": 1,
+        "text": "Vaccinate children and teens against COVID-19.",
+        "explanation": "Parents of children ages 6 months to 17 years should discuss the benefits of COVID-19 vaccination with a healthcare provider. Vaccination is crucial, especially for those with underlying medical conditions, to reduce the risk of severe illness.",
+        "citation": 1
+      },
+      {
+        "step": 2,
+        "text": "Consult healthcare provider about managing conditions and COVID-19 protection.",
+        "explanation": "If you have questions about a condition not included on the list or questions on how to manage your condition and protect yourself from COVID-19 and severe illness, contact your healthcare provider for specific guidance.",
+        "citation": 1
+      }
+    ],
+    "citations": [
+      {
+        "id": 1,
+        "source": "test_folder/covid19riskandfactors.pdf",
+        "excerpt": "e with\ndisabilities.\nSpecific information on children and teens\nPeople of all ages, including children and teens, can get very sick from COVID-19,\nespecially those with underlying medical conditions. This includes children and teens with:\n• Medical complexity\n• Genetic, neurologic, or metabolic cond...",
+        "organization": "User Upload",
+        "year": "2025",
+        "region": "User Defined"
+      }
+    ],
+    "source_type": "user",
+    "user_id": "pRUibOWz07OD80W6yu5PiXbpw1V2",
+    "created_at": "2025-10-08T22:32:04.692550",
+    "region": "User Defined",
+    "organization": "Custom Protocol",
+    "intent": "prevention"
+  },
+  {
+    "protocol_id": "user_pRUibOWz07OD80W6yu5PiXbpw1V2_3_treatment",
+    "title": "Treatment Protocol from test_folder/covid19riskandfactors.pdf",
+    "steps": [
+      {
+        "step": 1,
+        "text": "Consider Pemivibart (Pemgarda™) for eligible immunocompromised individuals.",
+        "explanation": "Individuals 12 years and older, weighing at least 88 pounds, and moderately or severely immunocompromised may benefit from Pemivibart (Pemgarda™) for COVID-19 protection. It can be administered at least 2 weeks post-vaccination.",
+        "citation": 1
+      },
+      {
+        "step": 2,
+        "text": "Consult healthcare provider about additional precautions.",
+        "explanation": "Immunocompromised individuals should discuss with their healthcare provider what extra protective measures are needed, as vaccines may not provide sufficient protection.",
+        "citation": 1
+      },
+      {
+        "step": 3,
+        "text": "Consider additional COVID-19 vaccine doses.",
+        "explanation": "Moderately or severely immunocompromised individuals may benefit from extra doses of the updated COVID-19 vaccine due to potentially different immune responses post-vaccination.",
+        "citation": 1
+      }
+    ],
+    "citations": [
+      {
+        "id": 1,
+        "source": "test_folder/covid19riskandfactors.pdf",
+        "excerpt": "omised condition or weakened immune system\nPeople who are immunocompromised or are taking medicines that weaken their immune\nsystem may not be protected even if they are up to date on their vaccines. Examples\ninclude:\n• People who have cancer and are on chemotherapy\n• People who have had a solid org...",
+        "organization": "User Upload",
+        "year": "2025",
+        "region": "User Defined"
+      }
+    ],
+    "source_type": "user",
+    "user_id": "pRUibOWz07OD80W6yu5PiXbpw1V2",
+    "created_at": "2025-10-08T22:32:11.789879",
+    "region": "User Defined",
+    "organization": "Custom Protocol",
+    "intent": "treatment"
+  },
+  {
+    "protocol_id": "user_pRUibOWz07OD80W6yu5PiXbpw1V2_4_emergency",
+    "title": "Emergency Protocol for Immunocompromised Individuals Against COVID-19",
+    "steps": [
+      {
+        "step": 1,
+        "text": "Consult healthcare provider about extra precautions.",
+        "explanation": "Discuss with a healthcare provider to determine if additional protective measures are needed, especially for those with compromised immune systems or those on immunosuppressive medications. They can provide tailored advice based on individual health status and risk factors.",
+        "citation": 1
+      },
+      {
+        "step": 2,
+        "text": "Consider additional COVID-19 vaccine doses.",
+        "explanation": "Moderately or severely immunocompromised individuals might benefit from extra doses of the updated COVID-19 vaccine. This is because their immune response to vaccination may be different, and specific guidelines have been developed to address this.",
+        "citation": 1
+      },
+      {
+        "step": 3,
+        "text": "Evaluate eligibility for Pemivibart (Pemgarda™).",
+        "explanation": "Individuals 12 years and older, weighing at least 88 pounds, and moderately or severely immunocompromised may be eligible for Pemivibart (Pemgarda™). This monoclonal antibody can offer an extra layer of protection against COVID-19, even after vaccination.",
+        "citation": 1
+      },
+      {
+        "step": 4,
+        "text": "Stay informed on variant monitoring and Pemgarda updates.",
+        "explanation": "The CDC is tracking COVID-19 variants to see if they impact Pemgarda's effectiveness. The FDA will update the Emergency Use Authorization if new information arises, ensuring the treatment remains effective against current threats.",
+        "citation": 1
+      }
+    ],
+    "citations": [
+      {
+        "id": 1,
+        "source": "test_folder/covid19riskandfactors.pdf",
+        "excerpt": "omised condition or weakened immune system\nPeople who are immunocompromised or are taking medicines that weaken their immune\nsystem may not be protected even if they are up to date on their vaccines. Examples\ninclude:\n• People who have cancer and are on chemotherapy\n• People who have had a solid org...",
+        "organization": "User Upload",
+        "year": "2025",
+        "region": "User Defined"
+      }
+    ],
+    "source_type": "user",
+    "user_id": "pRUibOWz07OD80W6yu5PiXbpw1V2",
+    "created_at": "2025-10-08T22:32:14.596407",
+    "region": "User Defined",
+    "organization": "Custom Protocol",
+    "intent": "emergency"
+  },
+  {
+    "protocol_id": "user_pRUibOWz07OD80W6yu5PiXbpw1V2_5_prevention",
+    "title": "Prevention Protocol from test_folder/covid19riskandfactors.pdf",
+    "steps": [
+      {
+        "step": 1,
+        "text": "Consult healthcare provider about precautions.",
+        "explanation": "Immunocompromised individuals should seek advice from their healthcare provider regarding necessary additional protective measures against COVID-19, as their immune response to vaccines may be insufficient.",
+        "citation": 1
+      },
+      {
+        "step": 2,
+        "text": "Consider additional COVID-19 vaccine doses.",
+        "explanation": "Moderately or severely immunocompromised individuals might benefit from extra doses of the updated COVID-19 vaccine, following specific guidance due to their potentially different immune response post-vaccination.",
+        "citation": 1
+      },
+      {
+        "step": 3,
+        "text": "Evaluate eligibility for Pemivibart (Pemgarda™).",
+        "explanation": "Individuals 12 years and older, weighing at least 88 pounds, and moderately or severely immunocompromised may be eligible for Pemivibart, a monoclonal antibody, to help protect against COVID-19.",
+        "citation": 1
+      },
+      {
+        "step": 4,
+        "text": "Administer Pemgarda at least 2 weeks post-vaccination.",
+        "explanation": "If eligible, Pemgarda should be given at least two weeks after receiving a COVID-19 vaccine to provide an additional layer of protection; note that Pemgarda is not a treatment for COVID-19.",
+        "citation": 1
+      }
+    ],
+    "citations": [
+      {
+        "id": 1,
+        "source": "test_folder/covid19riskandfactors.pdf",
+        "excerpt": "omised condition or weakened immune system\nPeople who are immunocompromised or are taking medicines that weaken their immune\nsystem may not be protected even if they are up to date on their vaccines. Examples\ninclude:\n• People who have cancer and are on chemotherapy\n• People who have had a solid org...",
+        "organization": "User Upload",
+        "year": "2025",
+        "region": "User Defined"
+      }
+    ],
+    "source_type": "user",
+    "user_id": "pRUibOWz07OD80W6yu5PiXbpw1V2",
+    "created_at": "2025-10-08T22:32:16.679216",
+    "region": "User Defined",
+    "organization": "Custom Protocol",
+    "intent": "prevention"
+  }
+]
