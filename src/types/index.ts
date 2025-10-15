@@ -113,6 +113,7 @@ export interface ProtocolTab {
   title: string;
   type: 'generated-protocols';
   protocols: any[]; // Generated protocols data
+  status?: string; // Upload status: 'completed', 'cancelled', 'not_found', etc.
   isLoading: boolean;
 }
 
