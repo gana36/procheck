@@ -60,7 +60,7 @@ export default function CitationsDropdown({
 
           {/* Citations list */}
           <div className="divide-y divide-slate-100">
-            {citations.map((citation) => (
+            {citations.map((citation, index) => (
               <div key={citation.id} className="px-4 py-3 hover:bg-slate-50 transition-colors">
                 {/* Citation header */}
                 <div className="flex items-start gap-2 mb-2">

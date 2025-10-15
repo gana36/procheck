@@ -901,36 +901,6 @@ async def cancel_upload(user_id: str, upload_id: str):
         print(f"❌ Error cancelling upload: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to cancel upload: {str(e)}")
 
-@app.delete("/users/{user_id}/upload-preview/{upload_id}")
-async def delete_upload_preview(user_id: str, upload_id: str):
-    """Delete preview file for a completed upload (Clear All functionality)"""
-    if not user_id or not user_id.strip():
-        raise HTTPException(status_code=400, detail="user_id is required")
-    if not upload_id or not upload_id.strip():
-        raise HTTPException(status_code=400, detail="upload_id is required")
-
-    try:
-        # Delete the preview file
-        deleted = await document_processor.delete_preview_file(user_id, upload_id)
-
-        if deleted:
-            print(f"🧹 Preview file deleted for upload {upload_id}")
-            return {
-                "success": True,
-                "upload_id": upload_id,
-                "message": "Preview file deleted successfully"
-            }
-        else:
-            print(f"⚠️ Preview file not found for upload {upload_id}")
-            return {
-                "success": True,  # Still return success since the goal (no preview file) is achieved
-                "upload_id": upload_id,
-                "message": "Preview file not found (already deleted or never existed)"
-            }
-    except Exception as e:
-        print(f"❌ Error deleting preview file: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete preview file: {str(e)}")
-
 
 if __name__ == "__main__":
     uvicorn.run(

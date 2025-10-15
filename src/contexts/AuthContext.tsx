@@ -11,32 +11,6 @@ import {
 } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 
-// Helper function to clear all ProCheck-related data from localStorage
-export const clearProCheckLocalStorage = () => {
-  try {
-    // Clear all ProCheck-related localStorage items
-    const keysToRemove = [
-      'procheck_chat_tabs',
-      'procheck_active_tab',
-      'procheck_last_user_id',
-      'procheck_tabs'
-    ];
-
-    keysToRemove.forEach(key => localStorage.removeItem(key));
-
-    // Clear all user-specific protocol caches (pattern: user_protocols_*)
-    Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('user_protocols_')) {
-        localStorage.removeItem(key);
-      }
-    });
-
-    console.log('✅ Cleared all ProCheck cached data');
-  } catch (error) {
-    console.error('❌ Error clearing localStorage:', error);
-  }
-};
-
 interface AuthContextType {
   currentUser: User | null;
   signup: (email: string, password: string, displayName: string) => Promise<any>;
@@ -80,9 +54,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   const logout = async () => {
-    // Clear all localStorage data before logging out
-    clearProCheckLocalStorage();
-
     return await signOut(auth);
   };
 
