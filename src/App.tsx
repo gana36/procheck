@@ -2598,87 +2598,94 @@ CITATION REQUIREMENT:
                 <div className="p-6 border-b border-slate-200">
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h1 className="text-2xl font-bold text-slate-900">Generated Protocols</h1>
+                      <h1 className="text-2xl font-bold text-slate-900">
+                        {activeTab.protocols.length === 0 ? '🚫 Upload Cancelled' : 'Generated Protocols'}
+                      </h1>
                       <p className="text-slate-600">
-                        {activeTab.protocols.length} protocols generated from your upload. Review and approve to add to your index.
+                        {activeTab.protocols.length === 0
+                          ? 'Protocol generation was cancelled. No protocols were generated.'
+                          : `${activeTab.protocols.length} protocols generated from your upload. Review and approve to add to your index.`
+                        }
                       </p>
                     </div>
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="flex items-center space-x-3">
-                    <button
-                      onClick={handleApproveProtocols}
-                      disabled={!currentUser || !generatedUploadId}
-                      className={`px-6 py-2 rounded-lg font-medium ${
-                        currentUser && generatedUploadId
-                          ? 'bg-teal-600 hover:bg-teal-700 text-white'
-                          : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      }`}
-                    >
-                      Approve & Add to Index ({activeTab.protocols.length} protocols)
-                    </button>
-                    <button
-                      onClick={() => {
-                        console.log('🔄 Regenerate button clicked for upload:', generatedUploadId);
+                  {/* Action Buttons - Only show if protocols were generated */}
+                  {activeTab.protocols.length > 0 && (
+                    <div className="flex items-center space-x-3">
+                      <button
+                        onClick={handleApproveProtocols}
+                        disabled={!currentUser || !generatedUploadId}
+                        className={`px-6 py-2 rounded-lg font-medium ${
+                          currentUser && generatedUploadId
+                            ? 'bg-teal-600 hover:bg-teal-700 text-white'
+                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        }`}
+                      >
+                        Approve & Add to Index ({activeTab.protocols.length} protocols)
+                      </button>
+                      <button
+                        onClick={() => {
+                          console.log('🔄 Regenerate button clicked for upload:', generatedUploadId);
 
-                        if (!currentUser || !generatedUploadId) {
-                          console.error('❌ User not logged in or no upload ID');
-                          return;
-                        }
-
-                        setShowRegenerateModal(true);
-                      }}
-                      disabled={!currentUser || !generatedUploadId || isRegenerating}
-                      className={`px-6 py-2 rounded-lg font-medium ${
-                        currentUser && generatedUploadId && !isRegenerating
-                          ? 'bg-slate-600 hover:bg-slate-700 text-white'
-                          : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      }`}
-                    >
-                      {isRegenerating ? 'Regenerating...' : 'Regenerate Protocols'}
-                    </button>
-                    <button
-                      onClick={async () => {
-                        console.log('🗑️ Clear Generated Protocols clicked');
-
-                        try {
-                          // Call backend to delete preview file if we have an upload ID
-                          if (currentUser && generatedUploadId) {
-                            console.log(`📡 Calling delete upload preview API for upload ID: ${generatedUploadId}`);
-                            await deleteUploadPreview(currentUser.uid, generatedUploadId);
-                            console.log('✅ Preview file deleted from backend');
+                          if (!currentUser || !generatedUploadId) {
+                            console.error('❌ User not logged in or no upload ID');
+                            return;
                           }
-                        } catch (error) {
-                          console.error('⚠️ Failed to delete preview file from backend:', error);
-                          // Continue with frontend cleanup even if backend call fails
-                        }
 
-                        // Clear the generated protocols from state (no confirmation needed - they're temporary)
-                        setGeneratedProtocols([]);
-                        setGeneratedUploadId(null);
+                          setShowRegenerateModal(true);
+                        }}
+                        disabled={!currentUser || !generatedUploadId || isRegenerating}
+                        className={`px-6 py-2 rounded-lg font-medium ${
+                          currentUser && generatedUploadId && !isRegenerating
+                            ? 'bg-slate-600 hover:bg-slate-700 text-white'
+                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        }`}
+                      >
+                        {isRegenerating ? 'Regenerating...' : 'Regenerate Protocols'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          console.log('🗑️ Clear Generated Protocols clicked');
 
-                        // Close the generated protocols tab and go back to default
-                        const newTabs = tabs.filter(tab => tab.type !== 'generated-protocols');
-                        setTabs(newTabs);
+                          try {
+                            // Call backend to delete preview file if we have an upload ID
+                            if (currentUser && generatedUploadId) {
+                              console.log(`📡 Calling delete upload preview API for upload ID: ${generatedUploadId}`);
+                              await deleteUploadPreview(currentUser.uid, generatedUploadId);
+                              console.log('✅ Preview file deleted from backend');
+                            }
+                          } catch (error) {
+                            console.error('⚠️ Failed to delete preview file from backend:', error);
+                            // Continue with frontend cleanup even if backend call fails
+                          }
 
-                        // Switch to the first available tab
-                        if (newTabs.length > 0) {
-                          setActiveTabId(newTabs[0].id);
-                        }
+                          // Clear the generated protocols from state (no confirmation needed - they're temporary)
+                          setGeneratedProtocols([]);
+                          setGeneratedUploadId(null);
 
-                        console.log('✅ Generated protocols cleared and tab closed');
-                      }}
-                      disabled={!currentUser || generatedProtocols.length === 0}
-                      className={`px-6 py-2 rounded-lg font-medium ${
-                        currentUser && generatedProtocols.length > 0
-                          ? 'bg-red-600 hover:bg-red-700 text-white'
-                          : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      }`}
-                    >
-                      Clear All
-                    </button>
-                  </div>
+                          // Close the generated protocols tab and go back to default
+                          const newTabs = tabs.filter(tab => tab.type !== 'generated-protocols');
+                          setTabs(newTabs);
+
+                          // Switch to the first available tab
+                          if (newTabs.length > 0) {
+                            setActiveTabId(newTabs[0].id);
+                          }
+
+                          console.log('✅ Generated protocols cleared and tab closed');
+                        }}
+                        disabled={!currentUser || generatedProtocols.length === 0}
+                        className={`px-6 py-2 rounded-lg font-medium ${
+                          currentUser && generatedProtocols.length > 0
+                            ? 'bg-red-600 hover:bg-red-700 text-white'
+                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        }`}
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Protocols List */}

@@ -57,6 +57,7 @@ class DocumentProcessor:
             Dict with processing results
         """
         upload_key = f"{user_id}_{upload_id}"
+        protocols = None  # Initialize to None so it's available in exception handlers
 
         try:
             print(f"🔄 Starting document processing for upload {upload_id}")
@@ -91,17 +92,28 @@ class DocumentProcessor:
             # Step 4: Generate protocols (placeholder)
             # print(f"📞 About to call generate_protocols_from_chunks with {len(chunks)} chunks")
             protocols = await self.generate_protocols_from_chunks(chunks, user_id, upload_id, custom_prompt)
+
+            # Check if generation was cancelled (returns None when cancelled)
+            if protocols is None or self._is_upload_cancelled(user_id, upload_id):
+                print(f"🚫 Upload {upload_id} was cancelled during protocol generation")
+                return {"status": "cancelled", "message": "Upload processing was cancelled"}
+
             # print(f"📞 Returned from generate_protocols_from_chunks with {len(protocols)} protocols")
             print(f"🏥 Generated {len(protocols)} protocols")
 
-            # Step 5: Store protocols for preview (don't index yet)
+            # Step 5: Store protocols for preview (don't index yet) - only if not cancelled
+            # if not self._is_upload_cancelled(user_id, upload_id):
             await self.store_protocols_for_preview(user_id, upload_id, protocols)
             print(f"💾 Stored {len(protocols)} protocols for preview")
+            # else:
+                # print(f"🚫 Upload {upload_id} was cancelled, skipping protocol storage")
+                # return {"status": "cancelled", "message": "Upload processing was cancelled"}
 
             # Cleanup temporary files
             await self.cleanup_temp_files(upload_id)
 
-            return {
+            # Update final status
+            result = {
                 "success": True,
                 "upload_id": upload_id,
                 "protocols_extracted": len(protocols),
@@ -110,9 +122,24 @@ class DocumentProcessor:
                 "status": "awaiting_approval"
             }
 
+            return result
+
         except asyncio.CancelledError:
-            print(f"🚫 Upload {upload_id} task was cancelled")
+            print(f"🚫 Upload {upload_id} task was cancelled by asyncio.CancelledError")
+
+            # Clean up everything - don't save partial protocols
             await self.cleanup_temp_files(upload_id)
+
+            # Make sure preview file is deleted
+            try:
+                preview_file = os.path.join(self.upload_dir, 'previews', f"{user_id}_{upload_id}.json")
+                if os.path.exists(preview_file):
+                    os.remove(preview_file)
+                    print(f"🧹 Deleted preview file during cancellation: {preview_file}")
+            except Exception as cleanup_error:
+                print(f"⚠️ Failed to delete preview file during cancellation: {str(cleanup_error)}")
+
+            # Note: The finally block will clean up the cancellation flag
             return {
                 "success": False,
                 "upload_id": upload_id,
@@ -121,6 +148,7 @@ class DocumentProcessor:
             }
         except Exception as e:
             print(f"❌ Error processing upload {upload_id}: {str(e)}")
+
             await self.cleanup_temp_files(upload_id)
             return {
                 "success": False,
@@ -129,8 +157,22 @@ class DocumentProcessor:
                 "status": "failed"
             }
         finally:
-            # Clean up tracking regardless of success/failure
-            self.cancelled_uploads.discard(upload_key)
+            # Always clean up temp files in the finally block to ensure cleanup happens
+            try:
+                await self.cleanup_temp_files(upload_id)
+            except Exception as cleanup_error:
+                print(f"⚠️ Failed final cleanup in finally block: {str(cleanup_error)}")
+
+            # Always clean up the cancellation flag when task completes
+            # This allows the same file to be re-uploaded immediately
+            if upload_key in self.cancelled_uploads:
+                self.cancelled_uploads.discard(upload_key)
+                print(f"🧹 Removed {upload_key} from cancelled_uploads set")
+
+            # Remove from active tasks
+            if upload_key in self.active_tasks:
+                del self.active_tasks[upload_key]
+                print(f"🧹 Removed {upload_key} from active_tasks")
 
     async def extract_zip(self, zip_content: bytes, upload_id: str) -> List[Dict[str, Any]]:
         """Extract PDF files from ZIP archive to upload directory"""
@@ -146,6 +188,9 @@ class DocumentProcessor:
                 print(f"📦 ZIP contents: {[f.filename for f in zip_ref.filelist]}")
 
                 for file_info in zip_ref.filelist:
+                    # Yield to event loop to allow cancellation
+                    await asyncio.sleep(0)
+
                     if file_info.filename.lower().endswith('.pdf') and not file_info.is_dir():
                         print(f"📄 Processing PDF: {file_info.filename}")
 
@@ -186,6 +231,9 @@ class DocumentProcessor:
         documents = []
 
         for pdf_file in pdf_files:
+            # Yield to event loop to allow cancellation
+            await asyncio.sleep(0)
+
             try:
                 text_content = await self.extract_text_from_single_pdf(pdf_file)
 
@@ -215,6 +263,9 @@ class DocumentProcessor:
                 with pdfplumber.open(BytesIO(pdf_file["content"])) as pdf:
                     text_parts = []
                     for page in pdf.pages:
+                        # Yield to event loop to allow cancellation
+                        await asyncio.sleep(0)
+
                         page_text = page.extract_text()
                         if page_text:
                             text_parts.append(page_text)
@@ -232,6 +283,9 @@ class DocumentProcessor:
                 text_parts = []
 
                 for page in pdf_reader.pages:
+                    # Yield to event loop to allow cancellation
+                    await asyncio.sleep(0)
+
                     page_text = page.extract_text()
                     if page_text:
                         text_parts.append(page_text)
@@ -248,6 +302,9 @@ class DocumentProcessor:
         chunks = []
 
         for doc in documents:
+            # Yield to event loop to allow cancellation
+            await asyncio.sleep(0)
+
             text = doc["text"]
             filename = doc["filename"]
 
@@ -315,16 +372,41 @@ class DocumentProcessor:
 
             print(f"📊 Processing {len(chunks[:5])} chunks with {len(protocol_types)} protocol types")
 
-            for chunk in chunks[:5]:  # Process first 5 chunks to avoid overwhelming
+            for chunk_idx, chunk in enumerate(chunks[:5]):  # Process first 5 chunks to avoid overwhelming
+                # Check for cancellation at start of each chunk
+                upload_key = f"{user_id}_{upload_id}"
+                if self._is_upload_cancelled(user_id, upload_id):
+                    print(f"🚫 [CANCELLED] Upload {upload_id} cancelled before chunk {chunk_idx + 1}")
+                    print(f"🔍 Cancellation check: upload_key={upload_key}, in_set={upload_key in self.cancelled_uploads}")
+                    return None  # Return None to signal cancellation
+
+                # Yield to event loop to allow cancellation
+                await asyncio.sleep(0)
+
                 chunk_text = chunk['text']
                 source_file = chunk['source_file']
+                print(f"📝 Processing chunk {chunk_idx + 1}/{len(chunks[:5])} from {source_file}")
 
-                for protocol_type in protocol_types:
+                for protocol_idx, protocol_type in enumerate(protocol_types):
+                    # Check for cancellation before EACH protocol generation
+                    print(f"🔍 Checking cancellation before {protocol_type['focus']} protocol (chunk {chunk_idx + 1}, protocol {protocol_idx + 1}/{len(protocol_types)})")
+                    print(f"🔍 upload_key={upload_key}, is_cancelled={upload_key in self.cancelled_uploads}")
+
+                    if self._is_upload_cancelled(user_id, upload_id):
+                        print(f"🚫 [CANCELLED] Upload {upload_id} cancelled before protocol {protocol_type['focus']} (chunk {chunk_idx + 1}, protocol {protocol_idx + 1}/{len(protocol_types)})")
+                        print(f"🔍 Cancellation check: upload_key={upload_key}, in_set={upload_key in self.cancelled_uploads}")
+                        return None  # Return None to signal cancellation
+
+                    # Yield to event loop to allow cancellation to propagate
+                    await asyncio.sleep(0)
+
+                    # Double-check cancellation after yielding
+                    if self._is_upload_cancelled(user_id, upload_id):
+                        print(f"🚫 [CANCELLED] Upload {upload_id} cancelled after yield, before protocol {protocol_type['focus']}")
+                        return None
+
                     try:
-                        # Check for cancellation before each protocol generation
-                        if self._is_upload_cancelled(user_id, upload_id):
-                            print(f"🚫 Upload {upload_id} cancelled during protocol generation")
-                            return protocols
+                        print(f"🤖 Generating {protocol_type['focus']} protocol from {source_file}... (this may take 10-30 seconds)")
 
                         # Generate protocol using dedicated service
                         result = generate_protocol_from_chunk(
@@ -336,6 +418,12 @@ class DocumentProcessor:
                             region="User Defined",
                             year=datetime.now().year
                         )
+
+                        # Check for cancellation immediately after AI call completes
+                        if self._is_upload_cancelled(user_id, upload_id):
+                            print(f"🚫 [CANCELLED] Upload {upload_id} cancelled after protocol generation completed")
+                            print(f"🔍 Cancellation check: upload_key={upload_key}, in_set={upload_key in self.cancelled_uploads}")
+                            return None  # Return None to signal cancellation
 
                         # Only add if we found actual protocols
                         if result.get("checklist") and len(result["checklist"]) > 0:
@@ -370,49 +458,16 @@ class DocumentProcessor:
                         continue
 
         except ImportError as ie:
-            print(f"⚠️  Upload protocol generator not available: {str(ie)}, using mock protocols")
-            # Fallback to mock protocols if service is not available
-            return await self._generate_mock_protocols(chunks, user_id)
+            print(f"❌ Upload protocol generator not available: {str(ie)}")
+            return []  # Return empty - no protocols without the generator
 
         except Exception as e:
             print(f"❌ Error in protocol generation: {str(e)}")
             import traceback
             traceback.print_exc()
-            return await self._generate_mock_protocols(chunks, user_id)
+            return []  # Return empty - error in generation
 
         print(f"🏥 Successfully generated {len(protocols)} protocols from {len(chunks)} chunks")
-        return protocols
-
-    async def _generate_mock_protocols(self, chunks: List[Dict[str, Any]], user_id: str) -> List[Dict[str, Any]]:
-        """Fallback mock protocol generation"""
-        protocols = []
-
-        for i, chunk in enumerate(chunks[:3]):  # Limit to first 3 chunks for demo
-            protocol = {
-                "protocol_id": f"user_protocol_{user_id}_{i}",
-                "title": f"Protocol from {chunk['source_file']} - Part {i+1}",
-                "steps": [
-                    {"step": 1, "text": "Initial assessment and preparation", "explanation": "Mock step", "citation": 1},
-                    {"step": 2, "text": "Primary intervention protocol", "explanation": "Mock step", "citation": 1},
-                    {"step": 3, "text": "Monitoring and follow-up procedures", "explanation": "Mock step", "citation": 1}
-                ],
-                "citations": [
-                    {
-                        "id": 1,
-                        "source": chunk['source_file'],
-                        "excerpt": chunk['text'][:200] + "...",
-                        "organization": "User Upload",
-                        "year": str(datetime.now().year)
-                    }
-                ],
-                "source_type": "user",
-                "user_id": user_id,
-                "created_at": datetime.now().isoformat(),
-                "region": "User Defined",
-                "organization": "Custom Protocol"
-            }
-            protocols.append(protocol)
-
         return protocols
 
     async def validate_and_index_protocols(self, protocols: List[Dict[str, Any]], user_id: str) -> int:
@@ -587,11 +642,22 @@ class DocumentProcessor:
             import json
 
             preview_file = os.path.join(self.upload_dir, 'previews', f"{user_id}_{upload_id}.json")
+            print(f"🔍 Looking for preview file: {preview_file}")
+
+            # List all files in preview directory for debugging
+            preview_dir = os.path.join(self.upload_dir, 'previews')
+            if os.path.exists(preview_dir):
+                all_files = os.listdir(preview_dir)
+                print(f"📁 All files in preview directory: {all_files}")
+                # Find files that match user_id
+                user_files = [f for f in all_files if f.startswith(user_id)]
+                print(f"📁 Files matching user_id '{user_id}': {user_files}")
 
             if not os.path.exists(preview_file):
-                print(f"⚠️ Preview file not found: {preview_file}, creating mock protocols")
-                # Return mock protocols for demo
-                return await self._create_mock_preview_protocols(user_id, upload_id)
+                print(f"⚠️ Preview file not found: {preview_file}")
+                print(f"🔍 Expected filename: {user_id}_{upload_id}.json")
+                # No preview file = no protocols to show
+                return []
 
             with open(preview_file, 'r', encoding='utf-8') as f:
                 protocols = json.load(f)
@@ -601,161 +667,7 @@ class DocumentProcessor:
 
         except Exception as e:
             print(f"❌ Error retrieving preview protocols: {str(e)}")
-            return await self._create_mock_preview_protocols(user_id, upload_id)
-
-    async def _create_mock_preview_protocols(self, user_id: str, upload_id: str) -> List[Dict[str, Any]]:
-        """Create mock protocols for preview demonstration"""
-        from datetime import datetime
-
-        mock_protocols = [
-            {
-                "protocol_id": f"preview_{upload_id}_1",
-                "title": "Emergency Cardiac Assessment Protocol",
-                "steps": [
-                    {
-                        "step": 1,
-                        "text": "Assess patient's level of consciousness and responsiveness",
-                        "explanation": "Check Glasgow Coma Scale and verify patient is alert and oriented",
-                        "citation": 1,
-                        "priority": "high"
-                    },
-                    {
-                        "step": 2,
-                        "text": "Obtain 12-lead ECG within 10 minutes of presentation",
-                        "explanation": "Early ECG is critical for detecting ST-elevation MI or other acute changes",
-                        "citation": 1,
-                        "priority": "high"
-                    },
-                    {
-                        "step": 3,
-                        "text": "Administer aspirin 325mg chewable if no contraindications",
-                        "explanation": "Aspirin reduces mortality in acute coronary syndromes",
-                        "citation": 2,
-                        "priority": "medium"
-                    },
-                    {
-                        "step": 4,
-                        "text": "Monitor vital signs every 15 minutes",
-                        "explanation": "Continuous monitoring for hemodynamic instability",
-                        "citation": 1,
-                        "priority": "medium"
-                    }
-                ],
-                "citations": [
-                    {
-                        "id": 1,
-                        "source": "American Heart Association Guidelines 2020",
-                        "excerpt": "Emergency cardiac protocols for acute presentation..."
-                    },
-                    {
-                        "id": 2,
-                        "source": "Emergency Medicine Clinical Practice Guidelines",
-                        "excerpt": "Aspirin administration in acute cardiac events..."
-                    }
-                ],
-                "intent": "emergency",
-                "source_type": "user",
-                "user_id": user_id,
-                "created_at": datetime.now().isoformat(),
-                "region": "User Defined",
-                "organization": "Custom Upload"
-            },
-            {
-                "protocol_id": f"preview_{upload_id}_2",
-                "title": "Pediatric Fever Management Protocol",
-                "steps": [
-                    {
-                        "step": 1,
-                        "text": "Measure temperature using appropriate method for age",
-                        "explanation": "Rectal for infants <3 months, oral/tympanic for older children",
-                        "citation": 1,
-                        "priority": "high"
-                    },
-                    {
-                        "step": 2,
-                        "text": "Assess hydration status and general appearance",
-                        "explanation": "Look for signs of dehydration, lethargy, or altered mental status",
-                        "citation": 1,
-                        "priority": "high"
-                    },
-                    {
-                        "step": 3,
-                        "text": "Administer age-appropriate antipyretic if temperature >38.5°C",
-                        "explanation": "Acetaminophen 10-15mg/kg or ibuprofen 5-10mg/kg for children >6 months",
-                        "citation": 2,
-                        "priority": "medium"
-                    }
-                ],
-                "citations": [
-                    {
-                        "id": 1,
-                        "source": "American Academy of Pediatrics Fever Guidelines",
-                        "excerpt": "Pediatric fever assessment and management protocols..."
-                    },
-                    {
-                        "id": 2,
-                        "source": "Pediatric Emergency Medicine Guidelines",
-                        "excerpt": "Antipyretic dosing in pediatric patients..."
-                    }
-                ],
-                "intent": "treatment",
-                "source_type": "user",
-                "user_id": user_id,
-                "created_at": datetime.now().isoformat(),
-                "region": "User Defined",
-                "organization": "Custom Upload"
-            },
-            {
-                "protocol_id": f"preview_{upload_id}_3",
-                "title": "Pre-operative Surgical Checklist",
-                "steps": [
-                    {
-                        "step": 1,
-                        "text": "Verify patient identity using two identifiers",
-                        "explanation": "Check name, date of birth, and medical record number",
-                        "citation": 1,
-                        "priority": "high"
-                    },
-                    {
-                        "step": 2,
-                        "text": "Confirm surgical site marking and procedure",
-                        "explanation": "Verify with patient and surgical team the correct site and procedure",
-                        "citation": 1,
-                        "priority": "high"
-                    },
-                    {
-                        "step": 3,
-                        "text": "Review allergies and confirm antibiotic prophylaxis if indicated",
-                        "explanation": "Administer appropriate antibiotics within 60 minutes of incision",
-                        "citation": 2,
-                        "priority": "medium"
-                    }
-                ],
-                "citations": [
-                    {
-                        "id": 1,
-                        "source": "WHO Surgical Safety Checklist",
-                        "excerpt": "Pre-operative safety protocols and verification procedures..."
-                    },
-                    {
-                        "id": 2,
-                        "source": "Surgical Infection Prevention Guidelines",
-                        "excerpt": "Antibiotic prophylaxis in surgical procedures..."
-                    }
-                ],
-                "intent": "prevention",
-                "source_type": "user",
-                "user_id": user_id,
-                "created_at": datetime.now().isoformat(),
-                "region": "User Defined",
-                "organization": "Custom Upload"
-            }
-        ]
-
-        # Store mock protocols for consistency
-        await self.store_protocols_for_preview(user_id, upload_id, mock_protocols)
-
-        return mock_protocols
+            return []
 
     async def approve_and_index_protocols(self, user_id: str, upload_id: str) -> Dict[str, Any]:
         """Index the approved protocols to Elasticsearch"""
@@ -1004,18 +916,23 @@ class DocumentProcessor:
         """
         try:
             upload_key = f"{user_id}_{upload_id}"
+            print(f"🚫 cancel_upload called for upload_key: {upload_key}")
+            print(f"📋 Active tasks: {list(self.active_tasks.keys())}")
+            print(f"📋 Cancelled uploads: {list(self.cancelled_uploads)}")
+
+            # Mark as cancelled FIRST before checking task
+            self.cancelled_uploads.add(upload_key)
+            print(f"✅ Added {upload_key} to cancelled_uploads set")
 
             # Check if there's an active task for this upload
             if upload_key in self.active_tasks:
                 task = self.active_tasks[upload_key]
+                print(f"📌 Found active task for {upload_key}, task.done()={task.done()}")
 
                 if not task.done():
                     # Immediately cancel the asyncio task
                     task.cancel()
-                    print(f"🚫 Upload {upload_id} task cancelled immediately")
-
-                    # Mark as cancelled for any remaining checks
-                    self.cancelled_uploads.add(upload_key)
+                    print(f"🚫 Called task.cancel() for upload {upload_id}")
 
                     # Clean up any temporary files
                     await self.cleanup_temp_files(upload_id)
@@ -1023,25 +940,31 @@ class DocumentProcessor:
                     # Clean up preview file
                     await self.delete_preview_file(user_id, upload_id)
 
+                    print(f"✅ Upload {upload_id} cancellation completed")
                     return True
                 else:
                     print(f"⚠️ Upload {upload_id} task already completed")
                     return False
             else:
                 print(f"⚠️ Upload {upload_id} not found in active tasks")
+                print(f"🔍 This might be OK if the upload hasn't started yet or already completed")
                 return False
 
         except Exception as e:
             print(f"❌ Error cancelling upload {upload_id}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False
 
-    async def delete_preview_file(self, user_id: str, upload_id: str) -> bool:
+    async def delete_preview_file(self, user_id: str, upload_id: str = None) -> bool:
         """
-        Delete ALL preview JSON files for a user (used for Clear All)
+        Delete preview JSON file(s) for a user
+        If upload_id is provided, deletes only that specific file
+        If upload_id is None, deletes ALL user preview files (used for Clear All)
 
         Args:
             user_id: Firebase Auth user ID
-            upload_id: Upload identifier (can be None to delete all user previews)
+            upload_id: Optional upload identifier. If None, deletes all user previews
 
         Returns:
             bool: True if any files were deleted, False otherwise
@@ -1055,27 +978,42 @@ class DocumentProcessor:
 
             deleted_count = 0
 
-            # Get all JSON files in preview directory
-            for filename in os.listdir(preview_dir):
-                if not filename.endswith('.json'):
-                    continue
-
-                # Check if this file belongs to the user
-                if filename.startswith(f"{user_id}_"):
-                    filepath = os.path.join(preview_dir, filename)
+            # If upload_id is specified, delete only that specific file
+            if upload_id is not None:
+                specific_file = os.path.join(preview_dir, f"{user_id}_{upload_id}.json")
+                if os.path.exists(specific_file):
                     try:
-                        os.remove(filepath)
+                        os.remove(specific_file)
                         deleted_count += 1
-                        print(f"🧹 Deleted preview file: {filename}")
+                        print(f"🧹 Deleted specific preview file: {user_id}_{upload_id}.json")
                     except Exception as file_error:
-                        print(f"⚠️ Failed to delete {filename}: {str(file_error)}")
+                        print(f"⚠️ Failed to delete {user_id}_{upload_id}.json: {str(file_error)}")
+                        return False
+                else:
+                    print(f"⚠️ Specific preview file not found: {user_id}_{upload_id}.json")
+                    return False
+            else:
+                # Delete ALL files for this user (Clear All functionality)
+                for filename in os.listdir(preview_dir):
+                    if not filename.endswith('.json'):
                         continue
+
+                    # Check if this file belongs to the user
+                    if filename.startswith(f"{user_id}_"):
+                        filepath = os.path.join(preview_dir, filename)
+                        try:
+                            os.remove(filepath)
+                            deleted_count += 1
+                            print(f"🧹 Deleted preview file: {filename}")
+                        except Exception as file_error:
+                            print(f"⚠️ Failed to delete {filename}: {str(file_error)}")
+                            continue
 
             if deleted_count > 0:
                 print(f"✅ Deleted {deleted_count} preview file(s) for user {user_id}")
                 return True
             else:
-                print(f"⚠️ No preview files found for user {user_id}")
+                print(f"⚠️ No preview files found for user {user_id}" + (f" with upload_id {upload_id}" if upload_id else ""))
                 return False
 
         except Exception as e:
@@ -1085,4 +1023,7 @@ class DocumentProcessor:
     def _is_upload_cancelled(self, user_id: str, upload_id: str) -> bool:
         """Check if an upload has been cancelled"""
         upload_key = f"{user_id}_{upload_id}"
-        return upload_key in self.cancelled_uploads
+        is_cancelled = upload_key in self.cancelled_uploads
+        if is_cancelled:
+            print(f"🔍 _is_upload_cancelled: YES - {upload_key} is in cancelled set")
+        return is_cancelled

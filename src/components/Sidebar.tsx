@@ -1087,13 +1087,24 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       } else {
         // Send notification for automatic upload completion
         if (onNotifyUploadReady) {
-          onNotifyUploadReady({
-            type: 'upload_ready',
-            title: '🎉 Protocols Ready!',
-            message: `Your ${preview.protocols.length} protocol${preview.protocols.length === 1 ? '' : 's'} have been generated and are ready for review.`,
-            uploadId,
-            protocols: preview.protocols
-          });
+          // Check if protocols were cancelled (0 protocols)
+          if (preview.protocols.length === 0) {
+            onNotifyUploadReady({
+              type: 'upload_ready',
+              title: '🚫 Upload Cancelled',
+              message: 'Protocol generation was cancelled successfully.',
+              uploadId,
+              protocols: preview.protocols
+            });
+          } else {
+            onNotifyUploadReady({
+              type: 'upload_ready',
+              title: '🎉 Protocols Ready!',
+              message: `Your ${preview.protocols.length} protocol${preview.protocols.length === 1 ? '' : 's'} have been generated and are ready for review.`,
+              uploadId,
+              protocols: preview.protocols
+            });
+          }
         }
 
         // Don't automatically create the tab - let user click "View Protocols" to open it
