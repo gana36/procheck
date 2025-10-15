@@ -122,7 +122,12 @@ export type ConversationMessage = {
   content: string;
   timestamp: string;
   protocol_data?: any;
-  follow_up_questions?: FollowUpQuestion[]; // Persist follow-up questions
+  // Conversation-specific fields for follow-up responses
+  citations?: CitationSource[]; // Structured citations for conversation responses
+  follow_up_questions?: FollowUpQuestion[]; // Follow-up question suggestions
+  uncertainty_note?: string; // Notes about limitations in source data
+  used_new_sources?: boolean; // Whether fresh context was retrieved
+  is_follow_up?: boolean; // Indicates if this is a follow-up question
 };
 
 export type ConversationSaveRequest = {

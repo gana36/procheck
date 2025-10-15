@@ -13,6 +13,12 @@ class MessageModel(BaseModel):
     content: str
     timestamp: str
     protocol_data: Optional[Dict[str, Any]] = None
+    # Conversation-specific fields for follow-up responses
+    citations: Optional[List[Dict[str, Any]]] = None  # Structured citations for conversation responses
+    follow_up_questions: Optional[List[Dict[str, Any]]] = None  # Follow-up question suggestions
+    uncertainty_note: Optional[str] = None  # Notes about limitations in source data
+    used_new_sources: Optional[bool] = None  # Whether fresh context was retrieved
+    is_follow_up: Optional[bool] = None  # Indicates if this is a follow-up question
 
 class ProtocolStepModel(BaseModel):
     """Protocol step data"""

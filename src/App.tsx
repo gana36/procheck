@@ -570,6 +570,12 @@ function App() {
         content: msg.content,
         timestamp: msg.timestamp, // Preserve original message timestamp
         protocol_data: msg.protocolData || undefined,
+        // Include conversation-specific fields for follow-up responses
+        citations: msg.citations || undefined,
+        follow_up_questions: msg.followUpQuestions || undefined,
+        uncertainty_note: msg.uncertaintyNote || undefined,
+        used_new_sources: msg.usedNewSources || undefined,
+        is_follow_up: msg.isFollowUp || undefined,
       }));
 
       // Use the first message timestamp as conversation created_at
@@ -1228,6 +1234,12 @@ CITATION REQUIREMENT:
           content: msg.content,
           timestamp: msg.timestamp,
           protocol_data: msg.protocolData || undefined,
+          // Include conversation-specific fields for follow-up responses
+          citations: msg.citations || undefined,
+          follow_up_questions: msg.followUpQuestions || undefined,
+          uncertainty_note: msg.uncertaintyNote || undefined,
+          used_new_sources: msg.usedNewSources || undefined,
+          is_follow_up: msg.isFollowUp || undefined,
         }));
 
         const firstMessageTimestamp = newMessages.length > 0 ? newMessages[0].timestamp : getUserTimestamp();
@@ -1361,6 +1373,12 @@ CITATION REQUIREMENT:
           content: msg.content,
           timestamp: msg.timestamp,
           protocolData: msg.protocol_data,
+          // Restore conversation-specific fields for follow-up responses
+          citations: msg.citations,
+          followUpQuestions: msg.follow_up_questions,
+          uncertaintyNote: msg.uncertainty_note,
+          usedNewSources: msg.used_new_sources,
+          isFollowUp: msg.is_follow_up,
         }));
 
         // Cache the loaded conversation with LRU eviction
