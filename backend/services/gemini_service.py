@@ -699,6 +699,11 @@ def protocol_conversation_chat(
                 hits = search_result.get("hits", {}).get("hits", [])
                 print(f"📊 Hybrid search returned {len(hits)} results")
                 
+                # Normalize scores to 0-1 range based on max score
+                max_score = max([hit.get("_score", 0) for hit in hits[:6]], default=1.0)
+                if max_score == 0:
+                    max_score = 1.0
+                
                 for idx, hit in enumerate(hits[:6], start=len(citations_list) + 1):  # Take top 6
                     source = hit.get("_source", {})
                     title = source.get("title", "")
@@ -706,6 +711,9 @@ def protocol_conversation_chat(
                     organization = source.get("organization", "")
                     url = source.get("source_url", "")
                     score = hit.get("_score", 0)
+                    
+                    # Normalize score to 0-1 range
+                    normalized_score = score / max_score
                     
                     # Add to additional sources
                     source_text = f"{title} ({organization}): {body[:300]}"
@@ -718,7 +726,7 @@ def protocol_conversation_chat(
                         "organization": organization,
                         "source_url": url,
                         "excerpt": body[:400],
-                        "relevance_score": score
+                        "relevance_score": normalized_score
                     })
                 
                 if additional_sources:
