@@ -277,6 +277,9 @@ function App() {
   // Cache for loaded conversations to prevent redundant fetches with LRU eviction
   const conversationCache = useRef<Map<string, Message[]>>(new Map());
   const MAX_CACHE_SIZE = 20; // Maximum number of conversations to cache
+
+  // Track deleted conversations to prevent auto-save from resurrecting them
+  const deletedConversations = useRef<Set<string>>(new Set());
   
   // LRU Cache helper: Add to cache with automatic eviction
   const addToCache = useCallback((conversationId: string, messages: Message[]) => {
@@ -539,6 +542,12 @@ function App() {
   const saveCurrentConversation = useCallback(async (updatedMessages: Message[], lastQuery: string) => {
     if (!currentUser) return;
 
+    // CRITICAL: Don't save deleted conversations - prevents resurrection
+    if (deletedConversations.current.has(currentConversationId)) {
+      console.log(`🚫 Skipping save for deleted conversation: ${currentConversationId}`);
+      return;
+    }
+
     try {
       const conversationMessages: ConversationMessage[] = updatedMessages.map(msg => ({
         id: msg.id,
@@ -556,6 +565,12 @@ function App() {
 
       // Use the first message timestamp as conversation created_at
       const firstMessageTimestamp = updatedMessages.length > 0 ? updatedMessages[0].timestamp : getUserTimestamp();
+
+      // Double-check conversation isn't deleted (in case it was deleted between debounce and save)
+      if (deletedConversations.current.has(currentConversationId)) {
+        console.log(`🚫 Conversation ${currentConversationId} was deleted before save completed, aborting`);
+        return;
+      }
 
       await saveConversation(currentUser.uid, {
         id: currentConversationId,
@@ -581,7 +596,7 @@ function App() {
     if (debouncedSaveRef.current) {
       clearTimeout(debouncedSaveRef.current);
     }
-    
+
     // Set new timeout for 1 second
     debouncedSaveRef.current = setTimeout(() => {
       saveCurrentConversation(messages, lastQuery);
@@ -1523,11 +1538,26 @@ CITATION REQUIREMENT:
   };
 
   const handleConversationDeleted = useCallback((conversationId: string) => {
+    console.log(`🗑️ [APP] Conversation deleted: ${conversationId}`);
+
+    // CRITICAL: Mark conversation as deleted to prevent auto-save resurrection
+    deletedConversations.current.add(conversationId);
+    console.log(`✅ Added to deleted set. Deleted conversations:`, Array.from(deletedConversations.current));
+
+    // Clear any pending auto-save for this conversation
+    if (debouncedSaveRef.current) {
+      console.log(`🚫 Clearing pending auto-save timer`);
+      clearTimeout(debouncedSaveRef.current);
+      debouncedSaveRef.current = null;
+    }
+
     // Remove deleted conversation from cache
     conversationCache.current.delete(conversationId);
+    console.log(`✅ Removed from conversation cache`);
 
     // If currently viewing the deleted conversation, close the tab
     if (currentConversationId === conversationId) {
+      console.log(`🚪 Closing active tab for deleted conversation`);
       closeTab(activeTabId);
     }
   }, [currentConversationId, activeTabId]);
@@ -1775,7 +1805,10 @@ CITATION REQUIREMENT:
             : tab
         )
       );
-      setActiveTabId(existingProtocolTab.id);
+      // Only switch to the tab if NOT keeping profile open (user wants to stay in upload modal)
+      if (!keepProfileOpen) {
+        setActiveTabId(existingProtocolTab.id);
+      }
     } else {
       // Create new protocol tab with status
       const newProtocolTab: ProtocolTab = {
@@ -1788,7 +1821,10 @@ CITATION REQUIREMENT:
       };
 
       setTabs(prevTabs => [...prevTabs, newProtocolTab]);
-      setActiveTabId(newProtocolTab.id);
+      // Only switch to the tab if NOT keeping profile open (user wants to stay in upload modal)
+      if (!keepProfileOpen) {
+        setActiveTabId(newProtocolTab.id);
+      }
     }
 
     // Store for approval functionality
@@ -2116,6 +2152,16 @@ CITATION REQUIREMENT:
   const handleConfirmLogout = async () => {
     try {
       await logout();
+
+      // Clear deleted conversations tracking on logout
+      deletedConversations.current.clear();
+      console.log(`🧹 Cleared deleted conversations tracking on logout`);
+
+      // Clear any pending auto-save timers
+      if (debouncedSaveRef.current) {
+        clearTimeout(debouncedSaveRef.current);
+        debouncedSaveRef.current = null;
+      }
 
       // Reset tabs to default state after logout
       const defaultTabId = generateTabId();

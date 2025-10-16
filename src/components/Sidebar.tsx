@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 // import { mockSavedProtocols } from '@/data/mockData';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserConversations, getSavedProtocols, getSavedProtocol, deleteConversation, updateConversationTitle, deleteSavedProtocol, updateSavedProtocolTitle, uploadDocuments, getUploadStatus, getUserUploadedProtocols, regenerateProtocol, deleteUserProtocol, updateUserProtocolTitle, getUploadPreview, cancelUpload, ConversationListItem, SavedProtocol as ApiSavedProtocol } from '@/lib/api';
+import { getUserConversations, getSavedProtocols, getSavedProtocol, deleteConversation, updateConversationTitle, deleteSavedProtocol, updateSavedProtocolTitle, uploadDocuments, getUploadStatus, getUserUploadedProtocols, regenerateProtocol, deleteUserProtocol, updateUserProtocolTitle, getUploadPreview, cancelUpload, deleteUploadPreview, ConversationListItem, SavedProtocol as ApiSavedProtocol } from '@/lib/api';
 import { updateProfile } from 'firebase/auth';
 
 interface SidebarProps {
@@ -867,6 +867,27 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
           setUploadCancelled(false);
           // Show preview modal
           await showProtocolPreview(uploadId);
+        } else if (status.status === 'cancelled') {
+          console.log('🚫 Upload was cancelled, cleaning up UI');
+          setIsUploading(false);
+          setUploadCancelled(true);
+          setUploadProgress(null);
+          setCurrentUploadId(null);
+          // Stop polling
+          if (pollingRef.current) {
+            clearTimeout(pollingRef.current);
+            pollingRef.current = null;
+          }
+          // Show the cancellation notification by calling showProtocolPreview
+          // which will read the cancelled status and show the appropriate notification
+          await showProtocolPreview(uploadId);
+          // Then delete the preview file to clean up
+          try {
+            await deleteUploadPreview(currentUser.uid, uploadId);
+            console.log('🧹 Deleted cancelled preview file from backend');
+          } catch (error) {
+            console.error('⚠️ Failed to delete cancelled preview file:', error);
+          }
         } else if (status.status === 'failed') {
           console.log('❌ Upload processing failed');
           setUploadProgress({ status: 'error', error: 'Processing failed' });
@@ -1902,7 +1923,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
       {/* Upload Documents Modal */}
       {showUploadModal && (
-        <div className="absolute inset-0 bg-white z-50 flex flex-col">
+        <div className="absolute inset-0 bg-white z-[60] flex flex-col">
           {/* Upload Header */}
           <div className="p-6 border-b border-slate-200">
             <div className="flex items-center justify-between mb-4">

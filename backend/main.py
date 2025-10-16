@@ -440,19 +440,36 @@ async def get_conversation(user_id: str, conversation_id: str):
 @app.delete("/conversations/{user_id}/{conversation_id}")
 async def delete_conversation(user_id: str, conversation_id: str):
     """Delete a conversation for a user"""
+    print(f"\n{'='*80}")
+    print(f"🗑️  DELETE CONVERSATION ENDPOINT CALLED")
+    print(f"{'='*80}")
+    print(f"📋 Parameters:")
+    print(f"   - user_id: {user_id}")
+    print(f"   - conversation_id: {conversation_id}")
+    print(f"{'='*80}\n")
+
     if not user_id or not user_id.strip():
+        print(f"❌ Validation failed: user_id is empty")
         raise HTTPException(status_code=400, detail="user_id is required")
     if not conversation_id or not conversation_id.strip():
+        print(f"❌ Validation failed: conversation_id is empty")
         raise HTTPException(status_code=400, detail="conversation_id is required")
 
+    print(f"✅ Validation passed, calling FirestoreService.delete_conversation...")
     result = FirestoreService.delete_conversation(user_id, conversation_id)
 
+    print(f"\n📊 Deletion result from FirestoreService:")
+    print(f"   Result: {result}")
+
     if not result.get("success"):
+        print(f"❌ Deletion failed with error: {result.get('error')}")
         if result.get("error") == "not_found":
             raise HTTPException(status_code=404, detail="Conversation not found")
         status_code = 502 if result.get("error") == "firestore_error" else 500
         raise HTTPException(status_code=status_code, detail=result)
 
+    print(f"✅ Conversation deleted successfully")
+    print(f"{'='*80}\n")
     return {"success": True, "message": "Conversation deleted successfully"}
 
 @app.put("/conversations/{user_id}/{conversation_id}/title")

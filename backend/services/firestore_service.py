@@ -286,37 +286,79 @@ class FirestoreService:
             Dict with success status
         """
         try:
+            print(f"\n{'='*80}")
+            print(f"🔥 FIRESTORE SERVICE - delete_conversation()")
+            print(f"{'='*80}")
+            print(f"📋 Input parameters:")
+            print(f"   - user_id: {user_id}")
+            print(f"   - conversation_id: {conversation_id}")
+
             db = FirestoreService._get_db()
+            print(f"✅ Firestore DB client obtained")
 
             # Get document ID from user index
             user_index_ref = db.collection(FirestoreService.USER_INDEX_COLLECTION).document(user_id)
+            print(f"\n📂 Fetching user index document:")
+            print(f"   - Collection: {FirestoreService.USER_INDEX_COLLECTION}")
+            print(f"   - Document ID: {user_id}")
+
             user_index_data = user_index_ref.get()
 
             if not user_index_data.exists:
+                print(f"❌ User index document does not exist!")
                 return {"success": False, "error": "not_found", "details": "Conversation not found"}
 
             conversations_list = user_index_data.to_dict().get('conversations', [])
+            print(f"✅ User index found with {len(conversations_list)} conversations")
+            print(f"   Conversations in index: {[c.get('conversation_id') for c in conversations_list]}")
+
             doc_id = None
 
             for conv in conversations_list:
                 if conv.get('conversation_id') == conversation_id:
                     doc_id = conv.get('document_id')
+                    print(f"\n🎯 Found matching conversation:")
+                    print(f"   - conversation_id: {conversation_id}")
+                    print(f"   - document_id: {doc_id}")
                     break
 
             if not doc_id:
+                print(f"❌ Conversation ID '{conversation_id}' not found in user index!")
                 return {"success": False, "error": "not_found", "details": "Conversation not found"}
 
             # Delete the conversation document
+            print(f"\n🗑️  Step 1: Deleting conversation document from Firestore:")
+            print(f"   - Collection: {FirestoreService.CONVERSATIONS_COLLECTION}")
+            print(f"   - Document ID: {doc_id}")
+
             doc_ref = db.collection(FirestoreService.CONVERSATIONS_COLLECTION).document(doc_id)
             doc_ref.delete()
+            print(f"✅ Conversation document deleted from Firestore")
 
             # Update user index (remove conversation)
+            print(f"\n📝 Step 2: Updating user index (removing conversation from cache):")
+            original_count = len(conversations_list)
             conversations_list = [c for c in conversations_list if c.get('conversation_id') != conversation_id]
+            new_count = len(conversations_list)
+
+            print(f"   - Original conversations count: {original_count}")
+            print(f"   - New conversations count: {new_count}")
+            print(f"   - Removed: {original_count - new_count} conversation(s)")
+            print(f"   - Remaining conversation IDs: {[c.get('conversation_id') for c in conversations_list]}")
+
             user_index_ref.set({'conversations': conversations_list})
+            print(f"✅ User index updated successfully")
+
+            print(f"\n✅ Deletion completed successfully")
+            print(f"{'='*80}\n")
 
             return {"success": True, "message": "Conversation deleted successfully"}
 
         except Exception as e:
+            print(f"\n❌ EXCEPTION in delete_conversation:")
+            print(f"   Error type: {type(e).__name__}")
+            print(f"   Error message: {str(e)}")
+            print(f"{'='*80}\n")
             return {"success": False, "error": "unexpected_error", "details": str(e)}
 
     @staticmethod
