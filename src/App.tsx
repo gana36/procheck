@@ -1368,6 +1368,17 @@ CITATION REQUIREMENT:
   const handleRecentSearch = useCallback(async (conversationId: string) => {
     if (!userId) return;
 
+    // Check if conversation is already open in a tab
+    const existingTab = tabs.find(tab => 
+      tab.type === 'chat' && tab.conversationId === conversationId
+    );
+    
+    if (existingTab) {
+      console.log('✅ Conversation already open in tab, switching to it:', existingTab.id);
+      setActiveTabId(existingTab.id);
+      return;
+    }
+
     // Save current tab before opening new one
     const currentTab = getActiveTab();
     if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0) {
@@ -1460,7 +1471,7 @@ CITATION REQUIREMENT:
         )
       );
     }
-  }, [userId]);
+  }, [userId, tabs]);
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
