@@ -912,6 +912,7 @@ export async function getUploadPreview(userId: string, uploadId: string): Promis
   success: boolean;
   upload_id: string;
   protocols: any[];
+  status?: string;  // Upload status: 'completed', 'cancelled', etc.
   total: number;
 }> {
   const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/upload-preview/${encodeURIComponent(uploadId)}`);
@@ -954,6 +955,23 @@ export async function cancelUpload(userId: string, uploadId: string): Promise<{
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: 'Failed to cancel upload' }));
     throw new Error(errorData.detail || 'Failed to cancel upload');
+  }
+
+  return response.json();
+}
+
+export async function deleteUploadPreview(userId: string, uploadId: string): Promise<{
+  success: boolean;
+  upload_id: string;
+  message: string;
+}> {
+  const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/upload-preview/${encodeURIComponent(uploadId)}`, {
+    method: 'DELETE'
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: 'Failed to delete preview' }));
+    throw new Error(errorData.detail || 'Failed to delete preview');
   }
 
   return response.json();

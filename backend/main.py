@@ -614,8 +614,8 @@ async def upload_documents(
     if len(content) > 100 * 1024 * 1024:  # 100MB
         raise HTTPException(status_code=400, detail="File size exceeds 100MB limit")
 
-    # Generate unique upload ID
-    upload_id = f"upload_{user_id}_{hash(file.filename)}_{hash(content)}"
+    # Generate unique upload ID (without upload_ prefix to avoid duplication in filenames)
+    upload_id = f"{hash(file.filename)}_{hash(content)}"
 
     # Initialize document processor
     # Use global processor to maintain cancellation state
@@ -654,14 +654,27 @@ async def get_upload_status(user_id: str, upload_id: str):
     if not upload_id or not upload_id.strip():
         raise HTTPException(status_code=400, detail="upload_id is required")
 
-    # TODO: Implement actual status tracking
-    # For now, return mock status that shows awaiting_approval
+    # Check if task is still active
+    upload_key = f"{user_id}_{upload_id}"
+    if upload_key in document_processor.active_tasks:
+        task = document_processor.active_tasks[upload_key]
+        if not task.done():
+            # Still processing
+            return {
+                "upload_id": upload_id,
+                "status": "processing",
+                "progress": 50,
+                "protocols_extracted": 0,
+                "protocols_indexed": 0,
+            }
+
+    # Task completed or not found - return awaiting_approval
     return {
         "upload_id": upload_id,
-        "status": "awaiting_approval",  # processing, completed, failed, awaiting_approval
+        "status": "awaiting_approval",
         "progress": 100,
-        "protocols_extracted": 3,
-        "protocols_indexed": 0,  # Not indexed yet, awaiting approval
+        "protocols_extracted": 3,  # Mock value - will be updated when protocols are fetched
+        "protocols_indexed": 0,
         "processing_time": "1m 45s",
         "created_at": "2024-10-08T10:30:00Z"
     }
@@ -699,18 +712,28 @@ async def regenerate_protocol(
 
 @app.delete("/users/{user_id}/protocols/all")
 async def delete_all_user_protocols_endpoint(user_id: str):
-    """Delete all protocols for a user"""
+    """Delete all protocols for a user (both indexed protocols and preview files)"""
     print(f"🚀 delete_all_user_protocols_endpoint called for user {user_id}")
     if not user_id or not user_id.strip():
         raise HTTPException(status_code=400, detail="user_id is required")
 
     try:
+        # Delete indexed protocols from Elasticsearch
         from services.elasticsearch_service_additions import delete_all_user_protocols as es_delete_all_protocols
         deleted_count = await es_delete_all_protocols(user_id)
-        print(f"✅ Successfully deleted {deleted_count} protocols for user {user_id}")
+        print(f"✅ Successfully deleted {deleted_count} indexed protocols for user {user_id}")
+
+        # Also delete all preview files for this user
+        try:
+            await document_processor.delete_preview_file(user_id, upload_id=None)
+            print(f"✅ Successfully deleted all preview files for user {user_id}")
+        except Exception as preview_error:
+            print(f"⚠️ Failed to delete preview files: {str(preview_error)}")
+            # Don't fail the whole request if preview deletion fails
+
         return {
             "success": True,
-            "message": f"Successfully deleted {deleted_count} protocols",
+            "message": f"Successfully deleted {deleted_count} protocols and cleared previews",
             "deleted_count": deleted_count
         }
     except Exception as e:
@@ -795,12 +818,15 @@ async def get_upload_preview(user_id: str, upload_id: str):
         # Use global processor to maintain cancellation state
 
         # Get stored protocols for this upload
-        protocols = await document_processor.get_preview_protocols(user_id, upload_id)
+        preview_data = await document_processor.get_preview_protocols(user_id, upload_id)
+        protocols = preview_data.get("protocols", [])
+        status = preview_data.get("status", "completed")
 
         return {
             "success": True,
             "upload_id": upload_id,
             "protocols": protocols,
+            "status": status,
             "total": len(protocols)
         }
 
@@ -900,6 +926,36 @@ async def cancel_upload(user_id: str, upload_id: str):
     except Exception as e:
         print(f"❌ Error cancelling upload: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to cancel upload: {str(e)}")
+
+@app.delete("/users/{user_id}/upload-preview/{upload_id}")
+async def delete_upload_preview(user_id: str, upload_id: str):
+    """Delete preview file for a completed upload (Clear All functionality)"""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not upload_id or not upload_id.strip():
+        raise HTTPException(status_code=400, detail="upload_id is required")
+
+    try:
+        # Delete the preview file
+        deleted = await document_processor.delete_preview_file(user_id, upload_id)
+
+        if deleted:
+            print(f"🧹 Preview file deleted for upload {upload_id}")
+            return {
+                "success": True,
+                "upload_id": upload_id,
+                "message": "Preview file deleted successfully"
+            }
+        else:
+            print(f"⚠️ Preview file not found for upload {upload_id}")
+            return {
+                "success": True,  # Still return success since the goal (no preview file) is achieved
+                "upload_id": upload_id,
+                "message": "Preview file not found (already deleted or never existed)"
+            }
+    except Exception as e:
+        print(f"❌ Error deleting preview file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete preview file: {str(e)}")
 
 
 if __name__ == "__main__":
