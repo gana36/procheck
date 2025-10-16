@@ -272,7 +272,7 @@ function App() {
     protocols?: any[];
     timestamp: number;
   }>>([]);
-  const isThreadInteractionRef = useRef(false);
+  const savedScrollPositionRef = useRef(0);
 
   // Cache for loaded conversations to prevent redundant fetches with LRU eviction
   const conversationCache = useRef<Map<string, Message[]>>(new Map());
@@ -546,6 +546,12 @@ function App() {
         content: msg.content,
         timestamp: msg.timestamp, // Preserve original message timestamp
         protocol_data: msg.protocolData || undefined,
+        // Include conversation-specific fields for follow-up responses
+        citations: msg.citations || undefined,
+        follow_up_questions: msg.followUpQuestions || undefined,
+        uncertainty_note: msg.uncertaintyNote || undefined,
+        used_new_sources: msg.usedNewSources || undefined,
+        is_follow_up: msg.isFollowUp || undefined,
       }));
 
       // Use the first message timestamp as conversation created_at
@@ -1282,6 +1288,12 @@ CITATION REQUIREMENT:
           content: msg.content,
           timestamp: msg.timestamp,
           protocol_data: msg.protocolData || undefined,
+          // Include conversation-specific fields for follow-up responses
+          citations: msg.citations || undefined,
+          follow_up_questions: msg.followUpQuestions || undefined,
+          uncertainty_note: msg.uncertaintyNote || undefined,
+          used_new_sources: msg.usedNewSources || undefined,
+          is_follow_up: msg.isFollowUp || undefined,
         }));
 
         const firstMessageTimestamp = newMessages.length > 0 ? newMessages[0].timestamp : getUserTimestamp();
@@ -1415,6 +1427,12 @@ CITATION REQUIREMENT:
           content: msg.content,
           timestamp: msg.timestamp,
           protocolData: msg.protocol_data,
+          // Restore conversation-specific fields for follow-up responses
+          citations: msg.citations,
+          followUpQuestions: msg.follow_up_questions,
+          uncertaintyNote: msg.uncertainty_note,
+          usedNewSources: msg.used_new_sources,
+          isFollowUp: msg.is_follow_up,
         }));
 
         // Cache the loaded conversation with LRU eviction
@@ -1447,8 +1465,17 @@ CITATION REQUIREMENT:
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleProtocolUpdate = useCallback((updatedProtocol: ProtocolData) => {
-    // Set flag to indicate this is a thread interaction
-    isThreadInteractionRef.current = true;
+    // CRITICAL: Save scroll position BEFORE any changes
+    const chatContainer = document.querySelector('[data-chat-container]') as HTMLElement;
+    const savedScrollPosition = chatContainer ? chatContainer.scrollTop : 0;
+    
+    // Store in ref so useChatScroll can access it
+    savedScrollPositionRef.current = savedScrollPosition;
+    
+    // Disable auto-scroll during protocol update
+    if (chatContainer) {
+      (chatContainer as any).__disableAutoScroll = true;
+    }
     
     // Find the message with protocolData and update it
     const updatedMessages = messages.map(msg => {
@@ -1461,7 +1488,16 @@ CITATION REQUIREMENT:
       return msg;
     });
     
+    // Update the tab - this will cause re-render
     updateActiveTab({ messages: updatedMessages });
+    
+    // CRITICAL: Clear saved position after a short delay to free scroll
+    setTimeout(() => {
+      savedScrollPositionRef.current = 0;
+      if (chatContainer) {
+        (chatContainer as any).__disableAutoScroll = false;
+      }
+    }, 1500); // 1.5 seconds to ensure step thread response is complete
     
     // Debounce conversation save to prevent too many updates
     if (saveTimeoutRef.current) {
@@ -2383,7 +2419,7 @@ CITATION REQUIREMENT:
           <ChatContainer
             messages={messages}
             isLoading={isLoading}
-            isThreadInteraction={isThreadInteractionRef.current}
+            savedScrollPosition={savedScrollPositionRef.current}
             onSaveToggle={handleSaveToggle}
             onProtocolUpdate={handleProtocolUpdate}
             onFollowUpClick={handleFollowUpClick}

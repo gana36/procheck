@@ -9,7 +9,7 @@ import { Message } from '@/types';
 interface ChatContainerProps {
   messages: Message[];
   isLoading: boolean;
-  isThreadInteraction?: boolean;
+  savedScrollPosition?: number;
   onSaveToggle: (message: Message) => void;
   onProtocolUpdate: (updatedProtocol: any) => void;
   onFollowUpClick: (question: string) => void;
@@ -20,7 +20,7 @@ interface ChatContainerProps {
 const ChatContainer = memo(({
   messages,
   isLoading,
-  isThreadInteraction = false,
+  savedScrollPosition = 0,
   onSaveToggle,
   onProtocolUpdate,
   onFollowUpClick,
@@ -38,7 +38,7 @@ const ChatContainer = memo(({
     handleScroll,
   } = useChatScroll({
     messageCount: messages.length,
-    isThreadInteraction,
+    savedScrollPosition,
   });
 
   // Use optimized list for long conversations
@@ -94,6 +94,7 @@ const ChatContainer = memo(({
       
       <div
         ref={containerRef}
+        data-chat-container
         className="flex-1 overflow-y-auto p-4 space-y-4 relative"
         onScroll={handleScroll}
       >
