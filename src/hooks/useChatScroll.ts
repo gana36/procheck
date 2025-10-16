@@ -2,16 +2,40 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 
 interface UseChatScrollOptions {
   messageCount: number;
-  isThreadInteraction?: boolean;
+  savedScrollPosition?: number;
 }
 
-export function useChatScroll({ messageCount, isThreadInteraction = false }: UseChatScrollOptions) {
+export function useChatScroll({ messageCount, savedScrollPosition = 0 }: UseChatScrollOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageCountRef = useRef(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const userHasScrolledRef = useRef(false);
   const isAutoScrollingRef = useRef(false);
+  
+  // Expose method to disable auto-scroll temporarily (for protocol updates)
+  useEffect(() => {
+    if (containerRef.current) {
+      (containerRef.current as any).__disableAutoScroll = false;
+    }
+  }, []);
+
+  // Lock scroll to saved position when protocol updates
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || savedScrollPosition === 0) return;
+
+    // Lock scroll to the saved position - use triple RAF for stability
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (container) {
+            container.scrollTop = savedScrollPosition;
+          }
+        });
+      });
+    });
+  }, [savedScrollPosition]);
 
   // Check if user is at bottom
   const isAtBottom = useCallback(() => {
@@ -57,10 +81,11 @@ export function useChatScroll({ messageCount, isThreadInteraction = false }: Use
     }
   }, [isAtBottom]);
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new messages - ONLY when message count actually increases
   useEffect(() => {
-    if (isThreadInteraction) return;
-
+    const container = containerRef.current;
+    if (container && (container as any).__disableAutoScroll) return;
+    
     const hasNewMessages = messageCount > messageCountRef.current;
     
     if (hasNewMessages) {
@@ -74,8 +99,11 @@ export function useChatScroll({ messageCount, isThreadInteraction = false }: Use
           scrollToBottom(behavior as ScrollBehavior);
         });
       }
+    } else {
+      // Update ref even if count hasn't changed to stay in sync
+      messageCountRef.current = messageCount;
     }
-  }, [messageCount, isThreadInteraction, scrollToBottom, isAtBottom]);
+  }, [messageCount, scrollToBottom, isAtBottom]);
 
   // Streaming support
   useEffect(() => {
@@ -85,6 +113,9 @@ export function useChatScroll({ messageCount, isThreadInteraction = false }: Use
     let rafId: number;
     
     const observer = new MutationObserver(() => {
+      // Check if auto-scroll is disabled
+      if ((container as any).__disableAutoScroll) return;
+      
       if (rafId) cancelAnimationFrame(rafId);
       
       if (!userHasScrolledRef.current && isAtBottom()) {

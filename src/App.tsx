@@ -296,7 +296,7 @@ function App() {
     protocols?: any[];
     timestamp: number;
   }>>([]);
-  const isThreadInteractionRef = useRef(false);
+  const savedScrollPositionRef = useRef(0);
 
   // Cache for loaded conversations to prevent redundant fetches with LRU eviction
   const conversationCache = useRef<Map<string, Message[]>>(new Map());
@@ -1411,8 +1411,17 @@ CITATION REQUIREMENT:
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleProtocolUpdate = useCallback((updatedProtocol: ProtocolData) => {
-    // Set flag to indicate this is a thread interaction
-    isThreadInteractionRef.current = true;
+    // CRITICAL: Save scroll position BEFORE any changes
+    const chatContainer = document.querySelector('[data-chat-container]') as HTMLElement;
+    const savedScrollPosition = chatContainer ? chatContainer.scrollTop : 0;
+    
+    // Store in ref so useChatScroll can access it
+    savedScrollPositionRef.current = savedScrollPosition;
+    
+    // Disable auto-scroll during protocol update
+    if (chatContainer) {
+      (chatContainer as any).__disableAutoScroll = true;
+    }
     
     // Find the message with protocolData and update it
     const updatedMessages = messages.map(msg => {
@@ -1425,7 +1434,16 @@ CITATION REQUIREMENT:
       return msg;
     });
     
+    // Update the tab - this will cause re-render
     updateActiveTab({ messages: updatedMessages });
+    
+    // CRITICAL: Clear saved position after a short delay to free scroll
+    setTimeout(() => {
+      savedScrollPositionRef.current = 0;
+      if (chatContainer) {
+        (chatContainer as any).__disableAutoScroll = false;
+      }
+    }, 1500); // 1.5 seconds to ensure step thread response is complete
     
     // Debounce conversation save to prevent too many updates
     if (saveTimeoutRef.current) {
@@ -2254,7 +2272,7 @@ CITATION REQUIREMENT:
           <ChatContainer
             messages={messages}
             isLoading={isLoading}
-            isThreadInteraction={isThreadInteractionRef.current}
+            savedScrollPosition={savedScrollPositionRef.current}
             onSaveToggle={handleSaveToggle}
             onProtocolUpdate={handleProtocolUpdate}
             onFollowUpClick={handleFollowUpClick}
