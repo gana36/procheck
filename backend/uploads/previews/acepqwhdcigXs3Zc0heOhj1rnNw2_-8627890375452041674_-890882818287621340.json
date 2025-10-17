@@ -1,0 +1,499 @@
+{
+  "status": "completed",
+  "protocols": [
+    {
+      "protocol_id": "user_acepqwhdcigXs3Zc0heOhj1rnNw2_0_diagnostic",
+      "title": "COVID-19 Diagnostic Eligibility Assessment",
+      "steps": [
+        {
+          "step": 1,
+          "text": "Assess for COVID-19 symptoms.",
+          "explanation": "Determine if the individual is exhibiting symptoms that are consistent with a COVID-19 infection. This is the initial step to determine eligibility for treatment.",
+          "citation": 1
+        },
+        {
+          "step": 2,
+          "text": "Determine age.",
+          "explanation": "Ascertain the individual's age to determine if they are 50 years or older. Age is a factor in determining eligibility for treatment.",
+          "citation": 1
+        },
+        {
+          "step": 3,
+          "text": "Check for underlying medical conditions.",
+          "explanation": "Identify if the individual has any medical conditions that place them at higher risk of getting very sick from COVID-19. Having a high-risk condition is a factor in determining eligibility for treatment.",
+          "citation": 1
+        },
+        {
+          "step": 4,
+          "text": "Determine treatment eligibility.",
+          "explanation": "If the individual has symptoms consistent with COVID-19 AND is either 50 years or older OR has a condition placing them at higher risk of getting very sick, they are eligible for treatment.",
+          "citation": 1
+        }
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "source": "test_folder/covid19riskandfactors.pdf",
+          "excerpt": "People with Certain Medical Conditions and COVID-19 Risk Factors\nFor Everyone\nJune 11, 2025\nEspañol\nWhat to know\n• If you have any medical conditions listed below, you are more likely to get very sick\nwith COVID-19.\n• This list does not include all conditions.\n• If you have symptoms consistent with ...",
+          "organization": "User Upload",
+          "year": "2025",
+          "region": "User Defined"
+        }
+      ],
+      "source_type": "user",
+      "user_id": "acepqwhdcigXs3Zc0heOhj1rnNw2",
+      "created_at": "2025-10-16T16:08:10.959358",
+      "region": "User Defined",
+      "organization": "Custom Protocol",
+      "intent": "diagnostic"
+    },
+    {
+      "protocol_id": "user_acepqwhdcigXs3Zc0heOhj1rnNw2_1_treatment",
+      "title": "COVID-19 Treatment Eligibility",
+      "steps": [
+        {
+          "step": 1,
+          "text": "Check for COVID-19 symptoms.",
+          "explanation": "Assess the individual for symptoms that are consistent with COVID-19. This is the initial step to determine eligibility for treatment.",
+          "citation": 1
+        },
+        {
+          "step": 2,
+          "text": "Determine age or presence of high-risk condition.",
+          "explanation": "Confirm if the individual is 50 years or older, or if they have a medical condition that places them at higher risk of getting very sick. This is a key criterion for treatment eligibility.",
+          "citation": 1
+        },
+        {
+          "step": 3,
+          "text": "If symptomatic and either age 50+ or high-risk, consider eligible for treatment.",
+          "explanation": "If the individual has symptoms consistent with COVID-19 AND is either 50 years or older OR has a condition placing them at higher risk, they are eligible for treatment. This is the final determination of eligibility based on the provided criteria.",
+          "citation": 1
+        }
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "source": "test_folder/covid19riskandfactors.pdf",
+          "excerpt": "People with Certain Medical Conditions and COVID-19 Risk Factors\nFor Everyone\nJune 11, 2025\nEspañol\nWhat to know\n• If you have any medical conditions listed below, you are more likely to get very sick\nwith COVID-19.\n• This list does not include all conditions.\n• If you have symptoms consistent with ...",
+          "organization": "User Upload",
+          "year": "2025",
+          "region": "User Defined"
+        }
+      ],
+      "source_type": "user",
+      "user_id": "acepqwhdcigXs3Zc0heOhj1rnNw2",
+      "created_at": "2025-10-16T16:08:13.328517",
+      "region": "User Defined",
+      "organization": "Custom Protocol",
+      "intent": "treatment"
+    },
+    {
+      "protocol_id": "user_acepqwhdcigXs3Zc0heOhj1rnNw2_2_prevention",
+      "title": "COVID-19 Prevention Protocol for High-Risk Individuals",
+      "steps": [
+        {
+          "step": 1,
+          "text": "Stay up to date with COVID-19 vaccines.",
+          "explanation": "Vaccination is crucial, especially for older adults and individuals with underlying health conditions, to reduce the risk of severe illness from COVID-19.",
+          "citation": 1
+        },
+        {
+          "step": 2,
+          "text": "Follow preventive measures.",
+          "explanation": "Adhering to general preventive measures is important, particularly for those at higher risk due to age or medical conditions, to minimize the chances of contracting COVID-19.",
+          "citation": 1
+        }
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "source": "test_folder/covid19riskandfactors.pdf",
+          "excerpt": "People with Certain Medical Conditions and COVID-19 Risk Factors\nFor Everyone\nJune 11, 2025\nEspañol\nWhat to know\n• If you have any medical conditions listed below, you are more likely to get very sick\nwith COVID-19.\n• This list does not include all conditions.\n• If you have symptoms consistent with ...",
+          "organization": "User Upload",
+          "year": "2025",
+          "region": "User Defined"
+        }
+      ],
+      "source_type": "user",
+      "user_id": "acepqwhdcigXs3Zc0heOhj1rnNw2",
+      "created_at": "2025-10-16T16:08:15.638498",
+      "region": "User Defined",
+      "organization": "Custom Protocol",
+      "intent": "prevention"
+    },
+    {
+      "protocol_id": "user_acepqwhdcigXs3Zc0heOhj1rnNw2_3_diagnostic",
+      "title": "COVID-19 Risk Assessment and Management",
+      "steps": [
+        {
+          "step": 1,
+          "text": "Contact a healthcare provider if you have questions about a condition not included on the provided list or questions on how to manage your condition and protect yourself from COVID-19 and severe illness.",
+          "explanation": "This step emphasizes the importance of seeking personalized medical advice for conditions not explicitly mentioned in the general guidelines. Consulting a healthcare provider allows for tailored recommendations based on individual circumstances and specific health concerns.",
+          "citation": 1
+        },
+        {
+          "step": 2,
+          "text": "Visit a Test to Treat location.",
+          "explanation": "This step directs individuals to locations where they can get tested for COVID-19 and receive treatment if needed. This ensures prompt access to care, especially within the critical 5-7 day window for effective treatment.",
+          "citation": 1
+        }
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "source": "test_folder/covid19riskandfactors.pdf",
+          "excerpt": "e with\ndisabilities.\nSpecific information on children and teens\nPeople of all ages, including children and teens, can get very sick from COVID-19,\nespecially those with underlying medical conditions. This includes children and teens with:\n• Medical complexity\n• Genetic, neurologic, or metabolic cond...",
+          "organization": "User Upload",
+          "year": "2025",
+          "region": "User Defined"
+        }
+      ],
+      "source_type": "user",
+      "user_id": "acepqwhdcigXs3Zc0heOhj1rnNw2",
+      "created_at": "2025-10-16T16:08:17.902665",
+      "region": "User Defined",
+      "organization": "Custom Protocol",
+      "intent": "diagnostic"
+    },
+    {
+      "protocol_id": "user_acepqwhdcigXs3Zc0heOhj1rnNw2_4_treatment",
+      "title": "COVID-19 Treatment Protocol",
+      "steps": [
+        {
+          "step": 1,
+          "text": "Start treatment within 5-7 days of symptom onset.",
+          "explanation": "Initiate treatment as soon as possible, ideally within 5 to 7 days from the start of COVID-19 symptoms, to maximize its effectiveness.",
+          "citation": 1
+        },
+        {
+          "step": 2,
+          "text": "Consider treatment options to reduce risk of hospitalization and death.",
+          "explanation": "Explore available treatment options, as they can significantly lower the risk of hospitalization by more than 50% and reduce the risk of death associated with COVID-19.",
+          "citation": 1
+        },
+        {
+          "step": 3,
+          "text": "Visit a Test to Treat location.",
+          "explanation": "Consider visiting a Test to Treat location for testing and immediate access to treatment if needed.",
+          "citation": 1
+        }
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "source": "test_folder/covid19riskandfactors.pdf",
+          "excerpt": "e with\ndisabilities.\nSpecific information on children and teens\nPeople of all ages, including children and teens, can get very sick from COVID-19,\nespecially those with underlying medical conditions. This includes children and teens with:\n• Medical complexity\n• Genetic, neurologic, or metabolic cond...",
+          "organization": "User Upload",
+          "year": "2025",
+          "region": "User Defined"
+        }
+      ],
+      "source_type": "user",
+      "user_id": "acepqwhdcigXs3Zc0heOhj1rnNw2",
+      "created_at": "2025-10-16T16:08:19.761530",
+      "region": "User Defined",
+      "organization": "Custom Protocol",
+      "intent": "treatment"
+    },
+    {
+      "protocol_id": "user_acepqwhdcigXs3Zc0heOhj1rnNw2_5_emergency",
+      "title": "COVID-19 Treatment Protocol",
+      "steps": [
+        {
+          "step": 1,
+          "text": "Start treatment within 5-7 days of symptom onset.",
+          "explanation": "Initiate treatment as soon as possible, ideally within 5 to 7 days from the start of COVID-19 symptoms, to maximize its effectiveness.",
+          "citation": 1
+        },
+        {
+          "step": 2,
+          "text": "Consider treatment to reduce risk of hospitalization and death.",
+          "explanation": "Treatment can significantly lower the chances of needing hospitalization and reduce the risk of death associated with COVID-19.",
+          "citation": 1
+        },
+        {
+          "step": 3,
+          "text": "Visit a Test to Treat location.",
+          "explanation": "Go to a designated Test to Treat location to get tested for COVID-19 and receive treatment, if eligible, in a single visit.",
+          "citation": 1
+        }
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "source": "test_folder/covid19riskandfactors.pdf",
+          "excerpt": "e with\ndisabilities.\nSpecific information on children and teens\nPeople of all ages, including children and teens, can get very sick from COVID-19,\nespecially those with underlying medical conditions. This includes children and teens with:\n• Medical complexity\n• Genetic, neurologic, or metabolic cond...",
+          "organization": "User Upload",
+          "year": "2025",
+          "region": "User Defined"
+        }
+      ],
+      "source_type": "user",
+      "user_id": "acepqwhdcigXs3Zc0heOhj1rnNw2",
+      "created_at": "2025-10-16T16:08:21.431472",
+      "region": "User Defined",
+      "organization": "Custom Protocol",
+      "intent": "emergency"
+    },
+    {
+      "protocol_id": "user_acepqwhdcigXs3Zc0heOhj1rnNw2_6_prevention",
+      "title": "COVID-19 Prevention Protocol for Children and Teens",
+      "steps": [
+        {
+          "step": 1,
+          "text": "Discuss the benefits of vaccination with a healthcare provider for children ages 6 months to 17 years.",
+          "explanation": "Parents should consult with a healthcare provider to understand the advantages of COVID-19 vaccination for their children within the specified age range. This discussion helps in making informed decisions about vaccination.",
+          "citation": 1
+        },
+        {
+          "step": 2,
+          "text": "Stay up to date on COVID-19 vaccines.",
+          "explanation": "Ensuring that children and teens receive the recommended COVID-19 vaccinations and boosters is crucial for preventing severe illness. This includes following the latest guidelines and recommendations from healthcare authorities.",
+          "citation": 1
+        },
+        {
+          "step": 3,
+          "text": "Contact a healthcare provider for questions about conditions not included on the provided list.",
+          "explanation": "If you have concerns about a medical condition not specifically mentioned, it's important to seek guidance from a healthcare professional. They can provide personalized advice on managing the condition and minimizing COVID-19 risk.",
+          "citation": 1
+        }
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "source": "test_folder/covid19riskandfactors.pdf",
+          "excerpt": "e with\ndisabilities.\nSpecific information on children and teens\nPeople of all ages, including children and teens, can get very sick from COVID-19,\nespecially those with underlying medical conditions. This includes children and teens with:\n• Medical complexity\n• Genetic, neurologic, or metabolic cond...",
+          "organization": "User Upload",
+          "year": "2025",
+          "region": "User Defined"
+        }
+      ],
+      "source_type": "user",
+      "user_id": "acepqwhdcigXs3Zc0heOhj1rnNw2",
+      "created_at": "2025-10-16T16:08:23.516148",
+      "region": "User Defined",
+      "organization": "Custom Protocol",
+      "intent": "prevention"
+    },
+    {
+      "protocol_id": "user_acepqwhdcigXs3Zc0heOhj1rnNw2_7_diagnostic",
+      "title": "COVID-19 Risk Assessment for Individuals with Underlying Conditions",
+      "steps": [
+        {
+          "step": 1,
+          "text": "Identify presence of cancer.",
+          "explanation": "Determine if the individual has a current or past diagnosis of cancer, as treatments can weaken the body's ability to fight off disease.",
+          "citation": 1
+        },
+        {
+          "step": 2,
+          "text": "Identify presence of cerebrovascular disease.",
+          "explanation": "Determine if the individual has a history of cerebrovascular disease, including stroke, which affects blood flow to the brain.",
+          "citation": 1
+        },
+        {
+          "step": 3,
+          "text": "Identify presence of chronic kidney disease.",
+          "explanation": "Determine if the individual has chronic kidney disease at any stage.",
+          "citation": 1
+        },
+        {
+          "step": 4,
+          "text": "Identify presence of chronic liver disease.",
+          "explanation": "Determine if the individual has chronic liver disease, including alcohol-related liver disease, non-alcoholic fatty liver disease, autoimmune hepatitis, and cirrhosis.",
+          "citation": 1
+        },
+        {
+          "step": 5,
+          "text": "Identify presence of chronic lung disease.",
+          "explanation": "Determine if the individual has chronic lung disease, including asthma (moderate to severe), bronchiectasis, bronchopulmonary dysplasia, COPD, damaged or scarred lung tissue, pulmonary embolism, or pulmonary hypertension.",
+          "citation": 1
+        },
+        {
+          "step": 6,
+          "text": "Identify presence of cystic fibrosis.",
+          "explanation": "Determine if the individual has cystic fibrosis.",
+          "citation": 1
+        },
+        {
+          "step": 7,
+          "text": "Identify presence of organ transplant.",
+          "explanation": "Determine if the individual has undergone a lung or other solid organ transplant (kidney, liver, intestines, heart, and pancreas).",
+          "citation": 1
+        }
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "source": "test_folder/covid19riskandfactors.pdf",
+          "excerpt": "ing many conditions\nthat mostly affect children, may not be included.\n• A person with a condition that is not listed may still be at greater risk of getting very\nsick from COVID-19 than other people. It is important to talk with your healthcare\nprovider about your risk.\nHaving the following diseases...",
+          "organization": "User Upload",
+          "year": "2025",
+          "region": "User Defined"
+        }
+      ],
+      "source_type": "user",
+      "user_id": "acepqwhdcigXs3Zc0heOhj1rnNw2",
+      "created_at": "2025-10-16T16:08:26.994276",
+      "region": "User Defined",
+      "organization": "Custom Protocol",
+      "intent": "diagnostic"
+    },
+    {
+      "protocol_id": "user_acepqwhdcigXs3Zc0heOhj1rnNw2_8_prevention",
+      "title": "COVID-19 Prevention for Immunocompromised Individuals",
+      "steps": [
+        {
+          "step": 1,
+          "text": "Stay up to date on vaccines.",
+          "explanation": "Immunocompromised individuals should ensure they are current with all recommended COVID-19 vaccinations to maximize their protection against the virus.",
+          "citation": 1
+        }
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "source": "test_folder/covid19riskandfactors.pdf",
+          "excerpt": "American Lung Association: Controlling Chronic Lung Diseases Amid COVID-19\nCystic fibrosis\n\nWith or without lung or other solid organ transplant (like kidney, liver, intestines, heart, and\npancreas).\nGet more information:\n• Cystic fibrosis\n• Cystic Fibrosis Foundation: CF and Coronavirus (COVID-19)\n...",
+          "organization": "User Upload",
+          "year": "2025",
+          "region": "User Defined"
+        }
+      ],
+      "source_type": "user",
+      "user_id": "acepqwhdcigXs3Zc0heOhj1rnNw2",
+      "created_at": "2025-10-16T16:08:32.768573",
+      "region": "User Defined",
+      "organization": "Custom Protocol",
+      "intent": "prevention"
+    },
+    {
+      "protocol_id": "user_acepqwhdcigXs3Zc0heOhj1rnNw2_9_treatment",
+      "title": "Pemivibart (Pemgarda™) Administration Protocol for COVID-19 Prevention",
+      "steps": [
+        {
+          "step": 1,
+          "text": "Assess patient eligibility for Pemivibart (Pemgarda™).",
+          "explanation": "Determine if the patient is moderately or severely immunocompromised, is 12 years of age or older, and weighs at least 88 pounds. This is the initial step to ensure the patient meets the basic criteria for Pemgarda administration.",
+          "citation": 1
+        },
+        {
+          "step": 2,
+          "text": "Administer Pemgarda at least 2 weeks after COVID-19 vaccination.",
+          "explanation": "Ensure that at least two weeks have passed since the patient received a COVID-19 vaccine before administering Pemgarda. This timing is important to maximize the potential benefits of both the vaccine and the monoclonal antibody.",
+          "citation": 1
+        },
+        {
+          "step": 3,
+          "text": "Consult with a healthcare provider to determine if Pemgarda is appropriate.",
+          "explanation": "A healthcare provider should evaluate the patient's overall health status and medical history to determine if Pemgarda is the right preventive option. This step ensures that the decision to administer Pemgarda is made in the context of the patient's individual needs and circumstances.",
+          "citation": 1
+        }
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "source": "test_folder/covid19riskandfactors.pdf",
+          "excerpt": "omised condition or weakened immune system\nPeople who are immunocompromised or are taking medicines that weaken their immune\nsystem may not be protected even if they are up to date on their vaccines. Examples\ninclude:\n• People who have cancer and are on chemotherapy\n• People who have had a solid org...",
+          "organization": "User Upload",
+          "year": "2025",
+          "region": "User Defined"
+        }
+      ],
+      "source_type": "user",
+      "user_id": "acepqwhdcigXs3Zc0heOhj1rnNw2",
+      "created_at": "2025-10-16T16:08:36.313199",
+      "region": "User Defined",
+      "organization": "Custom Protocol",
+      "intent": "treatment"
+    },
+    {
+      "protocol_id": "user_acepqwhdcigXs3Zc0heOhj1rnNw2_10_emergency",
+      "title": "Pemivibart (Pemgarda™) Administration for COVID-19 Prevention in Immunocompromised Individuals",
+      "steps": [
+        {
+          "step": 1,
+          "text": "Assess patient eligibility for Pemivibart (Pemgarda™).",
+          "explanation": "Determine if the patient is moderately or severely immunocompromised, ages 12 and older, and weighs at least 88 pounds, as these are the criteria for eligibility.",
+          "citation": 1
+        },
+        {
+          "step": 2,
+          "text": "Consider Pemgarda administration at least 2 weeks after COVID-19 vaccination.",
+          "explanation": "Pemgarda can be given at least 2 weeks after a COVID-19 vaccine to provide an additional layer of protection against COVID-19.",
+          "citation": 1
+        },
+        {
+          "step": 3,
+          "text": "Inform patients that Pemgarda is not a treatment for COVID-19.",
+          "explanation": "Clearly communicate that Pemgarda is a preventive measure and not a treatment option if the patient already has COVID-19.",
+          "citation": 1
+        },
+        {
+          "step": 4,
+          "text": "Monitor for updates from the FDA regarding Pemgarda's effectiveness against emerging variants.",
+          "explanation": "The FDA will provide updates to the Emergency Use Authorization materials if new information emerges regarding the effectiveness of Pemgarda against new variants.",
+          "citation": 1
+        }
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "source": "test_folder/covid19riskandfactors.pdf",
+          "excerpt": "omised condition or weakened immune system\nPeople who are immunocompromised or are taking medicines that weaken their immune\nsystem may not be protected even if they are up to date on their vaccines. Examples\ninclude:\n• People who have cancer and are on chemotherapy\n• People who have had a solid org...",
+          "organization": "User Upload",
+          "year": "2025",
+          "region": "User Defined"
+        }
+      ],
+      "source_type": "user",
+      "user_id": "acepqwhdcigXs3Zc0heOhj1rnNw2",
+      "created_at": "2025-10-16T16:08:39.028427",
+      "region": "User Defined",
+      "organization": "Custom Protocol",
+      "intent": "emergency"
+    },
+    {
+      "protocol_id": "user_acepqwhdcigXs3Zc0heOhj1rnNw2_11_prevention",
+      "title": "COVID-19 Prevention Protocol for Immunocompromised Individuals",
+      "steps": [
+        {
+          "step": 1,
+          "text": "Consult healthcare provider regarding additional precautions.",
+          "explanation": "Individuals with compromised immune systems should discuss with their healthcare provider about necessary additional precautions beyond standard recommendations. This is because their immune response to vaccines may be weaker.",
+          "citation": 1
+        },
+        {
+          "step": 2,
+          "text": "Consider additional doses of updated COVID-19 vaccine.",
+          "explanation": "Moderately or severely immunocompromised individuals may benefit from receiving additional doses of the updated COVID-19 vaccine. Specific guidance has been developed for this population due to their potentially different immune response.",
+          "citation": 1
+        },
+        {
+          "step": 3,
+          "text": "Evaluate eligibility for Pemivibart (Pemgarda™).",
+          "explanation": "Individuals who are moderately or severely immunocompromised, ages 12 and older, and weigh at least 88 pounds should talk to their healthcare provider to see if Pemivibart (Pemgarda™) is right for them. Pemgarda may provide an additional layer of protection against COVID-19.",
+          "citation": 1
+        }
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "source": "test_folder/covid19riskandfactors.pdf",
+          "excerpt": "omised condition or weakened immune system\nPeople who are immunocompromised or are taking medicines that weaken their immune\nsystem may not be protected even if they are up to date on their vaccines. Examples\ninclude:\n• People who have cancer and are on chemotherapy\n• People who have had a solid org...",
+          "organization": "User Upload",
+          "year": "2025",
+          "region": "User Defined"
+        }
+      ],
+      "source_type": "user",
+      "user_id": "acepqwhdcigXs3Zc0heOhj1rnNw2",
+      "created_at": "2025-10-16T16:08:41.284853",
+      "region": "User Defined",
+      "organization": "Custom Protocol",
+      "intent": "prevention"
+    }
+  ],
+  "upload_id": "-8627890375452041674_-890882818287621340",
+  "created_at": "2025-10-16T16:08:41.289813"
+}

@@ -251,6 +251,7 @@ function App() {
   } | null>(null);
   const [uploadCancelled, setUploadCancelled] = useState(false);
   const [currentUploadId, setCurrentUploadId] = useState<string | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   // Regeneration modal state
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
@@ -2392,6 +2393,8 @@ CITATION REQUIREMENT:
           setUploadCancelled={setUploadCancelled}
           currentUploadId={currentUploadId}
           setCurrentUploadId={setCurrentUploadId}
+          showUploadModal={showUploadModal}
+          setShowUploadModal={setShowUploadModal}
           userIndexProtocols={userIndexProtocols}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={handleToggleSidebarCollapse}

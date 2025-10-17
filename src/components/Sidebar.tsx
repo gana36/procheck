@@ -90,6 +90,10 @@ interface SidebarProps {
   currentUploadId: string | null;
   setCurrentUploadId: (value: string | null) => void;
 
+  // Upload modal state for persistence across navigation
+  showUploadModal: boolean;
+  setShowUploadModal: (value: boolean) => void;
+
   // User index protocols data from parent (single source of truth)
   userIndexProtocols: any[];
 
@@ -152,7 +156,7 @@ const clearProtocolCache = (userId: string) => {
   }
 };
 
-const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, savedProtocolsRefreshTrigger, onShowLogoutModal, onShowDeleteModal, onShowUserProtocolsIndex, onShowGeneratedProtocols, generatedProtocols = [], generatedUploadId = null, onNotifyUploadReady, onShowConfirmation, onClearProtocolCache, isProfileOpen, activeProfileTab, onOpenProfile, onCloseProfile, onSetActiveProfileTab, isUploading, setIsUploading, uploadProgress, setUploadProgress, uploadCancelled, setUploadCancelled, currentUploadId, setCurrentUploadId, userIndexProtocols, isCollapsed, onToggleCollapse }: SidebarProps) {
+const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, savedProtocolsRefreshTrigger, onShowLogoutModal, onShowDeleteModal, onShowUserProtocolsIndex, onShowGeneratedProtocols, generatedProtocols = [], generatedUploadId = null, onNotifyUploadReady, onShowConfirmation, onClearProtocolCache, isProfileOpen, activeProfileTab, onOpenProfile, onCloseProfile, onSetActiveProfileTab, isUploading, setIsUploading, uploadProgress, setUploadProgress, uploadCancelled, setUploadCancelled, currentUploadId, setCurrentUploadId, showUploadModal, setShowUploadModal, userIndexProtocols, isCollapsed, onToggleCollapse }: SidebarProps) {
   const { currentUser } = useAuth();
   
   // CRITICAL: Extract userId directly - this is stable because we'll control when effects run
@@ -207,12 +211,13 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   // Profile modal state - now passed as props from parent
   const [isRenaming, setIsRenaming] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
-  const [showUploadModal, setShowUploadModal] = useState(false);
 
+  // Upload modal state - now comes from props for persistence
   // Upload state - now comes from props for persistence
   const [customPrompt, setCustomPrompt] = useState('');
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const uploadAbortController = useRef<AbortController | null>(null);
+  const uploadCancelledRef = useRef(false); // Track cancellation state immediately (not async like state)
 
   // Regeneration state
   const [regeneratingProtocolId, setRegeneratingProtocolId] = useState<string | null>(null);
@@ -764,6 +769,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
     setIsUploading(true);
     setUploadCancelled(false);
+    uploadCancelledRef.current = false; // Reset ref for new upload
     setCurrentUploadId(null); // Reset upload ID
     setUploadProgress({
       status: 'uploading',
@@ -822,8 +828,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     if (!currentUser) return;
 
     const poll = async () => {
-      // Check if upload was cancelled
-      if (uploadCancelled) {
+      // Check if upload was cancelled (use ref for immediate access)
+      if (uploadCancelledRef.current) {
         console.log('🚫 Polling stopped due to cancellation');
         if (pollingRef.current) {
           clearTimeout(pollingRef.current);
@@ -835,6 +841,18 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       try {
         const status = await getUploadStatus(currentUser.uid, uploadId);
         console.log('📊 Upload status:', status);
+
+        // Check again if upload was cancelled while waiting for status (prevent race condition)
+        if (uploadCancelledRef.current) {
+          console.log('🚫 Upload was cancelled during status check, ignoring result');
+          return;
+        }
+
+        // CRITICAL: Check cancellation BEFORE updating state with any success status
+        if ((status.status === 'completed' || status.status === 'awaiting_approval') && uploadCancelledRef.current) {
+          console.log('🚫 User cancelled - ignoring success status from backend');
+          return;
+        }
 
         // Calculate progress based on status
         let calculatedProgress = 25; // Start at 25% after upload
@@ -856,6 +874,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
           console.log('✅ Upload processing completed');
           setIsUploading(false);
           setUploadCancelled(false);
+          uploadCancelledRef.current = false; // Sync ref with state
           // Refresh user protocols list with fresh data
           loadUploadedProtocols(true);
           setTimeout(() => {
@@ -865,13 +884,19 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
           console.log('⏳ Upload processing completed, awaiting user approval');
           setIsUploading(false);
           setUploadCancelled(false);
+          uploadCancelledRef.current = false; // Sync ref with state
           // Show preview modal
           await showProtocolPreview(uploadId);
         } else if (status.status === 'cancelled') {
           console.log('🚫 Upload was cancelled, cleaning up UI');
           setIsUploading(false);
           setUploadCancelled(true);
-          setUploadProgress(null);
+          // Update status to show cancelled in the upload modal
+          setUploadProgress({
+            status: 'cancelled',
+            upload_id: uploadId,
+            filename: uploadProgress?.filename || 'Unknown file'
+          });
           setCurrentUploadId(null);
           // Stop polling
           if (pollingRef.current) {
@@ -940,9 +965,19 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       }
 
       // Clean up state regardless of which phase we cancelled
+      console.log('🔴 Setting uploadCancelled to TRUE and status to cancelled');
+      uploadCancelledRef.current = true; // Set ref IMMEDIATELY (not async like state)
       setUploadCancelled(true);
       setIsUploading(false);
-      setUploadProgress(null);
+      // Set status to 'cancelled' instead of clearing it entirely
+      setUploadProgress({
+        status: 'cancelled',
+        filename: uploadProgress?.filename || 'Unknown file',
+        protocols_extracted: 0,
+        protocols_indexed: 0,
+        progress: 0
+      });
+      console.log('🔴 Upload progress updated to cancelled with 0 protocols');
       setCurrentUploadId(null);
 
       // Clear any pending polling
@@ -956,9 +991,17 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       console.error('❌ Failed to cancel upload:', error);
 
       // Still cancel locally even if API call fails
+      uploadCancelledRef.current = true; // Set ref IMMEDIATELY (not async like state)
       setUploadCancelled(true);
       setIsUploading(false);
-      setUploadProgress(null);
+      // Set status to 'cancelled' instead of clearing it entirely
+      setUploadProgress({
+        status: 'cancelled',
+        filename: uploadProgress?.filename || 'Unknown file',
+        protocols_extracted: 0,
+        protocols_indexed: 0,
+        progress: 0
+      });
       setCurrentUploadId(null);
 
       // Clear any pending polling
@@ -1107,6 +1150,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         }
       } else {
         // Send notification for automatic upload completion
+        // DON'T switch tabs or close modals - just show notification
         if (onNotifyUploadReady) {
           // Extract protocols array (handle both old and new format)
           const protocols = Array.isArray(preview.protocols) ? preview.protocols : (preview.protocols || []);
@@ -1142,11 +1186,12 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         }
 
         // Don't automatically create the tab - let user click "View Protocols" to open it
-        // This prevents duplicate tabs when user clicks the notification button
+        // This prevents duplicate tabs and keeps user in upload modal if they're watching progress
       }
 
-      // Clear upload progress since protocols are ready
-      setUploadProgress(null);
+      // DON'T clear upload progress here - let it stay visible in the upload modal
+      // Only clear it when user dismisses the notification or closes the modal
+      // setUploadProgress(null);  // REMOVED
 
     } catch (error) {
       console.error('❌ Failed to get protocol preview:', error);
@@ -2044,12 +2089,13 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                         <Badge
                           variant={
                             uploadProgress.status === 'completed' || uploadProgress.status === 'awaiting_approval' ? 'default' :
-                            uploadProgress.status === 'error' ? 'destructive' :
+                            uploadProgress.status === 'error' || uploadProgress.status === 'cancelled' ? 'destructive' :
                             'secondary'
                           }
                           className={
                             uploadProgress.status === 'completed' || uploadProgress.status === 'awaiting_approval' ? 'bg-green-600' :
                             uploadProgress.status === 'error' ? 'bg-red-600' :
+                            uploadProgress.status === 'cancelled' ? 'bg-gray-600' :
                             'bg-blue-600'
                           }
                         >
@@ -2057,6 +2103,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                            uploadProgress.status === 'processing' ? 'Processing' :
                            uploadProgress.status === 'awaiting_approval' ? 'Ready for Review' :
                            uploadProgress.status === 'completed' ? 'Completed' :
+                           uploadProgress.status === 'cancelled' ? 'Cancelled by user' :
                            uploadProgress.status === 'error' ? 'Error' :
                            uploadProgress.status}
                         </Badge>
@@ -2115,6 +2162,13 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                           ? `Ready for review! ${uploadProgress.protocols_extracted || 0} protocols generated`
                           : `Successfully processed ${uploadProgress.protocols_extracted || 0} protocols`
                         }
+                      </div>
+                    )}
+
+                    {uploadProgress.status === 'cancelled' && (
+                      <div className="flex items-center text-sm text-gray-600">
+                        <div className="h-2 w-2 bg-gray-500 rounded-full mr-2"></div>
+                        Upload cancelled by user
                       </div>
                     )}
 
