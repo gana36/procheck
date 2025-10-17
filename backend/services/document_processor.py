@@ -130,14 +130,13 @@ class DocumentProcessor:
             # Clean up everything - don't save partial protocols
             await self.cleanup_temp_files(upload_id)
 
-            # Make sure preview file is deleted
+            # Store cancelled status in preview file so frontend knows it was cancelled
+            # DON'T delete the preview file - frontend needs to read the status
             try:
-                preview_file = os.path.join(self.upload_dir, 'previews', f"{user_id}_{upload_id}.json")
-                if os.path.exists(preview_file):
-                    os.remove(preview_file)
-                    print(f"🧹 Deleted preview file during cancellation: {preview_file}")
-            except Exception as cleanup_error:
-                print(f"⚠️ Failed to delete preview file during cancellation: {str(cleanup_error)}")
+                await self.store_protocols_for_preview(user_id, upload_id, [], status="cancelled")
+                print(f"💾 Stored cancelled status in preview file for frontend")
+            except Exception as store_error:
+                print(f"⚠️ Failed to store cancelled status: {str(store_error)}")
 
             # Note: The finally block will clean up the cancellation flag
             return {
@@ -408,8 +407,9 @@ class DocumentProcessor:
                     try:
                         print(f"🤖 Generating {protocol_type['focus']} protocol from {source_file}... (this may take 10-30 seconds)")
 
-                        # Generate protocol using dedicated service
-                        result = generate_protocol_from_chunk(
+                        # Run the synchronous Gemini call in a non-blocking thread to allow cancellation
+                        result = await asyncio.to_thread(
+                            generate_protocol_from_chunk,
                             chunk_text=chunk_text,
                             source_file=source_file,
                             protocol_type=protocol_type['focus'],
@@ -962,13 +962,12 @@ class DocumentProcessor:
                     task.cancel()
                     print(f"🚫 Called task.cancel() for upload {upload_id}")
 
-                    # Clean up any temporary files
-                    await self.cleanup_temp_files(upload_id)
-
-                    # Store cancelled status in preview file instead of deleting
+                    # Note: Don't clean up here - let the CancelledError handler do cleanup
+                    # The task will receive CancelledError and handle cleanup properly
+                    # Just store the cancelled status for the frontend to read
                     await self.store_protocols_for_preview(user_id, upload_id, [], status="cancelled")
 
-                    print(f"✅ Upload {upload_id} cancellation completed")
+                    print(f"✅ Upload {upload_id} cancellation initiated")
                     return True
                 else:
                     print(f"⚠️ Upload {upload_id} task already completed")
