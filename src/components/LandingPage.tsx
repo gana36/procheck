@@ -21,10 +21,19 @@ export default function LandingPage({ onStartSearch, onSampleQuery }: LandingPag
   const [query, setQuery] = useState("");
 
   const handleSearch = () => {
-    if (onStartSearch) {
-      onStartSearch();
-    } else {
+    if (query.trim()) {
+      // If there's a query, treat it like a sample query click
+      if (onSampleQuery) {
+        onSampleQuery(query.trim());
+      }
       navigate('/dashboard');
+    } else {
+      // If no query, just navigate to dashboard
+      if (onStartSearch) {
+        onStartSearch();
+      } else {
+        navigate('/dashboard');
+      }
     }
   };
 
