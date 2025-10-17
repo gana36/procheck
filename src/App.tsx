@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Menu, X, LogOut, UserX, FileText, Plus } from 'lucide-react';
-import LandingScreen from '@/components/LandingScreen';
+import LandingScreen from '@/components/LandingPage';
 import Sidebar from '@/components/Sidebar';
 import ChatInput from '@/components/ChatInput';
 import ChatContainer from '@/components/ChatContainer';
