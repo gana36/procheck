@@ -1596,6 +1596,13 @@ CITATION REQUIREMENT:
     deletedConversations.current.add(conversationId);
     console.log(`✅ Added to deleted set. Deleted conversations:`, Array.from(deletedConversations.current));
 
+    // Cancel any in-flight API requests for this conversation
+    if (abortControllerRef.current) {
+      console.log(`🚫 Aborting in-flight API request`);
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
     // Clear any pending auto-save for this conversation
     if (debouncedSaveRef.current) {
       console.log(`🚫 Clearing pending auto-save timer`);
@@ -1603,16 +1610,66 @@ CITATION REQUIREMENT:
       debouncedSaveRef.current = null;
     }
 
-    // Remove deleted conversation from cache
+    // Remove deleted conversation from cache and tracking
     conversationCache.current.delete(conversationId);
-    console.log(`✅ Removed from conversation cache`);
+    recentlySavedConversations.current.delete(conversationId);
+    console.log(`✅ Removed from conversation cache and save tracking`);
 
-    // If currently viewing the deleted conversation, close the tab
-    if (currentConversationId === conversationId) {
-      console.log(`🚪 Closing active tab for deleted conversation`);
-      closeTab(activeTabId);
+    // LIVE UPDATE: Find and close ALL tabs with this conversation
+    const tabsToClose = tabs.filter(
+      tab => tab.type === 'chat' && tab.conversationId === conversationId
+    );
+
+    if (tabsToClose.length > 0) {
+      console.log(`🚪 Closing ${tabsToClose.length} tab(s) with deleted conversation:`, 
+        tabsToClose.map(t => ({ id: t.id, title: t.title, isLoading: t.isLoading }))
+      );
+      
+      // Cancel loading state for any tabs being closed
+      tabsToClose.forEach(tab => {
+        if (tab.isLoading) {
+          console.log(`⏹️ Stopping loading for tab: ${tab.id}`);
+        }
+      });
+      
+      setTabs(prevTabs => {
+        // Remove all tabs with the deleted conversation
+        const remainingTabs = prevTabs.filter(
+          tab => !(tab.type === 'chat' && tab.conversationId === conversationId)
+        );
+
+        // If we removed tabs and there are still tabs left
+        if (remainingTabs.length > 0 && remainingTabs.length < prevTabs.length) {
+          // Check if active tab was removed
+          const activeTabRemoved = !remainingTabs.find(tab => tab.id === activeTabId);
+          
+          if (activeTabRemoved) {
+            // Switch to first remaining tab
+            console.log(`🔄 Active tab was deleted, switching to: ${remainingTabs[0].id}`);
+            setActiveTabId(remainingTabs[0].id);
+          }
+        } else if (remainingTabs.length === 0) {
+          // All tabs were closed, create a new default tab
+          console.log(`🆕 All tabs closed, creating new default tab`);
+          const newTabId = generateTabId();
+          const newTab: ConversationTab = {
+            id: newTabId,
+            title: 'New Protocol',
+            type: 'chat',
+            messages: [],
+            conversationId: generateConversationId(),
+            isLoading: false
+          };
+          setActiveTabId(newTabId);
+          return [newTab];
+        }
+
+        return remainingTabs;
+      });
     }
-  }, [currentConversationId, activeTabId]);
+
+    console.log(`✅ Live update complete for deleted conversation`);
+  }, [tabs, activeTabId]);
 
   const handleSavedProtocol = useCallback(async (protocolId: string, protocolData: any) => {
     console.log('🎯 [APP] handleSavedProtocol called', { protocolId, hasProtocolData: !!protocolData });

@@ -168,6 +168,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   );
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
+  const [conversationsUpdateKey, setConversationsUpdateKey] = useState(0); // Force re-render trigger
   
   const [savedProtocols, setSavedProtocols] = useState<ApiSavedProtocol[]>(() =>
     globalDataCache.userId === userId ? globalDataCache.protocols : []
@@ -195,6 +196,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   const savedProtocolsLoadedRef = useRef(false);
   const isLoadingConversationsRef = useRef(false);
   const isLoadingSavedRef = useRef(false);
+  const skipNextLoadRef = useRef(false); // Skip next load after optimistic update
 
   // Track which conversation's menu is open and editing state
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -305,6 +307,15 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
   // Wrap in useCallback with NO dependencies - use userId from closure
   const loadConversations = useCallback(async (force: boolean = false) => {
+    console.log('📞 loadConversations called:', { force, skipNext: skipNextLoadRef.current, loaded: conversationsLoadedRef.current });
+    console.trace('Call stack:');
+    
+    // Skip if we just did an optimistic update (delete)
+    if (skipNextLoadRef.current) {
+      console.log('⏭️ Skipping load after optimistic update');
+      skipNextLoadRef.current = false;
+      return;
+    }
     
     // Skip if already loaded and not forced
     if (!force && conversationsLoadedRef.current) {
@@ -552,20 +563,59 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         confirmText: 'Delete Conversation',
         dangerous: true,
         confirmAction: async () => {
+          // Store conversation data BEFORE removing for potential rollback
+          const conversationToDelete = recentConversations.find(c => c.id === conversationId);
+          
           try {
-            await deleteConversation(currentUser.uid, conversationId);
-            // Remove from local state - no need to reload from server
-            setRecentConversations(prev => prev.filter(c => c.id !== conversationId));
+            // LIVE UPDATE: Optimistically remove from UI first for instant feedback
+            const updatedConversations = recentConversations.filter(c => c.id !== conversationId);
+            
+            console.log('🔄 Optimistically removed conversation from sidebar');
+            console.log('   Before:', recentConversations.length, 'conversations');
+            console.log('   After:', updatedConversations.length, 'conversations');
+            console.log('   Removed ID:', conversationId);
+            
+            // Update BOTH local state AND global cache IMMEDIATELY
+            setRecentConversations(updatedConversations);
+            if (globalDataCache.userId === userId) {
+              globalDataCache.conversations = updatedConversations;
+              console.log('✅ Updated global cache immediately');
+            }
+            
+            setConversationsUpdateKey(prev => prev + 1); // Force re-render
+            skipNextLoadRef.current = true; // Prevent next API reload from overwriting
+            console.log('🚫 Set skipNextLoadRef = true to prevent reload');
             setOpenMenuId(null);
-            console.log('✅ Conversation deleted locally, no API reload needed');
 
-            // Notify parent to clear from cache
+            // Notify parent FIRST to close tabs and clear cache
             if (onConversationDeleted) {
               onConversationDeleted(conversationId);
             }
+
+            // Then delete from backend
+            await deleteConversation(currentUser.uid, conversationId);
+            
+            console.log('✅ Conversation deleted successfully (backend + cache + tabs)');
           } catch (error) {
-            console.error('Failed to delete conversation:', error);
-            alert('Failed to delete conversation');
+            console.error('❌ Failed to delete conversation:', error);
+            
+            // ROLLBACK: Restore conversation to sidebar on error
+            if (conversationToDelete) {
+              setRecentConversations(prev => [...prev, conversationToDelete].sort((a, b) => 
+                new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+              ));
+              
+              // Restore to global cache too
+              if (globalDataCache.userId === userId) {
+                globalDataCache.conversations = [...globalDataCache.conversations, conversationToDelete].sort((a, b) => 
+                  new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+                );
+              }
+              
+              console.log('🔄 Rolled back conversation deletion in sidebar');
+            }
+            
+            alert('Failed to delete conversation. Please try again.');
           }
         }
       });
@@ -1402,7 +1452,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
               </div>
             )}
 
-            <div className="space-y-3">
+            <div className="space-y-3" key={conversationsUpdateKey}>
+              {/* Debug: {recentConversations.length} conversations, key: {conversationsUpdateKey} */}
               {isLoadingConversations ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 text-teal-600 animate-spin" />
@@ -1414,7 +1465,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
               ) : (
               recentConversations.map((conversation) => (
                 <Card
-                  key={conversation.id}
+                  key={`${conversation.id}-${conversationsUpdateKey}`}
                   className="group relative cursor-pointer hover:shadow-md transition-all duration-200 hover:border-teal-200"
                   onClick={() => editingId !== conversation.id && onRecentSearch(conversation.id)}
                 >
