@@ -144,6 +144,7 @@ export type ConversationResponse = {
   success: boolean;
   conversation_id?: string;
   document_id?: string;
+  was_duplicate?: boolean;  // Indicates if backend detected and merged a duplicate
   error?: string;
   details?: string;
   message?: string;

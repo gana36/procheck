@@ -282,6 +282,9 @@ function App() {
   // Track deleted conversations to prevent auto-save from resurrecting them
   const deletedConversations = useRef<Set<string>>(new Set());
   
+  // Track recently saved conversations to prevent duplicate saves
+  const recentlySavedConversations = useRef<Map<string, number>>(new Map());
+  
   // LRU Cache helper: Add to cache with automatic eviction
   const addToCache = useCallback((conversationId: string, messages: Message[]) => {
     const cache = conversationCache.current;
@@ -539,13 +542,21 @@ function App() {
   // Debounced save helper
   const debouncedSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
-  // Helper function to save conversation with debouncing
-  const saveCurrentConversation = useCallback(async (updatedMessages: Message[], lastQuery: string) => {
+  // Helper function to save conversation with debouncing and deduplication
+  const saveCurrentConversation = useCallback(async (updatedMessages: Message[], lastQuery: string, conversationId: string) => {
     if (!currentUser) return;
 
     // CRITICAL: Don't save deleted conversations - prevents resurrection
-    if (deletedConversations.current.has(currentConversationId)) {
-      console.log(`🚫 Skipping save for deleted conversation: ${currentConversationId}`);
+    if (deletedConversations.current.has(conversationId)) {
+      console.log(`🚫 Skipping save for deleted conversation: ${conversationId}`);
+      return;
+    }
+
+    // DEDUPLICATION: Check if this conversation was recently saved
+    const lastSaveTime = recentlySavedConversations.current.get(conversationId);
+    const now = Date.now();
+    if (lastSaveTime && (now - lastSaveTime) < 2000) {
+      console.log(`🚫 Skipping duplicate save for conversation ${conversationId} (saved ${now - lastSaveTime}ms ago)`);
       return;
     }
 
@@ -568,13 +579,16 @@ function App() {
       const firstMessageTimestamp = updatedMessages.length > 0 ? updatedMessages[0].timestamp : getUserTimestamp();
 
       // Double-check conversation isn't deleted (in case it was deleted between debounce and save)
-      if (deletedConversations.current.has(currentConversationId)) {
-        console.log(`🚫 Conversation ${currentConversationId} was deleted before save completed, aborting`);
+      if (deletedConversations.current.has(conversationId)) {
+        console.log(`🚫 Conversation ${conversationId} was deleted before save completed, aborting`);
         return;
       }
 
-      await saveConversation(currentUser.uid, {
-        id: currentConversationId,
+      // Mark as recently saved BEFORE the API call to prevent race conditions
+      recentlySavedConversations.current.set(conversationId, now);
+
+      const result = await saveConversation(currentUser.uid, {
+        id: conversationId,
         title: lastQuery.length > 50 ? lastQuery.substring(0, 50) + '...' : lastQuery,
         messages: conversationMessages,
         last_query: lastQuery,
@@ -583,16 +597,42 @@ function App() {
       });
 
       // Update cache with latest messages - OPTIMIZATION: keep cache in sync with LRU eviction
-      addToCache(currentConversationId, updatedMessages);
-      console.log('✅ Conversation saved and cached');
+      addToCache(conversationId, updatedMessages);
+      
+      if (result.was_duplicate) {
+        console.log('✅ Conversation updated (duplicate prevented by backend)');
+        
+        // OPTIONAL: If backend returned a different conversation_id (merged duplicate),
+        // update the current tab to use that ID for future saves
+        if (result.conversation_id && result.conversation_id !== conversationId) {
+          console.log(`🔄 Syncing tab conversation ID: ${conversationId} → ${result.conversation_id}`);
+          const activeTab = getActiveTab();
+          if (activeTab && activeTab.type === 'chat') {
+            updateActiveTab({ conversationId: result.conversation_id });
+          }
+        }
+      } else {
+        console.log('✅ Conversation saved and cached');
+      }
+      
+      // Clean up old entries from recently saved map (keep last 50)
+      if (recentlySavedConversations.current.size > 50) {
+        const entries = Array.from(recentlySavedConversations.current.entries());
+        entries.sort((a, b) => a[1] - b[1]); // Sort by timestamp
+        const toRemove = entries.slice(0, entries.length - 50);
+        toRemove.forEach(([id]) => recentlySavedConversations.current.delete(id));
+      }
+      
       // Note: Sidebar will only reload on user login or explicit refresh trigger
     } catch (error) {
       console.error('Failed to save conversation:', error);
+      // Remove from recently saved on error so it can be retried
+      recentlySavedConversations.current.delete(conversationId);
     }
   }, [currentUser, addToCache]);
 
   // Debounced save wrapper - prevents excessive API calls
-  const debouncedSaveConversation = useCallback((messages: Message[], lastQuery: string) => {
+  const debouncedSaveConversation = useCallback((messages: Message[], lastQuery: string, conversationId: string) => {
     // Clear existing timeout
     if (debouncedSaveRef.current) {
       clearTimeout(debouncedSaveRef.current);
@@ -600,7 +640,7 @@ function App() {
 
     // Set new timeout for 1 second
     debouncedSaveRef.current = setTimeout(() => {
-      saveCurrentConversation(messages, lastQuery);
+      saveCurrentConversation(messages, lastQuery, conversationId);
     }, 1000); // Wait 1 second after last change before saving
   }, [saveCurrentConversation]);
 
@@ -659,7 +699,7 @@ function App() {
     if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0 && userId) {
       const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
       if (lastUserMessage) {
-        await saveCurrentConversation(currentTab.messages, lastUserMessage.content);
+        await saveCurrentConversation(currentTab.messages, lastUserMessage.content, currentTab.conversationId);
       }
     }
     
@@ -672,7 +712,7 @@ function App() {
     if (tabToClose && tabToClose.type === 'chat' && tabToClose.messages.length > 0 && userId) {
       const lastUserMessage = [...tabToClose.messages].reverse().find(m => m.type === 'user');
       if (lastUserMessage) {
-        await saveCurrentConversation(tabToClose.messages, lastUserMessage.content);
+        await saveCurrentConversation(tabToClose.messages, lastUserMessage.content, tabToClose.conversationId);
       }
     }
 
@@ -943,7 +983,7 @@ function App() {
           messages: newMessages,
           isLoading: false
         });
-        debouncedSaveConversation(newMessages, content);
+        debouncedSaveConversation(newMessages, content, currentConversationId);
         return;
       }
       // Map search filter to API search mode
@@ -1102,7 +1142,7 @@ CITATION REQUIREMENT:
       });
       
       // Save conversation (debounced to prevent excessive API calls)
-      debouncedSaveConversation(newMessages, content);
+      debouncedSaveConversation(newMessages, content, currentConversationId);
     } catch (err: any) {
       // Mark user message as failed
       const activeTab = getActiveTab();
@@ -1129,7 +1169,7 @@ CITATION REQUIREMENT:
         isLoading: false
       });
       
-      debouncedSaveConversation(newMessages, content);
+      debouncedSaveConversation(newMessages, content, currentConversationId);
     }
   };
 
@@ -1400,7 +1440,7 @@ CITATION REQUIREMENT:
     if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0) {
       const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
       if (lastUserMessage) {
-        await saveCurrentConversation(currentTab.messages, lastUserMessage.content);
+        await saveCurrentConversation(currentTab.messages, lastUserMessage.content, currentTab.conversationId);
       }
     }
 
@@ -1534,7 +1574,7 @@ CITATION REQUIREMENT:
     saveTimeoutRef.current = setTimeout(() => {
       const lastUserMessage = [...updatedMessages].reverse().find(m => m.type === 'user');
       if (lastUserMessage && currentUser) {
-        saveCurrentConversation(updatedMessages, lastUserMessage.content);
+        saveCurrentConversation(updatedMessages, lastUserMessage.content, currentConversationId);
       }
     }, 2000); // Save 2 seconds after last update
   }, [currentUser, currentConversationId, messages]);
@@ -1582,7 +1622,7 @@ CITATION REQUIREMENT:
     if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0 && userId) {
       const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
       if (lastUserMessage) {
-        await saveCurrentConversation(currentTab.messages, lastUserMessage.content);
+        await saveCurrentConversation(currentTab.messages, lastUserMessage.content, currentTab.conversationId);
       }
     }
 
@@ -2318,7 +2358,7 @@ CITATION REQUIREMENT:
       if (currentMessages.length > 0) {
         const lastUserMessage = [...currentMessages].reverse().find(m => m.type === 'user');
         if (lastUserMessage) {
-          await saveCurrentConversation(currentMessages, lastUserMessage.content);
+          await saveCurrentConversation(currentMessages, lastUserMessage.content, currentConversationId);
         }
       }
       

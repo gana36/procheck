@@ -4,8 +4,10 @@ Uses direct document access to avoid query limitations on Enterprise databases
 """
 
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
+import hashlib
+import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 from config.settings import settings
@@ -87,9 +89,28 @@ class FirestoreService:
             raise Exception(f"Firestore client not initialized. Check your GCP credentials. Error: {e}")
 
     @staticmethod
+    def _generate_content_hash(messages: List[Dict[str, Any]]) -> str:
+        """
+        Generate a hash of conversation content for deduplication.
+        Uses first user message and message count to identify similar conversations.
+        """
+        if not messages:
+            return ""
+        
+        # Get first user message content
+        first_user_msg = next((m for m in messages if m.get('type') == 'user'), None)
+        if not first_user_msg:
+            return ""
+        
+        # Create hash from first message content + message count
+        content_str = f"{first_user_msg.get('content', '')}_{len(messages)}"
+        return hashlib.md5(content_str.encode()).hexdigest()[:16]
+
+    @staticmethod
     def save_conversation(user_id: str, conversation_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Save or update a conversation for a user
+        Save or update a conversation for a user with deduplication.
+        Prevents duplicate conversations with same content from being saved.
 
         Args:
             user_id: Firebase Auth user ID
@@ -111,6 +132,56 @@ class FirestoreService:
             # Keep frontend timestamps as-is for consistency
             messages = conversation_data.get('messages', [])
 
+            # DEDUPLICATION: Check for existing conversation with same content
+            content_hash = FirestoreService._generate_content_hash(messages)
+            
+            # Get user index to check for duplicates
+            user_index_ref = db.collection(FirestoreService.USER_INDEX_COLLECTION).document(user_id)
+            user_index_data = user_index_ref.get()
+            
+            existing_conversations = []
+            if user_index_data.exists:
+                existing_conversations = user_index_data.to_dict().get('conversations', [])
+            
+            # Check if a conversation with same content hash exists within last 5 minutes
+            duplicate_found = False
+            existing_conv_id = None
+            now = datetime.now()
+            
+            for conv in existing_conversations:
+                conv_created = conv.get('created_at', '')
+                try:
+                    conv_time = datetime.fromisoformat(conv_created.replace('Z', '+00:00'))
+                    time_diff = (now - conv_time.replace(tzinfo=None)).total_seconds()
+                    
+                    # Check if conversation was created within last 5 minutes
+                    if time_diff < 300:  # 5 minutes
+                        # Get the actual conversation to check content hash
+                        doc_id = conv.get('document_id')
+                        if doc_id:
+                            doc_ref = db.collection(FirestoreService.CONVERSATIONS_COLLECTION).document(doc_id)
+                            doc = doc_ref.get()
+                            if doc.exists:
+                                existing_messages = doc.to_dict().get('messages', [])
+                                existing_hash = FirestoreService._generate_content_hash(existing_messages)
+                                
+                                # If hashes match and message counts are similar, it's a duplicate
+                                if existing_hash == content_hash and abs(len(existing_messages) - len(messages)) <= 2:
+                                    duplicate_found = True
+                                    existing_conv_id = conv.get('conversation_id')
+                                    print(f"🔍 Duplicate conversation detected: {existing_conv_id}")
+                                    print(f"   Content hash: {content_hash}")
+                                    print(f"   Time difference: {time_diff:.1f}s")
+                                    break
+                except (ValueError, AttributeError) as e:
+                    # Skip if timestamp parsing fails
+                    continue
+            
+            # If duplicate found, update existing conversation instead of creating new one
+            if duplicate_found and existing_conv_id:
+                print(f"✅ Updating existing conversation {existing_conv_id} instead of creating duplicate")
+                conversation_id = existing_conv_id
+
             # Prepare conversation document
             doc_data = {
                 "user_id": user_id,
@@ -120,6 +191,7 @@ class FirestoreService:
                 "created_at": created_at,
                 "updated_at": datetime.now().isoformat(),
                 "protocol_data": conversation_data.get('protocol_data'),
+                "content_hash": content_hash,  # Store hash for future deduplication
                 "metadata": {
                     "message_count": len(messages),
                     "last_query": conversation_data.get('last_query', ''),
@@ -133,13 +205,7 @@ class FirestoreService:
             doc_ref.set(doc_data)
 
             # Also update user index for efficient retrieval
-            user_index_ref = db.collection(FirestoreService.USER_INDEX_COLLECTION).document(user_id)
-            user_index_data = user_index_ref.get()
-
-            if user_index_data.exists:
-                conversations_list = user_index_data.to_dict().get('conversations', [])
-            else:
-                conversations_list = []
+            conversations_list = existing_conversations
 
             # Add/update conversation in index
             conv_entry = {
@@ -149,7 +215,8 @@ class FirestoreService:
                 "created_at": created_at,
                 "updated_at": doc_data["updated_at"],
                 "message_count": len(messages),
-                "last_query": conversation_data.get('last_query', '')
+                "last_query": conversation_data.get('last_query', ''),
+                "content_hash": content_hash  # Store hash in index for quick lookup
             }
 
             # Remove old entry if exists
@@ -162,7 +229,8 @@ class FirestoreService:
             return {
                 "success": True,
                 "conversation_id": conversation_id,
-                "document_id": doc_id
+                "document_id": doc_id,
+                "was_duplicate": duplicate_found
             }
 
         except Exception as e:
