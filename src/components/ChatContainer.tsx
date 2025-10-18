@@ -15,6 +15,7 @@ interface ChatContainerProps {
   onFollowUpClick: (question: string) => void;
   onRetryMessage: (messageId: string) => void;
   isSavedProtocolMessage: (message: Message) => boolean;
+  onUnsave?: () => void;
 }
 
 const ChatContainer = memo(({
@@ -26,6 +27,7 @@ const ChatContainer = memo(({
   onFollowUpClick,
   onRetryMessage,
   isSavedProtocolMessage,
+  onUnsave,
 }: ChatContainerProps) => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   
@@ -114,6 +116,7 @@ const ChatContainer = memo(({
             onFollowUpClick={onFollowUpClick}
             onRetryMessage={onRetryMessage}
             isSavedProtocolMessage={isSavedProtocolMessage}
+            onUnsave={onUnsave}
           />
         ) : (
           <ChatMessageList
@@ -124,6 +127,7 @@ const ChatContainer = memo(({
             onFollowUpClick={onFollowUpClick}
             onRetryMessage={onRetryMessage}
             isSavedProtocolMessage={isSavedProtocolMessage}
+            onUnsave={onUnsave}
           />
         )}
         

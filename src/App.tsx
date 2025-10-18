@@ -1630,6 +1630,22 @@ CITATION REQUIREMENT:
     return message.type === 'assistant' && message.content.startsWith('Saved:');
   };
 
+  // Handler for when a saved protocol is unsaved - close the tab if it's currently open
+  const handleUnsaveSavedProtocol = useCallback(() => {
+    console.log('🗑️ [APP] Saved protocol unsaved - closing tab if open');
+    
+    // Check if current tab is a saved protocol
+    const currentTab = getActiveTab();
+    if (currentTab && currentTab.type === 'chat') {
+      const hasSavedProtocol = currentTab.messages.some(m => m.content?.startsWith('Saved:'));
+      
+      if (hasSavedProtocol) {
+        console.log('✅ Current tab has saved protocol - closing it');
+        closeTab(currentTab.id);
+      }
+    }
+  }, [tabs, activeTabId]);
+
   const handleConversationDeleted = useCallback((conversationId: string) => {
     console.log(`🗑️ [APP] Conversation deleted: ${conversationId}`);
 
@@ -1715,25 +1731,6 @@ CITATION REQUIREMENT:
   const handleSavedProtocol = useCallback(async (protocolId: string, protocolData: any) => {
     console.log('🎯 [APP] handleSavedProtocol called', { protocolId, hasProtocolData: !!protocolData });
     
-    // Save current tab before opening new one
-    const currentTab = getActiveTab();
-    if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0 && userId) {
-      const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
-      if (lastUserMessage) {
-        await saveCurrentConversation(currentTab.messages, lastUserMessage.content, currentTab.conversationId);
-      }
-    }
-
-    // Create new tab for the saved protocol
-    const newTabId = createNewTab('Loading...');
-    
-    // Set loading state for new tab
-    setTabs(prevTabs =>
-      prevTabs.map(tab =>
-        tab.id === newTabId ? { ...tab, isLoading: true } : tab
-      )
-    );
-
     // Clear any preview modes to return to normal chat
     setShowProtocolPreview(false);
     setPreviewProtocols([]);
@@ -1753,6 +1750,38 @@ CITATION REQUIREMENT:
       }
 
       const contentTitle = fullProtocol?.title ? `Saved: ${fullProtocol.title}` : `Here's your saved protocol:`;
+
+      // Check if a tab with this saved protocol already exists
+      const existingTab = tabs.find(tab => 
+        tab.type === 'chat' && 
+        tab.messages.some(m => m.content === contentTitle)
+      );
+
+      if (existingTab) {
+        // Switch to existing tab instead of creating a new one
+        console.log('✅ Switching to existing tab for saved protocol');
+        setActiveTabId(existingTab.id);
+        return;
+      }
+
+      // Save current tab before opening new one
+      const currentTab = getActiveTab();
+      if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0 && userId) {
+        const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
+        if (lastUserMessage) {
+          await saveCurrentConversation(currentTab.messages, lastUserMessage.content, currentTab.conversationId);
+        }
+      }
+
+      // Create new tab for the saved protocol
+      const newTabId = createNewTab('Loading...');
+      
+      // Set loading state for new tab
+      setTabs(prevTabs =>
+        prevTabs.map(tab =>
+          tab.id === newTabId ? { ...tab, isLoading: true } : tab
+        )
+      );
 
       const assistantMessage: Message = {
         id: generateMessageId(),
@@ -1785,6 +1814,9 @@ CITATION REQUIREMENT:
         content: formatErrorMessage(e),
         timestamp: getUserTimestamp(),
       };
+      
+      // Create new tab for error
+      const newTabId = createNewTab('Error');
       setTabs(prevTabs =>
         prevTabs.map(tab =>
           tab.id === newTabId
@@ -1798,7 +1830,7 @@ CITATION REQUIREMENT:
         )
       );
     }
-  }, [userId]);
+  }, [userId, tabs, setActiveTabId]);
 
   const handleAuthSuccess = () => {
     const from = location.state?.from?.pathname || '/dashboard';
@@ -2626,6 +2658,7 @@ CITATION REQUIREMENT:
             onFollowUpClick={handleFollowUpClick}
             onRetryMessage={handleRetryMessage}
             isSavedProtocolMessage={isSavedProtocolMessage}
+            onUnsave={handleUnsaveSavedProtocol}
           />
         ) : (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 relative" key={`content-${activeTabId}`}>
@@ -3604,17 +3637,23 @@ CITATION REQUIREMENT:
           </div>
         )}
         
-        {!showProtocolPreview && activeTab?.type === 'chat' && (
-          <ChatInput
-            onSendMessage={handleSendMessage}
-            isLoading={isLoading}
-            hasMessages={messages.length > 0}
-            isInConversation={!!getCurrentProtocol()}
-            currentProtocolTitle={getCurrentProtocol()?.title}
-            onSearchFilterChange={setSearchFilter}
-            searchFilter={searchFilter}
-          />
-        )}
+        {!showProtocolPreview && activeTab?.type === 'chat' && (() => {
+          // Check if this is a saved protocol (preview mode - no main chat input)
+          const isSavedProtocol = messages.some(m => m.content?.startsWith('Saved:'));
+          
+          // Only show chat input if it's not a saved protocol
+          return !isSavedProtocol && (
+            <ChatInput
+              onSendMessage={handleSendMessage}
+              isLoading={isLoading}
+              hasMessages={messages.length > 0}
+              isInConversation={!!getCurrentProtocol()}
+              currentProtocolTitle={getCurrentProtocol()?.title}
+              onSearchFilterChange={setSearchFilter}
+              searchFilter={searchFilter}
+            />
+          );
+        })()}
       </div>
 
       {/* Logout Confirmation Modal */}

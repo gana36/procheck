@@ -17,6 +17,7 @@ interface ChatMessageProps {
   onRetryMessage?: (messageId: string) => void;
   isFirstUserMessage?: boolean;
   isProtocolAlreadySaved?: boolean;
+  onUnsave?: () => void;
 }
 
 // Detect query intent from message content
@@ -116,7 +117,7 @@ const stripMarkdown = (text: string): string => {
     .trim();
 };
 
-export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, onFollowUpClick, onRetryMessage, isFirstUserMessage = false, isProtocolAlreadySaved = false }: ChatMessageProps) {
+export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, onFollowUpClick, onRetryMessage, isFirstUserMessage = false, isProtocolAlreadySaved = false, onUnsave }: ChatMessageProps) {
 
   if (message.type === 'user') {
     return (
@@ -235,6 +236,7 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, o
                   onProtocolUpdate={onProtocolUpdate}
                   intent={protocolIntent as 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general'}
                   isAlreadySaved={isProtocolAlreadySaved}
+                  onUnsave={onUnsave}
                 />
               );
             })()}

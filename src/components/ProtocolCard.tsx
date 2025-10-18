@@ -43,6 +43,7 @@ interface ProtocolCardProps {
   onProtocolUpdate?: (updatedProtocol: ProtocolData) => void; // Callback when protocol is updated via threads
   intent?: 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general';
   isAlreadySaved?: boolean; // Pass this to avoid unnecessary API calls
+  onUnsave?: () => void; // Callback when protocol is unsaved (to close tab if needed)
 }
 
 // Professional theme configurations
@@ -127,7 +128,7 @@ const intentThemes = {
   }
 };
 
-const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, onProtocolUpdate, intent = 'general', isAlreadySaved = false }: ProtocolCardProps) {
+const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, onProtocolUpdate, intent = 'general', isAlreadySaved = false, onUnsave }: ProtocolCardProps) {
   const { currentUser } = useAuth();
   const theme = intentThemes[intent] || intentThemes.general;
   const ThemeIcon = theme.icon;
@@ -215,6 +216,11 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
         // Unsave/delete protocol
         await deleteSavedProtocol(currentUser.uid, protocolId);
         setIsSaved(false);
+        
+        // Notify parent to close tab if this is a saved protocol being viewed
+        if (onUnsave) {
+          onUnsave();
+        }
       } else {
         // Save protocol
         const protocolToSave = {

@@ -100,6 +100,7 @@ const OptimizedChatMessageList = memo(({
   onRetryMessage,
   isSavedProtocolMessage,
   enableLazyLoading = false,
+  onUnsave,
 }: OptimizedChatMessageListProps) => {
   // Automatically enable lazy loading for long chats
   const shouldUseLazyLoading = enableLazyLoading || messages.length > 50;
@@ -152,6 +153,7 @@ const OptimizedChatMessageList = memo(({
               onRetryMessage={onRetryMessage}
               isFirstUserMessage={isFirstUserMessage}
               isProtocolAlreadySaved={isSavedProtocolMessage(message)}
+              onUnsave={onUnsave}
             />
           </div>
         );
