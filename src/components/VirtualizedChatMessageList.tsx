@@ -82,11 +82,13 @@ interface OptimizedChatMessageListProps {
   messages: Message[];
   isLoading: boolean;
   onSaveToggle: (message: Message) => void;
-  onProtocolUpdate: (updatedProtocol: any) => void;
-  onFollowUpClick: (question: string) => void;
-  onRetryMessage: (messageId: string) => void;
+  onProtocolUpdate?: (updatedProtocol: any) => void;
+  onFollowUpClick?: (question: string) => void;
+  onRetryMessage?: (messageId: string) => void;
   isSavedProtocolMessage: (message: Message) => boolean;
   enableLazyLoading?: boolean; // Enable for chats with >50 messages
+  searchFilter?: 'all' | 'global' | 'user';
+  onSearchFilterChange?: (filter: 'all' | 'global' | 'user') => void;
 }
 
 const OptimizedChatMessageList = memo(({
@@ -98,6 +100,7 @@ const OptimizedChatMessageList = memo(({
   onRetryMessage,
   isSavedProtocolMessage,
   enableLazyLoading = false,
+  onUnsave,
 }: OptimizedChatMessageListProps) => {
   // Automatically enable lazy loading for long chats
   const shouldUseLazyLoading = enableLazyLoading || messages.length > 50;
@@ -150,6 +153,7 @@ const OptimizedChatMessageList = memo(({
               onRetryMessage={onRetryMessage}
               isFirstUserMessage={isFirstUserMessage}
               isProtocolAlreadySaved={isSavedProtocolMessage(message)}
+              onUnsave={onUnsave}
             />
           </div>
         );

@@ -33,6 +33,12 @@ interface SidebarProps {
   onRecentSearch: (conversationId: string) => void;
   onSavedProtocol: (protocolId: string, protocolData: any) => void;
   onConversationDeleted?: (conversationId: string) => void; // Notify parent when conversation is deleted
+  
+  // LIVE UPDATE CALLBACKS (No API reloads)
+  onConversationSaved?: (conversation: ConversationListItem) => void; // New conversation created
+  onConversationUpdated?: (conversationId: string, updates: Partial<ConversationListItem>) => void; // Conversation updated
+  onProtocolBookmarked?: (protocol: any) => void; // Protocol saved/bookmarked
+  
   savedProtocolsRefreshTrigger?: number;
   onShowLogoutModal?: () => void;
   onShowDeleteModal?: () => void;
@@ -156,7 +162,7 @@ const clearProtocolCache = (userId: string) => {
   }
 };
 
-const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, savedProtocolsRefreshTrigger, onShowLogoutModal, onShowDeleteModal, onShowUserProtocolsIndex, onShowGeneratedProtocols, generatedProtocols = [], generatedUploadId = null, onNotifyUploadReady, onShowConfirmation, onClearProtocolCache, isProfileOpen, activeProfileTab, onOpenProfile, onCloseProfile, onSetActiveProfileTab, isUploading, setIsUploading, uploadProgress, setUploadProgress, uploadCancelled, setUploadCancelled, currentUploadId, setCurrentUploadId, showUploadModal, setShowUploadModal, userIndexProtocols, isCollapsed, onToggleCollapse }: SidebarProps) {
+const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, onConversationSaved, onConversationUpdated, onProtocolBookmarked, savedProtocolsRefreshTrigger, onShowLogoutModal, onShowDeleteModal, onShowUserProtocolsIndex, onShowGeneratedProtocols, generatedProtocols = [], generatedUploadId = null, onNotifyUploadReady, onShowConfirmation, onClearProtocolCache, isProfileOpen, activeProfileTab, onOpenProfile, onCloseProfile, onSetActiveProfileTab, isUploading, setIsUploading, uploadProgress, setUploadProgress, uploadCancelled, setUploadCancelled, currentUploadId, setCurrentUploadId, showUploadModal, setShowUploadModal, userIndexProtocols, isCollapsed, onToggleCollapse }: SidebarProps) {
   const { currentUser } = useAuth();
   
   // CRITICAL: Extract userId directly - this is stable because we'll control when effects run
@@ -168,6 +174,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   );
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
+  const [conversationsUpdateKey, setConversationsUpdateKey] = useState(0); // Force re-render trigger
   
   const [savedProtocols, setSavedProtocols] = useState<ApiSavedProtocol[]>(() =>
     globalDataCache.userId === userId ? globalDataCache.protocols : []
@@ -195,6 +202,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   const savedProtocolsLoadedRef = useRef(false);
   const isLoadingConversationsRef = useRef(false);
   const isLoadingSavedRef = useRef(false);
+  const skipNextLoadRef = useRef(false); // Skip next load after optimistic update
 
   // Track which conversation's menu is open and editing state
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -303,8 +311,135 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     }
   }, [onClearProtocolCache, handleClearCache]);
 
+  // LIVE UPDATE HANDLERS - Called by parent to update sidebar without API reload
+  useEffect(() => {
+    if (!onConversationSaved) return;
+    
+    // Expose function to parent that adds new conversation to sidebar
+    const handleNewConversation = (conversation: ConversationListItem) => {
+      console.log('📥 [LIVE UPDATE] New conversation added to sidebar:', conversation.id);
+      
+      setRecentConversations(prev => {
+        // Check if conversation already exists
+        if (prev.find(c => c.id === conversation.id)) {
+          console.log('⏭️ Conversation already in sidebar, skipping');
+          return prev;
+        }
+        
+        // Add to top of list (most recent)
+        const updated = [conversation, ...prev];
+        
+        // Update global cache
+        if (globalDataCache.userId === userId) {
+          globalDataCache.conversations = updated;
+        }
+        
+        return updated;
+      });
+      
+      setConversationsUpdateKey(prev => prev + 1); // Force re-render
+    };
+    
+    // Store function reference so parent can call it
+    (window as any).__sidebarAddConversation = handleNewConversation;
+    console.log('✅ Registered __sidebarAddConversation');
+    
+    return () => {
+      delete (window as any).__sidebarAddConversation;
+      console.log('🗑️ Unregistered __sidebarAddConversation');
+    };
+  }, [onConversationSaved, userId]);
+
+  useEffect(() => {
+    if (!onConversationUpdated) return;
+    
+    // Expose function to parent that updates existing conversation
+    const handleUpdateConversation = (conversationId: string, updates: Partial<ConversationListItem>) => {
+      console.log('🔄 [LIVE UPDATE] Conversation updated in sidebar:', conversationId, updates);
+      
+      setRecentConversations(prev => {
+        const index = prev.findIndex(c => c.id === conversationId);
+        if (index === -1) {
+          console.log('⏭️ Conversation not in sidebar, skipping update');
+          return prev;
+        }
+        
+        // Update conversation and move to top
+        const updated = [...prev];
+        updated[index] = { ...updated[index], ...updates };
+        
+        // Move to top if it's not already there
+        if (index !== 0) {
+          const [movedConv] = updated.splice(index, 1);
+          updated.unshift(movedConv);
+          console.log(`✅ Moved conversation to top: ${conversationId}`);
+        } else {
+          console.log(`✅ Conversation already at top: ${conversationId}`);
+        }
+        
+        // Update global cache
+        if (globalDataCache.userId === userId) {
+          globalDataCache.conversations = updated;
+        }
+        
+        return updated;
+      });
+      
+      setConversationsUpdateKey(prev => prev + 1); // Force re-render
+    };
+    
+    // Store function reference so parent can call it
+    (window as any).__sidebarUpdateConversation = handleUpdateConversation;
+    console.log('✅ Registered __sidebarUpdateConversation');
+    
+    return () => {
+      delete (window as any).__sidebarUpdateConversation;
+      console.log('🗑️ Unregistered __sidebarUpdateConversation');
+    };
+  }, [onConversationUpdated, userId]);
+
+  useEffect(() => {
+    if (!onProtocolBookmarked) return;
+    
+    // Expose function to parent that adds bookmarked protocol
+    const handleProtocolBookmarked = (protocol: any) => {
+      console.log('⭐ [LIVE UPDATE] Protocol bookmarked, added to sidebar:', protocol.id);
+      
+      setSavedProtocols(prev => {
+        // Check if protocol already exists
+        if (prev.find(p => p.id === protocol.id)) {
+          console.log('⏭️ Protocol already in sidebar, skipping');
+          return prev;
+        }
+        
+        // Add to top of list
+        const updated = [protocol, ...prev];
+        
+        // Update global cache
+        if (globalDataCache.userId === userId) {
+          globalDataCache.protocols = updated;
+        }
+        
+        return updated;
+      });
+    };
+    
+    // Store function reference so parent can call it
+    (window as any).__sidebarAddProtocol = handleProtocolBookmarked;
+    
+    return () => {
+      delete (window as any).__sidebarAddProtocol;
+    };
+  }, [onProtocolBookmarked, userId]);
+
   // Wrap in useCallback with NO dependencies - use userId from closure
   const loadConversations = useCallback(async (force: boolean = false) => {
+    // Skip if we just did an optimistic update (delete)
+    if (skipNextLoadRef.current) {
+      console.log('⏭️ Skipping load after optimistic update');
+      skipNextLoadRef.current = false;
+      return;
+    }
     
     // Skip if already loaded and not forced
     if (!force && conversationsLoadedRef.current) {
@@ -552,20 +687,59 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         confirmText: 'Delete Conversation',
         dangerous: true,
         confirmAction: async () => {
+          // Store conversation data BEFORE removing for potential rollback
+          const conversationToDelete = recentConversations.find(c => c.id === conversationId);
+          
           try {
-            await deleteConversation(currentUser.uid, conversationId);
-            // Remove from local state - no need to reload from server
-            setRecentConversations(prev => prev.filter(c => c.id !== conversationId));
+            // LIVE UPDATE: Optimistically remove from UI first for instant feedback
+            const updatedConversations = recentConversations.filter(c => c.id !== conversationId);
+            
+            console.log('🔄 Optimistically removed conversation from sidebar');
+            console.log('   Before:', recentConversations.length, 'conversations');
+            console.log('   After:', updatedConversations.length, 'conversations');
+            console.log('   Removed ID:', conversationId);
+            
+            // Update BOTH local state AND global cache IMMEDIATELY
+            setRecentConversations(updatedConversations);
+            if (globalDataCache.userId === userId) {
+              globalDataCache.conversations = updatedConversations;
+              console.log('✅ Updated global cache immediately');
+            }
+            
+            setConversationsUpdateKey(prev => prev + 1); // Force re-render
+            skipNextLoadRef.current = true; // Prevent next API reload from overwriting
+            console.log('🚫 Set skipNextLoadRef = true to prevent reload');
             setOpenMenuId(null);
-            console.log('✅ Conversation deleted locally, no API reload needed');
 
-            // Notify parent to clear from cache
+            // Notify parent FIRST to close tabs and clear cache
             if (onConversationDeleted) {
               onConversationDeleted(conversationId);
             }
+
+            // Then delete from backend
+            await deleteConversation(currentUser.uid, conversationId);
+            
+            console.log('✅ Conversation deleted successfully (backend + cache + tabs)');
           } catch (error) {
-            console.error('Failed to delete conversation:', error);
-            alert('Failed to delete conversation');
+            console.error('❌ Failed to delete conversation:', error);
+            
+            // ROLLBACK: Restore conversation to sidebar on error
+            if (conversationToDelete) {
+              setRecentConversations(prev => [...prev, conversationToDelete].sort((a, b) => 
+                new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+              ));
+              
+              // Restore to global cache too
+              if (globalDataCache.userId === userId) {
+                globalDataCache.conversations = [...globalDataCache.conversations, conversationToDelete].sort((a, b) => 
+                  new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+                );
+              }
+              
+              console.log('🔄 Rolled back conversation deletion in sidebar');
+            }
+            
+            alert('Failed to delete conversation. Please try again.');
           }
         }
       });
@@ -589,12 +763,20 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
     try {
       await updateConversationTitle(currentUser.uid, conversationId, editTitle.trim());
+      
       // Update local state - no need to reload from server
-      setRecentConversations(prev =>
-        prev.map(c => c.id === conversationId ? { ...c, title: editTitle.trim() } : c)
+      const updatedConversations = recentConversations.map(c => 
+        c.id === conversationId ? { ...c, title: editTitle.trim() } : c
       );
+      setRecentConversations(updatedConversations);
+      
+      // Update global cache to persist across remounts
+      if (globalDataCache.userId === userId) {
+        globalDataCache.conversations = updatedConversations;
+      }
+      
       setEditingId(null);
-      console.log('✅ Conversation renamed locally, no API reload needed');
+      console.log('✅ Conversation renamed (local + cache updated)');
     } catch (error) {
       console.error('Failed to rename conversation:', error);
       alert('Failed to rename conversation');
@@ -625,10 +807,18 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         confirmAction: async () => {
           try {
             await deleteSavedProtocol(currentUser.uid, protocolId);
+            
             // Remove from local state - no need to reload from server
-            setSavedProtocols(prev => prev.filter(p => p.id !== protocolId));
+            const updatedProtocols = savedProtocols.filter(p => p.id !== protocolId);
+            setSavedProtocols(updatedProtocols);
+            
+            // Update global cache to persist across remounts
+            if (globalDataCache.userId === userId) {
+              globalDataCache.protocols = updatedProtocols;
+            }
+            
             setOpenProtocolMenuId(null);
-            console.log('✅ Protocol deleted locally, no API reload needed');
+            console.log('✅ Protocol deleted (local + cache updated)');
           } catch (error) {
             console.error('Failed to delete protocol:', error);
             alert('Failed to delete protocol');
@@ -655,12 +845,20 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
     try {
       await updateSavedProtocolTitle(currentUser.uid, protocolId, editProtocolTitle.trim());
+      
       // Update local state - no need to reload from server
-      setSavedProtocols(prev =>
-        prev.map(p => p.id === protocolId ? { ...p, title: editProtocolTitle.trim() } : p)
+      const updatedProtocols = savedProtocols.map(p => 
+        p.id === protocolId ? { ...p, title: editProtocolTitle.trim() } : p
       );
+      setSavedProtocols(updatedProtocols);
+      
+      // Update global cache to persist across remounts
+      if (globalDataCache.userId === userId) {
+        globalDataCache.protocols = updatedProtocols;
+      }
+      
       setEditingProtocolId(null);
-      console.log('✅ Protocol renamed locally, no API reload needed');
+      console.log('✅ Protocol renamed (local + cache updated)');
     } catch (error) {
       console.error('Failed to rename protocol:', error);
       alert('Failed to rename protocol');
@@ -1402,7 +1600,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
               </div>
             )}
 
-            <div className="space-y-3">
+            <div className="space-y-3" key={conversationsUpdateKey}>
+              {/* Debug: {recentConversations.length} conversations, key: {conversationsUpdateKey} */}
               {isLoadingConversations ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 text-teal-600 animate-spin" />
@@ -1414,7 +1613,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
               ) : (
               recentConversations.map((conversation) => (
                 <Card
-                  key={conversation.id}
+                  key={`${conversation.id}-${conversationsUpdateKey}`}
                   className="group relative cursor-pointer hover:shadow-md transition-all duration-200 hover:border-teal-200"
                   onClick={() => editingId !== conversation.id && onRecentSearch(conversation.id)}
                 >

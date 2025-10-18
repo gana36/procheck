@@ -3,9 +3,10 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 interface UseChatScrollOptions {
   messageCount: number;
   savedScrollPosition?: number;
+  messages?: Array<{ id: string; type: string; content: string }>; // For smart scroll detection
 }
 
-export function useChatScroll({ messageCount, savedScrollPosition = 0 }: UseChatScrollOptions) {
+export function useChatScroll({ messageCount, savedScrollPosition = 0, messages = [] }: UseChatScrollOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageCountRef = useRef(0);
@@ -66,6 +67,44 @@ export function useChatScroll({ messageCount, savedScrollPosition = 0 }: UseChat
     });
   }, []);
 
+  // Scroll to show last question + answer start (smart scroll for Q&A)
+  const scrollToLastQuestion = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    isAutoScrollingRef.current = true;
+    
+    requestAnimationFrame(() => {
+      // Find all user messages by data-message-type attribute
+      const userMessages = container.querySelectorAll('[data-message-type="user"]');
+      const lastQuestion = userMessages[userMessages.length - 1] as HTMLElement;
+      
+      if (lastQuestion) {
+        const questionTop = lastQuestion.offsetTop;
+        const containerHeight = container.clientHeight;
+        
+        // Position question about 20% from top for good visibility
+        const scrollTarget = Math.max(0, questionTop - (containerHeight * 0.2));
+        
+        container.scrollTo({
+          top: scrollTarget,
+          behavior,
+        });
+      } else {
+        // Fallback to bottom if no user message found
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior,
+        });
+      }
+      
+      setTimeout(() => {
+        isAutoScrollingRef.current = false;
+        userHasScrolledRef.current = false;
+      }, behavior === 'smooth' ? 500 : 0);
+    });
+  }, []);
+
   // Handle user scroll
   const handleScroll = useCallback(() => {
     if (isAutoScrollingRef.current) return;
@@ -81,7 +120,7 @@ export function useChatScroll({ messageCount, savedScrollPosition = 0 }: UseChat
     }
   }, [isAtBottom]);
 
-  // Auto-scroll on new messages - ONLY when message count actually increases
+  // Auto-scroll on new messages - SMART: detects Q&A pattern
   useEffect(() => {
     const container = containerRef.current;
     if (container && (container as any).__disableAutoScroll) return;
@@ -95,15 +134,26 @@ export function useChatScroll({ messageCount, savedScrollPosition = 0 }: UseChat
       if (!userHasScrolledRef.current || isAtBottom()) {
         const behavior = previousCount === 0 ? 'instant' : 'smooth';
         
+        // SMART SCROLL: Detect if this is a Q&A pattern (assistant after user)
+        const isQAPattern = messages.length >= 2 &&
+                           messages[messages.length - 1]?.type === 'assistant' &&
+                           messages[messages.length - 2]?.type === 'user';
+        
         requestAnimationFrame(() => {
-          scrollToBottom(behavior as ScrollBehavior);
+          if (isQAPattern) {
+            // Scroll to show question + answer start
+            scrollToLastQuestion(behavior as ScrollBehavior);
+          } else {
+            // Default: scroll to bottom
+            scrollToBottom(behavior as ScrollBehavior);
+          }
         });
       }
     } else {
       // Update ref even if count hasn't changed to stay in sync
       messageCountRef.current = messageCount;
     }
-  }, [messageCount, scrollToBottom, isAtBottom]);
+  }, [messageCount, messages, scrollToBottom, scrollToLastQuestion, isAtBottom]);
 
   // Streaming support
   useEffect(() => {

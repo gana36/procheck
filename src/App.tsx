@@ -282,6 +282,9 @@ function App() {
   // Track deleted conversations to prevent auto-save from resurrecting them
   const deletedConversations = useRef<Set<string>>(new Set());
   
+  // Track recently saved conversations to prevent duplicate saves
+  const recentlySavedConversations = useRef<Map<string, number>>(new Map());
+  
   // LRU Cache helper: Add to cache with automatic eviction
   const addToCache = useCallback((conversationId: string, messages: Message[]) => {
     const cache = conversationCache.current;
@@ -539,13 +542,21 @@ function App() {
   // Debounced save helper
   const debouncedSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
-  // Helper function to save conversation with debouncing
-  const saveCurrentConversation = useCallback(async (updatedMessages: Message[], lastQuery: string) => {
+  // Helper function to save conversation with debouncing and deduplication
+  const saveCurrentConversation = useCallback(async (updatedMessages: Message[], lastQuery: string, conversationId: string) => {
     if (!currentUser) return;
 
     // CRITICAL: Don't save deleted conversations - prevents resurrection
-    if (deletedConversations.current.has(currentConversationId)) {
-      console.log(`🚫 Skipping save for deleted conversation: ${currentConversationId}`);
+    if (deletedConversations.current.has(conversationId)) {
+      console.log(`🚫 Skipping save for deleted conversation: ${conversationId}`);
+      return;
+    }
+
+    // DEDUPLICATION: Check if this conversation was recently saved
+    const lastSaveTime = recentlySavedConversations.current.get(conversationId);
+    const now = Date.now();
+    if (lastSaveTime && (now - lastSaveTime) < 2000) {
+      console.log(`🚫 Skipping duplicate save for conversation ${conversationId} (saved ${now - lastSaveTime}ms ago)`);
       return;
     }
 
@@ -568,13 +579,21 @@ function App() {
       const firstMessageTimestamp = updatedMessages.length > 0 ? updatedMessages[0].timestamp : getUserTimestamp();
 
       // Double-check conversation isn't deleted (in case it was deleted between debounce and save)
-      if (deletedConversations.current.has(currentConversationId)) {
-        console.log(`🚫 Conversation ${currentConversationId} was deleted before save completed, aborting`);
+      if (deletedConversations.current.has(conversationId)) {
+        console.log(`🚫 Conversation ${conversationId} was deleted before save completed, aborting`);
         return;
       }
 
-      await saveConversation(currentUser.uid, {
-        id: currentConversationId,
+      // Check if this is the first save or an update BEFORE updating the timestamp
+      const lastSave = recentlySavedConversations.current.get(conversationId);
+      const isFirstSave = !lastSave || (now - lastSave) < 3000; // Within 3 seconds = same save batch
+      const isUpdate = lastSave && (now - lastSave) >= 3000; // More than 3 seconds = new message
+
+      // Mark as recently saved BEFORE the API call to prevent race conditions
+      recentlySavedConversations.current.set(conversationId, now);
+
+      const result = await saveConversation(currentUser.uid, {
+        id: conversationId,
         title: lastQuery.length > 50 ? lastQuery.substring(0, 50) + '...' : lastQuery,
         messages: conversationMessages,
         last_query: lastQuery,
@@ -583,16 +602,78 @@ function App() {
       });
 
       // Update cache with latest messages - OPTIMIZATION: keep cache in sync with LRU eviction
-      addToCache(currentConversationId, updatedMessages);
-      console.log('✅ Conversation saved and cached');
+      addToCache(conversationId, updatedMessages);
+      
+      console.log('📊 Save analysis:', { 
+        conversationId, 
+        isFirstSave, 
+        isUpdate, 
+        lastSave, 
+        timeSinceLastSave: lastSave ? now - lastSave : 'never',
+        backendSaysDuplicate: result.was_duplicate 
+      });
+      
+      if (result.was_duplicate || isUpdate) {
+        console.log('✅ Conversation updated (duplicate prevented by backend)');
+        
+        // LIVE UPDATE: Move conversation to top of sidebar
+        if ((window as any).__sidebarUpdateConversation) {
+          console.log('📤 Calling __sidebarUpdateConversation for:', conversationId);
+          (window as any).__sidebarUpdateConversation(conversationId, {
+            title: lastQuery.length > 50 ? lastQuery.substring(0, 50) + '...' : lastQuery,
+            last_query: lastQuery,
+            updated_at: new Date().toISOString(),
+          });
+        } else {
+          console.warn('⚠️ __sidebarUpdateConversation not available');
+        }
+        
+        // OPTIONAL: If backend returned a different conversation_id (merged duplicate),
+        // update the current tab to use that ID for future saves
+        if (result.conversation_id && result.conversation_id !== conversationId) {
+          console.log(`🔄 Syncing tab conversation ID: ${conversationId} → ${result.conversation_id}`);
+          const activeTab = getActiveTab();
+          if (activeTab && activeTab.type === 'chat') {
+            updateActiveTab({ conversationId: result.conversation_id });
+          }
+        }
+      } else {
+        console.log('✅ Conversation saved and cached (new conversation)');
+        
+        // LIVE UPDATE: Add new conversation to sidebar (first message)
+        if ((window as any).__sidebarAddConversation) {
+          console.log('📤 Calling __sidebarAddConversation for:', conversationId);
+          (window as any).__sidebarAddConversation({
+            id: conversationId,
+            title: lastQuery.length > 50 ? lastQuery.substring(0, 50) + '...' : lastQuery,
+            last_query: lastQuery,
+            created_at: firstMessageTimestamp,
+            updated_at: new Date().toISOString(),
+            tags: ['medical-protocol'],
+          });
+        } else {
+          console.warn('⚠️ __sidebarAddConversation not available');
+        }
+      }
+      
+      // Clean up old entries from recently saved map (keep last 50)
+      if (recentlySavedConversations.current.size > 50) {
+        const entries = Array.from(recentlySavedConversations.current.entries());
+        entries.sort((a, b) => a[1] - b[1]); // Sort by timestamp
+        const toRemove = entries.slice(0, entries.length - 50);
+        toRemove.forEach(([id]) => recentlySavedConversations.current.delete(id));
+      }
+      
       // Note: Sidebar will only reload on user login or explicit refresh trigger
     } catch (error) {
       console.error('Failed to save conversation:', error);
+      // Remove from recently saved on error so it can be retried
+      recentlySavedConversations.current.delete(conversationId);
     }
   }, [currentUser, addToCache]);
 
   // Debounced save wrapper - prevents excessive API calls
-  const debouncedSaveConversation = useCallback((messages: Message[], lastQuery: string) => {
+  const debouncedSaveConversation = useCallback((messages: Message[], lastQuery: string, conversationId: string) => {
     // Clear existing timeout
     if (debouncedSaveRef.current) {
       clearTimeout(debouncedSaveRef.current);
@@ -600,7 +681,7 @@ function App() {
 
     // Set new timeout for 1 second
     debouncedSaveRef.current = setTimeout(() => {
-      saveCurrentConversation(messages, lastQuery);
+      saveCurrentConversation(messages, lastQuery, conversationId);
     }, 1000); // Wait 1 second after last change before saving
   }, [saveCurrentConversation]);
 
@@ -659,7 +740,7 @@ function App() {
     if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0 && userId) {
       const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
       if (lastUserMessage) {
-        await saveCurrentConversation(currentTab.messages, lastUserMessage.content);
+        await saveCurrentConversation(currentTab.messages, lastUserMessage.content, currentTab.conversationId);
       }
     }
     
@@ -672,7 +753,7 @@ function App() {
     if (tabToClose && tabToClose.type === 'chat' && tabToClose.messages.length > 0 && userId) {
       const lastUserMessage = [...tabToClose.messages].reverse().find(m => m.type === 'user');
       if (lastUserMessage) {
-        await saveCurrentConversation(tabToClose.messages, lastUserMessage.content);
+        await saveCurrentConversation(tabToClose.messages, lastUserMessage.content, tabToClose.conversationId);
       }
     }
 
@@ -943,7 +1024,7 @@ function App() {
           messages: newMessages,
           isLoading: false
         });
-        debouncedSaveConversation(newMessages, content);
+        debouncedSaveConversation(newMessages, content, currentConversationId);
         return;
       }
       // Map search filter to API search mode
@@ -1102,7 +1183,7 @@ CITATION REQUIREMENT:
       });
       
       // Save conversation (debounced to prevent excessive API calls)
-      debouncedSaveConversation(newMessages, content);
+      debouncedSaveConversation(newMessages, content, currentConversationId);
     } catch (err: any) {
       // Mark user message as failed
       const activeTab = getActiveTab();
@@ -1129,7 +1210,7 @@ CITATION REQUIREMENT:
         isLoading: false
       });
       
-      debouncedSaveConversation(newMessages, content);
+      debouncedSaveConversation(newMessages, content, currentConversationId);
     }
   };
 
@@ -1400,7 +1481,7 @@ CITATION REQUIREMENT:
     if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0) {
       const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
       if (lastUserMessage) {
-        await saveCurrentConversation(currentTab.messages, lastUserMessage.content);
+        await saveCurrentConversation(currentTab.messages, lastUserMessage.content, currentTab.conversationId);
       }
     }
 
@@ -1534,7 +1615,7 @@ CITATION REQUIREMENT:
     saveTimeoutRef.current = setTimeout(() => {
       const lastUserMessage = [...updatedMessages].reverse().find(m => m.type === 'user');
       if (lastUserMessage && currentUser) {
-        saveCurrentConversation(updatedMessages, lastUserMessage.content);
+        saveCurrentConversation(updatedMessages, lastUserMessage.content, currentConversationId);
       }
     }, 2000); // Save 2 seconds after last update
   }, [currentUser, currentConversationId, messages]);
@@ -1549,12 +1630,35 @@ CITATION REQUIREMENT:
     return message.type === 'assistant' && message.content.startsWith('Saved:');
   };
 
+  // Handler for when a saved protocol is unsaved - close the tab if it's currently open
+  const handleUnsaveSavedProtocol = useCallback(() => {
+    console.log('🗑️ [APP] Saved protocol unsaved - closing tab if open');
+    
+    // Check if current tab is a saved protocol
+    const currentTab = getActiveTab();
+    if (currentTab && currentTab.type === 'chat') {
+      const hasSavedProtocol = currentTab.messages.some(m => m.content?.startsWith('Saved:'));
+      
+      if (hasSavedProtocol) {
+        console.log('✅ Current tab has saved protocol - closing it');
+        closeTab(currentTab.id);
+      }
+    }
+  }, [tabs, activeTabId]);
+
   const handleConversationDeleted = useCallback((conversationId: string) => {
     console.log(`🗑️ [APP] Conversation deleted: ${conversationId}`);
 
     // CRITICAL: Mark conversation as deleted to prevent auto-save resurrection
     deletedConversations.current.add(conversationId);
     console.log(`✅ Added to deleted set. Deleted conversations:`, Array.from(deletedConversations.current));
+
+    // Cancel any in-flight API requests for this conversation
+    if (abortControllerRef.current) {
+      console.log(`🚫 Aborting in-flight API request`);
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
 
     // Clear any pending auto-save for this conversation
     if (debouncedSaveRef.current) {
@@ -1563,39 +1667,70 @@ CITATION REQUIREMENT:
       debouncedSaveRef.current = null;
     }
 
-    // Remove deleted conversation from cache
+    // Remove deleted conversation from cache and tracking
     conversationCache.current.delete(conversationId);
-    console.log(`✅ Removed from conversation cache`);
+    recentlySavedConversations.current.delete(conversationId);
+    console.log(`✅ Removed from conversation cache and save tracking`);
 
-    // If currently viewing the deleted conversation, close the tab
-    if (currentConversationId === conversationId) {
-      console.log(`🚪 Closing active tab for deleted conversation`);
-      closeTab(activeTabId);
+    // LIVE UPDATE: Find and close ALL tabs with this conversation
+    const tabsToClose = tabs.filter(
+      tab => tab.type === 'chat' && tab.conversationId === conversationId
+    );
+
+    if (tabsToClose.length > 0) {
+      console.log(`🚪 Closing ${tabsToClose.length} tab(s) with deleted conversation:`, 
+        tabsToClose.map(t => ({ id: t.id, title: t.title, isLoading: t.isLoading }))
+      );
+      
+      // Cancel loading state for any tabs being closed
+      tabsToClose.forEach(tab => {
+        if (tab.isLoading) {
+          console.log(`⏹️ Stopping loading for tab: ${tab.id}`);
+        }
+      });
+      
+      setTabs(prevTabs => {
+        // Remove all tabs with the deleted conversation
+        const remainingTabs = prevTabs.filter(
+          tab => !(tab.type === 'chat' && tab.conversationId === conversationId)
+        );
+
+        // If we removed tabs and there are still tabs left
+        if (remainingTabs.length > 0 && remainingTabs.length < prevTabs.length) {
+          // Check if active tab was removed
+          const activeTabRemoved = !remainingTabs.find(tab => tab.id === activeTabId);
+          
+          if (activeTabRemoved) {
+            // Switch to first remaining tab
+            console.log(`🔄 Active tab was deleted, switching to: ${remainingTabs[0].id}`);
+            setActiveTabId(remainingTabs[0].id);
+          }
+        } else if (remainingTabs.length === 0) {
+          // All tabs were closed, create a new default tab
+          console.log(`🆕 All tabs closed, creating new default tab`);
+          const newTabId = generateTabId();
+          const newTab: ConversationTab = {
+            id: newTabId,
+            title: 'New Protocol',
+            type: 'chat',
+            messages: [],
+            conversationId: generateConversationId(),
+            isLoading: false
+          };
+          setActiveTabId(newTabId);
+          return [newTab];
+        }
+
+        return remainingTabs;
+      });
     }
-  }, [currentConversationId, activeTabId]);
+
+    console.log(`✅ Live update complete for deleted conversation`);
+  }, [tabs, activeTabId]);
 
   const handleSavedProtocol = useCallback(async (protocolId: string, protocolData: any) => {
     console.log('🎯 [APP] handleSavedProtocol called', { protocolId, hasProtocolData: !!protocolData });
     
-    // Save current tab before opening new one
-    const currentTab = getActiveTab();
-    if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0 && userId) {
-      const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
-      if (lastUserMessage) {
-        await saveCurrentConversation(currentTab.messages, lastUserMessage.content);
-      }
-    }
-
-    // Create new tab for the saved protocol
-    const newTabId = createNewTab('Loading...');
-    
-    // Set loading state for new tab
-    setTabs(prevTabs =>
-      prevTabs.map(tab =>
-        tab.id === newTabId ? { ...tab, isLoading: true } : tab
-      )
-    );
-
     // Clear any preview modes to return to normal chat
     setShowProtocolPreview(false);
     setPreviewProtocols([]);
@@ -1615,6 +1750,38 @@ CITATION REQUIREMENT:
       }
 
       const contentTitle = fullProtocol?.title ? `Saved: ${fullProtocol.title}` : `Here's your saved protocol:`;
+
+      // Check if a tab with this saved protocol already exists
+      const existingTab = tabs.find(tab => 
+        tab.type === 'chat' && 
+        tab.messages.some(m => m.content === contentTitle)
+      );
+
+      if (existingTab) {
+        // Switch to existing tab instead of creating a new one
+        console.log('✅ Switching to existing tab for saved protocol');
+        setActiveTabId(existingTab.id);
+        return;
+      }
+
+      // Save current tab before opening new one
+      const currentTab = getActiveTab();
+      if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0 && userId) {
+        const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
+        if (lastUserMessage) {
+          await saveCurrentConversation(currentTab.messages, lastUserMessage.content, currentTab.conversationId);
+        }
+      }
+
+      // Create new tab for the saved protocol
+      const newTabId = createNewTab('Loading...');
+      
+      // Set loading state for new tab
+      setTabs(prevTabs =>
+        prevTabs.map(tab =>
+          tab.id === newTabId ? { ...tab, isLoading: true } : tab
+        )
+      );
 
       const assistantMessage: Message = {
         id: generateMessageId(),
@@ -1647,6 +1814,9 @@ CITATION REQUIREMENT:
         content: formatErrorMessage(e),
         timestamp: getUserTimestamp(),
       };
+      
+      // Create new tab for error
+      const newTabId = createNewTab('Error');
       setTabs(prevTabs =>
         prevTabs.map(tab =>
           tab.id === newTabId
@@ -1660,7 +1830,7 @@ CITATION REQUIREMENT:
         )
       );
     }
-  }, [userId]);
+  }, [userId, tabs, setActiveTabId]);
 
   const handleAuthSuccess = () => {
     const from = location.state?.from?.pathname || '/dashboard';
@@ -2318,7 +2488,7 @@ CITATION REQUIREMENT:
       if (currentMessages.length > 0) {
         const lastUserMessage = [...currentMessages].reverse().find(m => m.type === 'user');
         if (lastUserMessage) {
-          await saveCurrentConversation(currentMessages, lastUserMessage.content);
+          await saveCurrentConversation(currentMessages, lastUserMessage.content, currentConversationId);
         }
       }
       
@@ -2378,6 +2548,9 @@ CITATION REQUIREMENT:
           onRecentSearch={handleRecentSearch}
           onSavedProtocol={handleSavedProtocol}
           onConversationDeleted={handleConversationDeleted}
+          onConversationSaved={() => {}} // Enable live updates
+          onConversationUpdated={() => {}} // Enable live updates
+          onProtocolBookmarked={() => {}} // Enable live updates
           savedProtocolsRefreshTrigger={savedProtocolsRefreshTrigger}
           onShowLogoutModal={handleShowLogoutModal}
           onShowDeleteModal={handleShowDeleteModal}
@@ -2485,6 +2658,7 @@ CITATION REQUIREMENT:
             onFollowUpClick={handleFollowUpClick}
             onRetryMessage={handleRetryMessage}
             isSavedProtocolMessage={isSavedProtocolMessage}
+            onUnsave={handleUnsaveSavedProtocol}
           />
         ) : (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 relative" key={`content-${activeTabId}`}>
@@ -3463,17 +3637,23 @@ CITATION REQUIREMENT:
           </div>
         )}
         
-        {!showProtocolPreview && activeTab?.type === 'chat' && (
-          <ChatInput
-            onSendMessage={handleSendMessage}
-            isLoading={isLoading}
-            hasMessages={messages.length > 0}
-            isInConversation={!!getCurrentProtocol()}
-            currentProtocolTitle={getCurrentProtocol()?.title}
-            onSearchFilterChange={setSearchFilter}
-            searchFilter={searchFilter}
-          />
-        )}
+        {!showProtocolPreview && activeTab?.type === 'chat' && (() => {
+          // Check if this is a saved protocol (preview mode - no main chat input)
+          const isSavedProtocol = messages.some(m => m.content?.startsWith('Saved:'));
+          
+          // Only show chat input if it's not a saved protocol
+          return !isSavedProtocol && (
+            <ChatInput
+              onSendMessage={handleSendMessage}
+              isLoading={isLoading}
+              hasMessages={messages.length > 0}
+              isInConversation={!!getCurrentProtocol()}
+              currentProtocolTitle={getCurrentProtocol()?.title}
+              onSearchFilterChange={setSearchFilter}
+              searchFilter={searchFilter}
+            />
+          );
+        })()}
       </div>
 
       {/* Logout Confirmation Modal */}

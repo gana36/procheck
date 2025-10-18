@@ -9,10 +9,11 @@ interface ChatMessageListProps {
   messages: Message[];
   isLoading: boolean;
   onSaveToggle: (message: Message) => void;
-  onProtocolUpdate: (updatedProtocol: any) => void;
-  onFollowUpClick: (question: string) => void;
-  onRetryMessage: (messageId: string) => void;
+  onProtocolUpdate?: (updatedProtocol: any) => void;
+  onFollowUpClick?: (question: string) => void;
+  onRetryMessage?: (messageId: string) => void;
   isSavedProtocolMessage: (message: Message) => boolean;
+  onUnsave?: () => void;
 }
 
 const ChatMessageList = memo(({
@@ -23,6 +24,7 @@ const ChatMessageList = memo(({
   onFollowUpClick,
   onRetryMessage,
   isSavedProtocolMessage,
+  onUnsave,
 }: ChatMessageListProps) => {
   // Group messages with date separators
   const messageElements = useMemo(() => {
@@ -53,6 +55,7 @@ const ChatMessageList = memo(({
             onRetryMessage={onRetryMessage}
             isFirstUserMessage={isFirstUserMessage}
             isProtocolAlreadySaved={isSavedProtocolMessage(message)}
+            onUnsave={onUnsave}
           />
         </div>
       );

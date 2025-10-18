@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   Send,
-  Paperclip,
   X,
   Loader2,
   Globe,
@@ -153,29 +152,18 @@ export default function ChatInput({ onSendMessage, isLoading, hasMessages = fals
             </p>
           )}
         </div>
-        <div className="flex items-center space-x-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-[60px] w-[60px] rounded-xl border-slate-200 hover:bg-slate-50"
-            disabled={isLoading}
-          >
-            <Paperclip className="h-5 w-5 text-slate-500" />
-          </Button>
-          <Button
-            type="submit"
-            size="icon"
-            className="h-[60px] w-[60px] rounded-xl bg-teal-600 hover:bg-teal-700"
-            disabled={!message.trim() || isLoading}
-          >
-            {isLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin text-white" />
-            ) : (
-              <Send className="h-5 w-5 text-white" />
-            )}
-          </Button>
-        </div>
+        <Button
+          type="submit"
+          size="icon"
+          className="h-[60px] w-[60px] rounded-xl bg-teal-600 hover:bg-teal-700"
+          disabled={!message.trim() || isLoading}
+        >
+          {isLoading ? (
+            <Loader2 className="h-5 w-5 animate-spin text-white" />
+          ) : (
+            <Send className="h-5 w-5 text-white" />
+          )}
+        </Button>
       </form>
 
       {/* Show sample queries if input is empty and no messages exist */}

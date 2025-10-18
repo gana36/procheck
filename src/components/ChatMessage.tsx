@@ -17,6 +17,7 @@ interface ChatMessageProps {
   onRetryMessage?: (messageId: string) => void;
   isFirstUserMessage?: boolean;
   isProtocolAlreadySaved?: boolean;
+  onUnsave?: () => void;
 }
 
 // Detect query intent from message content
@@ -116,11 +117,11 @@ const stripMarkdown = (text: string): string => {
     .trim();
 };
 
-export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, onFollowUpClick, onRetryMessage, isFirstUserMessage = false, isProtocolAlreadySaved = false }: ChatMessageProps) {
+export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, onFollowUpClick, onRetryMessage, isFirstUserMessage = false, isProtocolAlreadySaved = false, onUnsave }: ChatMessageProps) {
 
   if (message.type === 'user') {
     return (
-      <div data-message-id={message.id} className={`flex justify-end mb-6 ${isFirstUserMessage ? 'sticky top-0 z-30 bg-slate-50 pb-4 pt-4 border-b border-slate-200 shadow-sm' : ''}`}>
+      <div data-message-id={message.id} data-message-type="user" className={`flex justify-end mb-6 ${isFirstUserMessage ? 'sticky top-0 z-30 bg-slate-50 pb-4 pt-4 border-b border-slate-200 shadow-sm' : ''}`}>
         <div className="max-w-[75%]">
           <div className="flex items-end justify-end space-x-3">
             <div className="flex flex-col items-end">
@@ -151,7 +152,7 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, o
   const ThemeIcon = theme.icon;
 
   return (
-    <div data-message-id={message.id} className="flex justify-start mb-6 transition-all duration-300 rounded-lg">
+    <div data-message-id={message.id} data-message-type="assistant" className="flex justify-start mb-6 transition-all duration-300 rounded-lg">
       <div className="max-w-[95%] w-full">
         <div className="flex items-start space-x-3">
           <div className="flex-shrink-0 mt-1">
@@ -235,7 +236,7 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, o
                   onProtocolUpdate={onProtocolUpdate}
                   intent={protocolIntent as 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general'}
                   isAlreadySaved={isProtocolAlreadySaved}
-                  protocolSource={protocolSource}
+                  onUnsave={onUnsave}
                 />
               );
             })()}

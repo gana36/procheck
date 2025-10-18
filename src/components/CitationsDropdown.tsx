@@ -60,50 +60,68 @@ export default function CitationsDropdown({
 
           {/* Citations list */}
           <div className="divide-y divide-slate-100">
-            {citations.map((citation) => (
-              <div key={citation.id} className="px-4 py-3 hover:bg-slate-50 transition-colors">
-                {/* Citation header */}
-                <div className="flex items-start gap-2 mb-2">
-                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-teal-100 text-teal-700 text-xs font-semibold flex-shrink-0">
-                    {citation.id}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-medium text-slate-900 line-clamp-2">
-                      {citation.title}
-                    </h4>
-                    <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
-                      <span>{citation.organization}</span>
-                      {citation.relevance_score && (
-                        <>
-                          <span>•</span>
-                          <span className="text-teal-600">
-                            {Math.round(citation.relevance_score * 100)}% relevant
-                          </span>
-                        </>
-                      )}
+            {citations.map((citation) => {
+              // Check if this is a user-defined source
+              // A source is user-defined if:
+              // 1. No URL or empty/placeholder URL
+              // 2. Organization contains keywords like "user", "custom", "regenerated"
+              const orgLower = citation.organization?.toLowerCase() || '';
+              const isUserDefined = !citation.source_url || 
+                                   citation.source_url.trim() === '' ||
+                                   citation.source_url === 'N/A' ||
+                                   orgLower.includes('user') ||
+                                   orgLower.includes('custom') ||
+                                   orgLower.includes('regenerated');
+              
+              return (
+                <div key={citation.id} className="px-4 py-3 hover:bg-slate-50 transition-colors">
+                  {/* Citation header */}
+                  <div className="flex items-start gap-2 mb-2">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-teal-100 text-teal-700 text-xs font-semibold flex-shrink-0">
+                      {citation.id}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-medium text-slate-900 line-clamp-2">
+                        {citation.title}
+                      </h4>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
+                        <span>{citation.organization}</span>
+                        {citation.relevance_score && (
+                          <>
+                            <span>•</span>
+                            <span className="text-teal-600">
+                              {Math.round(citation.relevance_score * 100)}% relevant
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
+                    {isUserDefined ? (
+                      <div className="flex-shrink-0 px-2 py-1 bg-slate-100 rounded text-xs text-slate-600">
+                        User defined
+                      </div>
+                    ) : citation.source_url && (
+                      <a
+                        href={citation.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-shrink-0 p-1.5 hover:bg-slate-200 rounded transition-colors"
+                        title="Open source"
+                      >
+                        <ExternalLink className="w-4 h-4 text-slate-600" />
+                      </a>
+                    )}
                   </div>
-                  {citation.source_url && (
-                    <a
-                      href={citation.source_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-shrink-0 p-1.5 hover:bg-slate-200 rounded transition-colors"
-                      title="Open source"
-                    >
-                      <ExternalLink className="w-4 h-4 text-slate-600" />
-                    </a>
+
+                  {/* Citation excerpt */}
+                  {citation.excerpt && (
+                    <p className="text-sm text-slate-600 leading-relaxed pl-8 line-clamp-3">
+                      {citation.excerpt}
+                    </p>
                   )}
                 </div>
-
-                {/* Citation excerpt */}
-                {citation.excerpt && (
-                  <p className="text-sm text-slate-600 leading-relaxed pl-8 line-clamp-3">
-                    {citation.excerpt}
-                  </p>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
