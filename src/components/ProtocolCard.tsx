@@ -215,15 +215,26 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
         setIsSaved(false);
       } else {
         // Save protocol
-        await saveProtocol(currentUser.uid, {
+        const protocolToSave = {
           id: protocolId,
           ...protocolData,
           intent,
-        });
+        };
+        await saveProtocol(currentUser.uid, protocolToSave);
         setIsSaved(true);
+        
+        // LIVE UPDATE: Add to sidebar without API reload
+        if ((window as any).__sidebarAddProtocol) {
+          (window as any).__sidebarAddProtocol({
+            id: protocolId,
+            title: protocolData.title || 'Untitled Protocol',
+            created_at: new Date().toISOString(),
+            protocol_data: protocolData,
+          });
+        }
       }
 
-      // Trigger callback to refresh sidebar
+      // Trigger callback to refresh sidebar (DEPRECATED - now using live updates)
       if (onSaveToggle) {
         onSaveToggle();
       }

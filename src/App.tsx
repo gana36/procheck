@@ -584,6 +584,11 @@ function App() {
         return;
       }
 
+      // Check if this is the first save or an update BEFORE updating the timestamp
+      const lastSave = recentlySavedConversations.current.get(conversationId);
+      const isFirstSave = !lastSave || (now - lastSave) < 3000; // Within 3 seconds = same save batch
+      const isUpdate = lastSave && (now - lastSave) >= 3000; // More than 3 seconds = new message
+
       // Mark as recently saved BEFORE the API call to prevent race conditions
       recentlySavedConversations.current.set(conversationId, now);
 
@@ -599,8 +604,29 @@ function App() {
       // Update cache with latest messages - OPTIMIZATION: keep cache in sync with LRU eviction
       addToCache(conversationId, updatedMessages);
       
-      if (result.was_duplicate) {
+      console.log('📊 Save analysis:', { 
+        conversationId, 
+        isFirstSave, 
+        isUpdate, 
+        lastSave, 
+        timeSinceLastSave: lastSave ? now - lastSave : 'never',
+        backendSaysDuplicate: result.was_duplicate 
+      });
+      
+      if (result.was_duplicate || isUpdate) {
         console.log('✅ Conversation updated (duplicate prevented by backend)');
+        
+        // LIVE UPDATE: Move conversation to top of sidebar
+        if ((window as any).__sidebarUpdateConversation) {
+          console.log('📤 Calling __sidebarUpdateConversation for:', conversationId);
+          (window as any).__sidebarUpdateConversation(conversationId, {
+            title: lastQuery.length > 50 ? lastQuery.substring(0, 50) + '...' : lastQuery,
+            last_query: lastQuery,
+            updated_at: new Date().toISOString(),
+          });
+        } else {
+          console.warn('⚠️ __sidebarUpdateConversation not available');
+        }
         
         // OPTIONAL: If backend returned a different conversation_id (merged duplicate),
         // update the current tab to use that ID for future saves
@@ -612,7 +638,22 @@ function App() {
           }
         }
       } else {
-        console.log('✅ Conversation saved and cached');
+        console.log('✅ Conversation saved and cached (new conversation)');
+        
+        // LIVE UPDATE: Add new conversation to sidebar (first message)
+        if ((window as any).__sidebarAddConversation) {
+          console.log('📤 Calling __sidebarAddConversation for:', conversationId);
+          (window as any).__sidebarAddConversation({
+            id: conversationId,
+            title: lastQuery.length > 50 ? lastQuery.substring(0, 50) + '...' : lastQuery,
+            last_query: lastQuery,
+            created_at: firstMessageTimestamp,
+            updated_at: new Date().toISOString(),
+            tags: ['medical-protocol'],
+          });
+        } else {
+          console.warn('⚠️ __sidebarAddConversation not available');
+        }
       }
       
       // Clean up old entries from recently saved map (keep last 50)
@@ -2475,6 +2516,9 @@ CITATION REQUIREMENT:
           onRecentSearch={handleRecentSearch}
           onSavedProtocol={handleSavedProtocol}
           onConversationDeleted={handleConversationDeleted}
+          onConversationSaved={() => {}} // Enable live updates
+          onConversationUpdated={() => {}} // Enable live updates
+          onProtocolBookmarked={() => {}} // Enable live updates
           savedProtocolsRefreshTrigger={savedProtocolsRefreshTrigger}
           onShowLogoutModal={handleShowLogoutModal}
           onShowDeleteModal={handleShowDeleteModal}
