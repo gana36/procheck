@@ -14,8 +14,6 @@ declare global {
 }
 import {
   Star,
-  Copy,
-  Share2,
   ExternalLink,
   ChevronDown,
   ChevronUp,
@@ -27,7 +25,12 @@ import {
   Clock,
   TrendingUp,
   Globe,
-  User
+  User,
+  MessageSquare,
+  Check,
+  Circle,
+  Send,
+  Loader2
 } from 'lucide-react';
 import { ProtocolData } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -40,7 +43,6 @@ interface ProtocolCardProps {
   onProtocolUpdate?: (updatedProtocol: ProtocolData) => void; // Callback when protocol is updated via threads
   intent?: 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general';
   isAlreadySaved?: boolean; // Pass this to avoid unnecessary API calls
-  protocolSource?: 'global' | 'user'; // NEW: Indicates if this is a user's custom protocol or global
 }
 
 // Professional theme configurations
@@ -125,7 +127,7 @@ const intentThemes = {
   }
 };
 
-const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, onProtocolUpdate, intent = 'general', isAlreadySaved = false, protocolSource = 'global' }: ProtocolCardProps) {
+const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, onProtocolUpdate, intent = 'general', isAlreadySaved = false }: ProtocolCardProps) {
   const { currentUser } = useAuth();
   const theme = intentThemes[intent] || intentThemes.general;
   const ThemeIcon = theme.icon;
@@ -245,12 +247,6 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
     }
   };
 
-  const handleCopy = () => {
-    const stepsText = (protocolData.steps || [])
-      .map(s => `${s.id}. ${s.step}`)
-      .join('\n');
-    navigator.clipboard.writeText(stepsText);
-  };
 
   const handleCitationClick = (citationId: number) => {
     setIsReferencesOpen(true);
@@ -351,34 +347,11 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
       {/* Professional Header with Gradient */}
       <CardHeader className={`bg-gradient-to-r ${theme.gradient} text-white pb-6 pt-6`}>
         <div className="space-y-4">
-          {/* Protocol Type & Source Badges */}
-          <div className="flex items-center space-x-2">
-            <div className="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
-              <div className="flex items-center space-x-2">
-                <ThemeIcon className="h-3.5 w-3.5 text-white" />
-                <span className="text-xs font-bold tracking-wider">{theme.label}</span>
-              </div>
-            </div>
-
-            {/* Protocol Source Indicator */}
-            <div className={`px-3 py-1 rounded-full border ${
-              protocolSource === 'user'
-                ? 'bg-purple-500/20 border-purple-300/50 backdrop-blur-sm'
-                : 'bg-white/10 border-white/30 backdrop-blur-sm'
-            }`}>
-              <div className="flex items-center space-x-1.5">
-                {protocolSource === 'user' ? (
-                  <>
-                    <User className="h-3 w-3 text-white" />
-                    <span className="text-xs font-bold tracking-wider text-white">YOUR PROTOCOL</span>
-                  </>
-                ) : (
-                  <>
-                    <Globe className="h-3 w-3 text-white" />
-                    <span className="text-xs font-bold tracking-wider text-white">GLOBAL</span>
-                  </>
-                )}
-              </div>
+          {/* Protocol Type Badge */}
+          <div className="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full inline-block">
+            <div className="flex items-center space-x-2">
+              <ThemeIcon className="h-3.5 w-3.5 text-white" />
+              <span className="text-xs font-bold tracking-wider">{theme.label}</span>
             </div>
           </div>
 
@@ -413,23 +386,6 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
             >
               <Star className={`h-4 w-4 mr-1.5 ${isSaved ? 'fill-current' : ''}`} />
               {isSaved ? 'Saved' : 'Save'}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleCopy}
-              className="bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm border-0"
-            >
-              <Copy className="h-4 w-4 mr-1.5" />
-              Copy
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm border-0"
-            >
-              <Share2 className="h-4 w-4 mr-1.5" />
-              Share
             </Button>
           </div>
         </div>
@@ -555,18 +511,32 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
                               </div>
                             </div>
                           </div>
-                          {citationRef.url && (
-                            <a
-                              href={citationRef.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="flex-shrink-0 flex items-center space-x-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-md transition-colors text-xs font-medium shadow-sm"
-                            >
-                              <span>View Source</span>
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          )}
+                          {(() => {
+                            const orgLower = citationRef.organization?.toLowerCase() || '';
+                            const isUserDefined = !citationRef.url || 
+                                                 citationRef.url.trim() === '' || 
+                                                 citationRef.url === 'N/A' ||
+                                                 orgLower.includes('user') ||
+                                                 orgLower.includes('custom') ||
+                                                 orgLower.includes('regenerated');
+                            
+                            return isUserDefined ? (
+                              <div className="flex-shrink-0 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-md text-xs font-medium">
+                                User defined
+                              </div>
+                            ) : (
+                              <a
+                                href={citationRef.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex-shrink-0 flex items-center space-x-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-md transition-colors text-xs font-medium shadow-sm"
+                              >
+                                <span>View Source</span>
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            );
+                          })()}
                         </div>
                         
                         {/* Full Source Content */}
@@ -683,17 +653,31 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
                         </p>
                         )}
                       </div>
-                      {citation.url && (
-                        <a
-                          href={citation.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="ml-3 flex-shrink-0 flex items-center space-x-1 px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-md transition-colors text-xs font-medium"
-                        >
-                          <span>View Source</span>
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
+                      {(() => {
+                        const orgLower = citation.organization?.toLowerCase() || '';
+                        const isUserDefined = !citation.url || 
+                                             citation.url.trim() === '' || 
+                                             citation.url === 'N/A' ||
+                                             orgLower.includes('user') ||
+                                             orgLower.includes('custom') ||
+                                             orgLower.includes('regenerated');
+                        
+                        return isUserDefined ? (
+                          <div className="ml-3 flex-shrink-0 px-3 py-2 bg-slate-100 text-slate-600 rounded-md text-xs font-medium">
+                            User defined
+                          </div>
+                        ) : (
+                          <a
+                            href={citation.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ml-3 flex-shrink-0 flex items-center space-x-1 px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-md transition-colors text-xs font-medium"
+                          >
+                            <span>View Source</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        );
+                      })()}
                     </div>
                   </div>
               ))}
@@ -707,7 +691,21 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
           <div className="mt-4 pt-4 border-t border-slate-200">
             <div className="flex items-center text-xs text-slate-500">
               <Clock className="h-3 w-3 mr-1.5" />
-              Last updated: {protocolData.lastUpdated}
+              Last updated: {(() => {
+                try {
+                  const date = new Date(protocolData.lastUpdated);
+                  if (isNaN(date.getTime())) {
+                    return protocolData.lastUpdated; // Fallback to original if invalid
+                  }
+                  return date.toLocaleDateString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                  });
+                } catch {
+                  return protocolData.lastUpdated; // Fallback on error
+                }
+              })()}
             </div>
           </div>
         )}

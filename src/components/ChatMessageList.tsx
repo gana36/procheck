@@ -9,9 +9,9 @@ interface ChatMessageListProps {
   messages: Message[];
   isLoading: boolean;
   onSaveToggle: (message: Message) => void;
-  onProtocolUpdate: (updatedProtocol: any) => void;
-  onFollowUpClick: (question: string) => void;
-  onRetryMessage: (messageId: string) => void;
+  onProtocolUpdate?: (updatedProtocol: any) => void;
+  onFollowUpClick?: (question: string) => void;
+  onRetryMessage?: (messageId: string) => void;
   isSavedProtocolMessage: (message: Message) => boolean;
 }
 

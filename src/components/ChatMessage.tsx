@@ -235,7 +235,6 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, o
                   onProtocolUpdate={onProtocolUpdate}
                   intent={protocolIntent as 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general'}
                   isAlreadySaved={isProtocolAlreadySaved}
-                  protocolSource={protocolSource}
                 />
               );
             })()}
