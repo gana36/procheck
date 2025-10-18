@@ -39,6 +39,7 @@ const ChatContainer = memo(({
   } = useChatScroll({
     messageCount: messages.length,
     savedScrollPosition,
+    messages, // Pass messages for smart scroll detection
   });
 
   // Use optimized list for long conversations
