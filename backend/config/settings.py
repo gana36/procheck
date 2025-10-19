@@ -38,6 +38,10 @@ class Settings:
         "ALLOWED_ORIGINS",
         "http://localhost:5173,https://procheck-473021.web.app,https://procheck-473021.firebaseapp.com"
     ).split(",")
+    # ALLOWED_ORIGINS: List[str] = os.getenv(
+    #     "ALLOWED_ORIGINS",
+    #     "http://localhost:5173"
+    # ).split(",")
 
     
     # Application Info
