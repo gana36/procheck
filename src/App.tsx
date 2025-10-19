@@ -189,6 +189,8 @@ function App() {
   // DEPRECATED: No longer needed - we use live updates instead
   // const [savedProtocolsRefreshTrigger, setSavedProtocolsRefreshTrigger] = useState(0);
   const [searchFilter, setSearchFilter] = useState<'all' | 'global' | 'user'>('all');
+  // Inline protocol deletion confirmation state
+  const [protocolPendingDeletion, setProtocolPendingDeletion] = useState<string | null>(null);
   const [showProtocolPreview, setShowProtocolPreview] = useState(false);
   const [previewProtocols, setPreviewProtocols] = useState<any[]>([]);
   const [previewUploadId, setPreviewUploadId] = useState<string | null>(null);
@@ -2859,16 +2861,13 @@ CITATION REQUIREMENT:
                             <h3 className="text-xl font-semibold text-slate-900 flex-1 pr-4">
                               {protocol.title}
                             </h3>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                showConfirmation({
-                                  title: 'Delete Protocol',
-                                  message: `Are you sure you want to delete "${protocol.title}"? This action cannot be undone.`,
-                                  confirmText: 'Delete Protocol',
-                                  dangerous: true,
-                                  confirmAction: async () => {
+                            {protocolPendingDeletion === protocol.id ? (
+                              <div className="flex items-center space-x-2">
+                                <span className="text-sm text-slate-600 mr-2">Delete this?</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={async () => {
                                     try {
                                       if (!currentUser) return;
 
@@ -2888,6 +2887,8 @@ CITATION REQUIREMENT:
                                         title: 'Protocol Deleted',
                                         message: `"${protocol.title}" has been deleted successfully`
                                       });
+
+                                      setProtocolPendingDeletion(null);
                                     } catch (error) {
                                       console.error('Failed to delete protocol:', error);
                                       addToastNotification({
@@ -2895,14 +2896,32 @@ CITATION REQUIREMENT:
                                         title: 'Delete Failed',
                                         message: error instanceof Error ? error.message : 'Failed to delete protocol'
                                       });
+                                      setProtocolPendingDeletion(null);
                                     }
-                                  }
-                                });
-                              }}
-                              className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 w-8 p-0"
-                            >
-                              🗑️
-                            </Button>
+                                  }}
+                                  className="text-white bg-red-600 hover:bg-red-700 h-8 px-3"
+                                >
+                                  Delete
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setProtocolPendingDeletion(null)}
+                                  className="text-slate-600 hover:text-slate-700 hover:bg-slate-100 h-8 px-3"
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setProtocolPendingDeletion(protocol.id)}
+                                className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 w-8 p-0"
+                              >
+                                🗑️
+                              </Button>
+                            )}
                           </div>
                           <div className="flex items-center space-x-4 text-sm text-slate-500">
                             <span>Steps: {protocol.steps_count || 0}</span>
@@ -3415,55 +3434,77 @@ CITATION REQUIREMENT:
                                 );
                               })()}
                             </div>
-                            <button
-                              className="text-slate-400 hover:text-red-600 p-1 hover:bg-red-50 rounded"
-                              onClick={async () => {
-                                try {
-                                  if (!currentUser) return;
+                            {protocolPendingDeletion === protocol.id ? (
+                              <div className="flex flex-col items-end space-y-2">
+                                <span className="text-xs text-slate-600">Delete this?</span>
+                                <div className="flex items-center space-x-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={async () => {
+                                      try {
+                                        if (!currentUser) return;
 
-                                  // Show confirmation dialog
-                                  const confirmed = window.confirm(`Are you sure you want to delete "${protocol.title}"?`);
-                                  if (!confirmed) return;
+                                        // Use the existing deleteUserProtocol API function
+                                        await deleteUserProtocol(currentUser.uid, protocol.id);
 
-                                  // Use the existing deleteUserProtocol API function
-                                  await deleteUserProtocol(currentUser.uid, protocol.id);
+                                        // Remove from local state
+                                        setUserIndexProtocols(prev => prev.filter(p => p.id !== protocol.id));
 
-                                  // Remove from local state
-                                  setUserIndexProtocols(prev => prev.filter(p => p.id !== protocol.id));
+                                        // Update the protocol index tab
+                                        setTabs(prevTabs =>
+                                          prevTabs.map(tab =>
+                                            tab.type === 'protocol-index'
+                                              ? { ...tab, protocols: tab.protocols.filter((p: any) => p.id !== protocol.id) } as ProtocolIndexTab
+                                              : tab
+                                          )
+                                        );
 
-                                  // Update the protocol index tab
-                                  setTabs(prevTabs =>
-                                    prevTabs.map(tab =>
-                                      tab.type === 'protocol-index'
-                                        ? { ...tab, protocols: tab.protocols.filter((p: any) => p.id !== protocol.id) } as ProtocolIndexTab
-                                        : tab
-                                    )
-                                  );
+                                        // Clear sidebar cache to refresh protocol counts
+                                        if (clearProtocolCacheRef.current) {
+                                          clearProtocolCacheRef.current();
+                                        }
 
-                                  // Clear sidebar cache to refresh protocol counts
-                                  if (clearProtocolCacheRef.current) {
-                                    clearProtocolCacheRef.current();
-                                  }
+                                        addToastNotification({
+                                          type: 'success',
+                                          title: 'Protocol Deleted',
+                                          message: `"${protocol.title}" has been successfully deleted`
+                                        });
 
-                                  addToastNotification({
-                                    type: 'success',
-                                    title: 'Protocol Deleted',
-                                    message: `"${protocol.title}" has been successfully deleted`
-                                  });
-
-                                } catch (error) {
-                                  console.error('❌ Error deleting protocol:', error);
-                                  addToastNotification({
-                                    type: 'error',
-                                    title: 'Delete Failed',
-                                    message: 'Failed to delete the protocol. Please try again.'
-                                  });
-                                }
-                              }}
-                              title="Delete this protocol"
-                            >
-                              🗑️
-                            </button>
+                                        setProtocolPendingDeletion(null);
+                                      } catch (error) {
+                                        console.error('❌ Error deleting protocol:', error);
+                                        addToastNotification({
+                                          type: 'error',
+                                          title: 'Delete Failed',
+                                          message: 'Failed to delete the protocol. Please try again.'
+                                        });
+                                        setProtocolPendingDeletion(null);
+                                      }
+                                    }}
+                                    className="text-white bg-red-600 hover:bg-red-700 h-7 px-2 text-xs"
+                                  >
+                                    Delete
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setProtocolPendingDeletion(null)}
+                                    className="text-slate-600 hover:text-slate-700 hover:bg-slate-100 h-7 px-2 text-xs"
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                className="text-slate-400 hover:text-red-600 p-1 hover:bg-red-50 rounded"
+                                onClick={() => setProtocolPendingDeletion(protocol.id)}
+                                title="Delete this protocol"
+                              >
+                                🗑️
+                              </button>
+                            )}
                           </div>
                         </div>
                       ))}

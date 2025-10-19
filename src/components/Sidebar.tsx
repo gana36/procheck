@@ -226,6 +226,18 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const uploadAbortController = useRef<AbortController | null>(null);
   const uploadCancelledRef = useRef(false); // Track cancellation state immediately (not async like state)
+  const uploadProgressRef = useRef(uploadProgress); // Track latest upload progress for polling closure
+
+  // Keep refs synced with state to survive component re-renders and closure issues
+  useEffect(() => {
+    uploadCancelledRef.current = uploadCancelled;
+    console.log('🔄 Syncing uploadCancelledRef with state:', uploadCancelled, 'ref is now:', uploadCancelledRef.current);
+  }, [uploadCancelled]);
+
+  useEffect(() => {
+    uploadProgressRef.current = uploadProgress;
+    console.log('🔄 Syncing uploadProgressRef, status is now:', uploadProgress?.status);
+  }, [uploadProgress]);
 
   // Regeneration state
   const [regeneratingProtocolId, setRegeneratingProtocolId] = useState<string | null>(null);
@@ -1022,11 +1034,13 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     setUploadCancelled(false);
     uploadCancelledRef.current = false; // Reset ref for new upload
     setCurrentUploadId(null); // Reset upload ID
-    setUploadProgress({
-      status: 'uploading',
+    const newUploadProgress = {
+      status: 'uploading' as const,
       filename: file.name,
       progress: 0
-    });
+    };
+    setUploadProgress(newUploadProgress);
+    uploadProgressRef.current = newUploadProgress; // Immediately sync ref for new upload
 
     // Create abort controller for upload cancellation
     uploadAbortController.current = new AbortController();
@@ -1036,8 +1050,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       console.log('📝 Custom prompt:', customPrompt || 'None provided');
       const result = await uploadDocuments(currentUser.uid, file, customPrompt, uploadAbortController.current.signal);
 
-      // Check if upload was cancelled during the request
-      if (uploadCancelled) {
+      // Check if upload was cancelled during the request (use ref for immediate check)
+      if (uploadCancelledRef.current) {
         console.log('🚫 Upload was cancelled during request');
         return;
       }
@@ -1100,9 +1114,49 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         }
 
         // CRITICAL: Check cancellation BEFORE updating state with any success status
-        if ((status.status === 'completed' || status.status === 'awaiting_approval') && uploadCancelledRef.current) {
-          console.log('🚫 User cancelled - ignoring success status from backend');
+        // Use refs to get the LATEST values (not closure values)
+        const latestUploadProgress = uploadProgressRef.current;
+        const latestCancelled = uploadCancelledRef.current;
+
+        console.log('🔍 Checking cancellation state AT POLL TIME:', {
+          backendStatus: status.status,
+          'uploadCancelledRef.current': uploadCancelledRef.current,
+          latestCancelled: latestCancelled,
+          latestProgressStatus: latestUploadProgress?.status,
+          'Are they the same?': uploadCancelledRef.current === latestCancelled,
+          willIgnore: (status.status === 'completed' || status.status === 'awaiting_approval') && (latestCancelled || latestUploadProgress?.status === 'cancelled')
+        });
+
+        // Check BOTH the ref AND the uploadProgress status using refs to get latest values
+        if ((status.status === 'completed' || status.status === 'awaiting_approval') &&
+            (latestCancelled || latestUploadProgress?.status === 'cancelled')) {
+          console.log('🚫 User cancelled but backend completed - keeping cancelled state, not updating UI');
+          // Stop polling since we're ignoring this completion
+          if (pollingRef.current) {
+            clearTimeout(pollingRef.current);
+            pollingRef.current = null;
+          }
           return;
+        }
+
+        // CRITICAL: For completion statuses, check cancellation BEFORE updating uploadProgress
+        if (status.status === 'completed' || status.status === 'awaiting_approval') {
+          // Use functional update to check the absolute latest cancelled state
+          let isCancelled = false;
+          setUploadCancelled((currentCancelled) => {
+            isCancelled = currentCancelled;
+            return currentCancelled; // Don't change it, just read it
+          });
+
+          if (isCancelled) {
+            console.log('🚫 Upload is cancelled - ignoring backend completion, NOT updating uploadProgress');
+            // Stop polling and bail out WITHOUT updating any state
+            if (pollingRef.current) {
+              clearTimeout(pollingRef.current);
+              pollingRef.current = null;
+            }
+            return;
+          }
         }
 
         // Calculate progress based on status
@@ -1113,15 +1167,15 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
           calculatedProgress = 100;
         }
 
-        setUploadProgress({
-          status: status.status,
-          upload_id: uploadId,
-          progress: calculatedProgress,
-          protocols_extracted: status.protocols_extracted,
-          protocols_indexed: status.protocols_indexed
-        });
-
         if (status.status === 'completed') {
+          setUploadProgress({
+            status: status.status,
+            upload_id: uploadId,
+            progress: calculatedProgress,
+            protocols_extracted: status.protocols_extracted,
+            protocols_indexed: status.protocols_indexed
+          });
+
           console.log('✅ Upload processing completed');
           setIsUploading(false);
           setUploadCancelled(false);
@@ -1132,12 +1186,41 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
             setUploadProgress(null);
           }, 3000); // Show success for 3 seconds
         } else if (status.status === 'awaiting_approval') {
-          console.log('⏳ Upload processing completed, awaiting user approval');
+          // TRIPLE CHECK: Use functional update to get the absolute latest cancelled state
+          let shouldShowPreview = true;
+          setUploadCancelled((currentCancelled) => {
+            console.log('🔍 FINAL CHECK: Is upload currently cancelled?', currentCancelled);
+            if (currentCancelled) {
+              console.log('🚫 Upload is cancelled - will NOT show preview or reset state');
+              shouldShowPreview = false;
+              return true; // Keep it cancelled
+            }
+            console.log('⏳ Upload processing completed, awaiting user approval');
+            return false; // Not cancelled, reset to false
+          });
+
+          if (!shouldShowPreview) {
+            // Stop polling and bail out - don't update uploadProgress
+            if (pollingRef.current) {
+              clearTimeout(pollingRef.current);
+              pollingRef.current = null;
+            }
+            return;
+          }
+
           setIsUploading(false);
-          setUploadCancelled(false);
           uploadCancelledRef.current = false; // Sync ref with state
-          // Show preview modal
-          await showProtocolPreview(uploadId);
+          // Show preview modal and get actual protocol count
+          await showProtocolPreview(uploadId, false, (actualCount: number) => {
+            // Update uploadProgress with actual protocol count from preview
+            setUploadProgress({
+              status: status.status,
+              upload_id: uploadId,
+              progress: calculatedProgress,
+              protocols_extracted: actualCount,
+              protocols_indexed: status.protocols_indexed
+            });
+          });
         } else if (status.status === 'cancelled') {
           console.log('🚫 Upload was cancelled, cleaning up UI');
           setIsUploading(false);
@@ -1170,6 +1253,16 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
           setIsUploading(false);
           setUploadCancelled(false);
         } else {
+          // Update progress for processing/uploading status if not cancelled
+          if (!uploadCancelledRef.current) {
+            setUploadProgress({
+              status: status.status,
+              upload_id: uploadId,
+              progress: calculatedProgress,
+              protocols_extracted: status.protocols_extracted,
+              protocols_indexed: status.protocols_indexed
+            });
+          }
           // Continue polling
           pollingRef.current = setTimeout(poll, 2000); // Poll every 2 seconds
         }
@@ -1388,7 +1481,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     }
   };
 
-  const showProtocolPreview = async (uploadId: string, forceShow = false) => {
+  const showProtocolPreview = async (uploadId: string, forceShow = false, onProtocolCountLoaded?: (count: number) => void) => {
     try {
       if (!currentUser) return;
 
@@ -1406,6 +1499,11 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
           // Extract protocols array (handle both old and new format)
           const protocols = Array.isArray(preview.protocols) ? preview.protocols : (preview.protocols || []);
           const status = preview.status || 'completed';
+
+          // Call the callback with actual protocol count
+          if (onProtocolCountLoaded) {
+            onProtocolCountLoaded(protocols.length);
+          }
 
           // Check status field to determine the correct notification
           if (status === 'cancelled') {
