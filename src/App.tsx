@@ -1728,6 +1728,61 @@ CITATION REQUIREMENT:
     console.log(`✅ Live update complete for deleted conversation`);
   }, [tabs, activeTabId]);
 
+  const handleSavedProtocolDeleted = useCallback((protocolId: string, protocolTitle: string) => {
+    console.log(`🗑️ [LIVE UPDATE] Saved protocol deleted: ${protocolId}`);
+    
+    // Find and close all tabs with this saved protocol
+    // Saved protocols have content that starts with "Saved: {title}"
+    const contentPattern = `Saved: ${protocolTitle}`;
+    
+    const tabsToClose = tabs.filter(tab => 
+      tab.type === 'chat' && 
+      tab.messages.some(m => m.content === contentPattern)
+    );
+    
+    if (tabsToClose.length > 0) {
+      console.log(`🗑️ Closing ${tabsToClose.length} tab(s) for saved protocol: ${protocolTitle}`);
+      
+      setTabs(prevTabs => {
+        // Remove all tabs with this saved protocol
+        const remainingTabs = prevTabs.filter(tab => 
+          !(tab.type === 'chat' && tab.messages.some(m => m.content === contentPattern))
+        );
+        
+        if (remainingTabs.length > 0) {
+          // Check if active tab was removed
+          const activeTabRemoved = !remainingTabs.find(tab => tab.id === activeTabId);
+          
+          if (activeTabRemoved) {
+            // Switch to first remaining tab
+            console.log(`🔄 Active tab was deleted, switching to: ${remainingTabs[0].id}`);
+            setActiveTabId(remainingTabs[0].id);
+          }
+        } else if (remainingTabs.length === 0) {
+          // All tabs were closed, create a new default tab
+          console.log(`🆕 All tabs closed, creating new default tab`);
+          const newTabId = generateTabId();
+          const newTab: ConversationTab = {
+            id: newTabId,
+            title: 'New Protocol',
+            type: 'chat',
+            messages: [],
+            conversationId: generateConversationId(),
+            isLoading: false
+          };
+          setActiveTabId(newTabId);
+          return [newTab];
+        }
+
+        return remainingTabs;
+      });
+    } else {
+      console.log(`ℹ️ No open tabs found for saved protocol: ${protocolTitle}`);
+    }
+
+    console.log(`✅ Live update complete for deleted saved protocol`);
+  }, [tabs, activeTabId]);
+
   const handleSavedProtocol = useCallback(async (protocolId: string, protocolData: any) => {
     console.log('🎯 [APP] handleSavedProtocol called', { protocolId, hasProtocolData: !!protocolData });
     
@@ -2548,6 +2603,7 @@ CITATION REQUIREMENT:
           onRecentSearch={handleRecentSearch}
           onSavedProtocol={handleSavedProtocol}
           onConversationDeleted={handleConversationDeleted}
+          onSavedProtocolDeleted={handleSavedProtocolDeleted}
           onConversationSaved={() => {}} // Enable live updates
           onConversationUpdated={() => {}} // Enable live updates
           onProtocolBookmarked={() => {}} // Enable live updates

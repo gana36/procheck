@@ -33,6 +33,7 @@ interface SidebarProps {
   onRecentSearch: (conversationId: string) => void;
   onSavedProtocol: (protocolId: string, protocolData: any) => void;
   onConversationDeleted?: (conversationId: string) => void; // Notify parent when conversation is deleted
+  onSavedProtocolDeleted?: (protocolId: string, protocolTitle: string) => void; // Notify parent when saved protocol is deleted
   
   // LIVE UPDATE CALLBACKS (No API reloads)
   onConversationSaved?: (conversation: ConversationListItem) => void; // New conversation created
@@ -162,7 +163,7 @@ const clearProtocolCache = (userId: string) => {
   }
 };
 
-const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, onConversationSaved, onConversationUpdated, onProtocolBookmarked, savedProtocolsRefreshTrigger, onShowLogoutModal, onShowDeleteModal, onShowUserProtocolsIndex, onShowGeneratedProtocols, generatedProtocols = [], generatedUploadId = null, onNotifyUploadReady, onShowConfirmation, onClearProtocolCache, isProfileOpen, activeProfileTab, onOpenProfile, onCloseProfile, onSetActiveProfileTab, isUploading, setIsUploading, uploadProgress, setUploadProgress, uploadCancelled, setUploadCancelled, currentUploadId, setCurrentUploadId, showUploadModal, setShowUploadModal, userIndexProtocols, isCollapsed, onToggleCollapse }: SidebarProps) {
+const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProtocol, onConversationDeleted, onSavedProtocolDeleted, onConversationSaved, onConversationUpdated, onProtocolBookmarked, savedProtocolsRefreshTrigger, onShowLogoutModal, onShowDeleteModal, onShowUserProtocolsIndex, onShowGeneratedProtocols, generatedProtocols = [], generatedUploadId = null, onNotifyUploadReady, onShowConfirmation, onClearProtocolCache, isProfileOpen, activeProfileTab, onOpenProfile, onCloseProfile, onSetActiveProfileTab, isUploading, setIsUploading, uploadProgress, setUploadProgress, uploadCancelled, setUploadCancelled, currentUploadId, setCurrentUploadId, showUploadModal, setShowUploadModal, userIndexProtocols, isCollapsed, onToggleCollapse }: SidebarProps) {
   const { currentUser } = useAuth();
   
   // CRITICAL: Extract userId directly - this is stable because we'll control when effects run
@@ -819,6 +820,11 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
             
             setOpenProtocolMenuId(null);
             console.log('✅ Protocol deleted (local + cache updated)');
+            
+            // Notify parent to close any open tabs with this saved protocol
+            if (onSavedProtocolDeleted) {
+              onSavedProtocolDeleted(protocolId, protocolTitle);
+            }
           } catch (error) {
             console.error('Failed to delete protocol:', error);
             alert('Failed to delete protocol');
