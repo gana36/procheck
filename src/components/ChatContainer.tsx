@@ -132,35 +132,35 @@ const ChatContainer = memo(({
         )}
         
         <div ref={messagesEndRef} />
-        
-        {/* Scroll to Bottom Button */}
-        {showScrollButton && (
-          <button
-            onClick={() => scrollToBottom('smooth')}
-            className="fixed bottom-24 right-8 bg-slate-700 hover:bg-slate-800 text-white rounded-full p-3 shadow-lg transition-all duration-200 z-10 flex items-center gap-2"
-            aria-label="Scroll to bottom"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-            </svg>
-          </button>
-        )}
-
-        {/* Search hint for long chats */}
-        {!isSearchOpen && messages.length > 10 && (
-          <button
-            onClick={() => setIsSearchOpen(true)}
-            className="fixed bottom-24 right-24 bg-white hover:bg-slate-50 text-slate-600 rounded-full px-4 py-2 shadow-lg transition-all duration-200 z-10 flex items-center gap-2 text-sm border border-slate-200"
-            aria-label="Search messages"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <span className="hidden sm:inline">Search</span>
-            <kbd className="hidden sm:inline text-xs bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300">⌘F</kbd>
-          </button>
-        )}
       </div>
+
+      {/* Scroll to Bottom Button - OUTSIDE scrollable container */}
+      {showScrollButton && (
+        <button
+          onClick={() => scrollToBottom('smooth')}
+          className="fixed bottom-40 right-8 bg-slate-700 hover:bg-slate-800 text-white rounded-full p-3 shadow-lg transition-all duration-200 z-10 flex items-center gap-2"
+          aria-label="Scroll to bottom"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>
+        </button>
+      )}
+
+      {/* Search hint for long chats - OUTSIDE scrollable container */}
+      {!isSearchOpen && messages.length > 10 && (
+        <button
+          onClick={() => setIsSearchOpen(true)}
+          className="fixed bottom-40 right-24 bg-white hover:bg-slate-50 text-slate-600 rounded-full px-4 py-2 shadow-lg transition-all duration-200 z-10 flex items-center gap-2 text-sm border border-slate-200"
+          aria-label="Search messages"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <span className="hidden sm:inline">Search</span>
+          <kbd className="hidden sm:inline text-xs bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300">⌘F</kbd>
+        </button>
+      )}
     </>
   );
 });
