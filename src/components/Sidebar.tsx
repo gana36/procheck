@@ -1529,7 +1529,9 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                 savedProtocols.map((p) => (
                   <Card
                     key={p.id}
-                    className="group relative cursor-pointer hover:shadow-md transition-all duration-200 hover:border-teal-200"
+                    className={`group relative cursor-pointer hover:shadow-md transition-all duration-200 hover:border-teal-200 ${
+                      openProtocolMenuId === p.id ? 'z-50' : 'z-0'
+                    }`}
                     onClick={() => editingProtocolId !== p.id && handleSavedProtocolClick(p.id)}
                   >
                     <CardContent className="p-3">
@@ -1666,7 +1668,9 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
               recentConversations.map((conversation) => (
                 <Card
                   key={conversation.id}
-                  className="group relative cursor-pointer hover:shadow-md transition-all duration-200 hover:border-teal-200"
+                  className={`group relative cursor-pointer hover:shadow-md transition-all duration-200 hover:border-teal-200 ${
+                    openMenuId === conversation.id ? 'z-50' : 'z-0'
+                  }`}
                   onClick={() => editingId !== conversation.id && onRecentSearch(conversation.id)}
                 >
                   <CardContent className="p-3">
