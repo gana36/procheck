@@ -141,18 +141,7 @@ export function handleError(error: any): UserFriendlyError {
     };
   }
 
-  // Firestore/Database errors
-  if (error.message?.includes('firestore') || error.message?.includes('database')) {
-    return {
-      title: 'Database Error',
-      message: 'Unable to access the database at this time.',
-      action: 'Please try again in a few moments.',
-      technical: error.message,
-      retryable: true,
-    };
-  }
-
-  // Content moderation errors
+   // Content moderation errors
   if (error.message?.includes('invalid_query') || error.message?.includes('invalid_message') ||
       error.message?.includes('invalid_input') || error.message?.includes('harmful') ||
       error.message?.includes('irrelevant') || error.message?.includes('out_of_scope_medical') ||
@@ -245,6 +234,17 @@ export function handleError(error: any): UserFriendlyError {
       action: errorAction,
       technical: error.message,
       retryable: false,
+    };
+  }
+
+   // Firestore/Database errors
+  if (error.message?.includes('firestore') || error.message?.includes('database')) {
+    return {
+      title: 'Database Error',
+      message: 'Unable to access the database at this time.',
+      action: 'Please try again in a few moments.',
+      technical: error.message,
+      retryable: true,
     };
   }
 
