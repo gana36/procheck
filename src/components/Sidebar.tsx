@@ -486,7 +486,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         setRecentConversations(response.conversations);
         globalDataCache.conversations = response.conversations; // Save to global cache
         conversationsLoadedRef.current = true;
-        console.log('✅ Conversations loaded successfully');
+        console.log('✅ Conversations loaded successfully:', response.conversations.length, 'conversations');
       } else {
         setConversationsError(response.error || 'Failed to load conversations');
       }
@@ -531,7 +531,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         setSavedProtocols(res.protocols || []);
         globalDataCache.protocols = res.protocols || []; // Save to global cache
         savedProtocolsLoadedRef.current = true;
-        console.log('✅ Saved protocols loaded successfully');
+        console.log('✅ Saved protocols loaded successfully:', (res.protocols || []).length, 'protocols');
       } else {
         setSavedError(res.error || 'Failed to load saved checklists');
       }
@@ -584,7 +584,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         const protocols = res.protocols || [];
         setUploadedProtocols(protocols);
         cacheProtocols(userId, protocols); // Cache the fresh data
-        console.log(`✅ Uploaded protocols loaded: ${protocols.length} protocols`);
+        console.log(`✅ Uploaded protocols loaded successfully: ${protocols.length} protocols`);
         if (res.error) {
           console.log(`⚠️ Note: ${res.error}`);
         }
@@ -646,7 +646,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     Promise.all([
       loadConversations(true),
       loadSavedProtocols(true),
-      loadUploadedProtocols() // This will use cache if available
+      loadUploadedProtocols(userChanged) // Force refresh on user change, use cache otherwise
     ]).finally(() => {
       globalDataCache.isLoading = false;
     });
