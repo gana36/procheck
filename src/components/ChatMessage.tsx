@@ -221,13 +221,6 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, o
             {/* Protocol Data with Enhanced Display */}
             {message.protocolData && (() => {
               const protocolIntent = (message.protocolData as any)?.intent || intent;
-              // Determine if this is a user protocol vs global protocol
-              // TODO: This will come from the protocol data in the future
-              const protocolSource: 'global' | 'user' =
-                message.content.startsWith('Saved:') ||
-                (message.protocolData as any)?.source_type === 'user'
-                  ? 'user'
-                  : 'global';
 
               return (
                 <ProtocolCard
