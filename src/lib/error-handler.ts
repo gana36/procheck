@@ -97,8 +97,11 @@ export function handleError(error: any): UserFriendlyError {
     };
   }
 
-  // API-specific errors
-  if (error.message?.includes('Search failed')) {
+  // API-specific errors (but check for moderation errors first)
+  if (error.message?.includes('Search failed') &&
+      !error.message?.includes('invalid_query') &&
+      !error.message?.includes('harmful') &&
+      !error.message?.includes('irrelevant')) {
     return {
       title: 'Search Error',
       message: 'Unable to search protocols at this time.',
@@ -149,6 +152,102 @@ export function handleError(error: any): UserFriendlyError {
     };
   }
 
+  // Content moderation errors
+  if (error.message?.includes('invalid_query') || error.message?.includes('invalid_message') ||
+      error.message?.includes('invalid_input') || error.message?.includes('harmful') ||
+      error.message?.includes('irrelevant') || error.message?.includes('out_of_scope_medical') ||
+      error.message?.includes('greeting') || error.message?.includes('too_short')) {
+
+    let errorMessage = 'Your query contains inappropriate or irrelevant content.';
+    let errorTitle = 'Invalid Query';
+    let errorAction = 'Please reformulate your question to be medical-related and appropriate.';
+    let suggestion = null;
+    let userQuery = null;
+
+    try {
+      // Parse backend error response
+      // Error format: "Search failed: 400 {"detail": {...}}"
+      const jsonPart = error.message.substring(error.message.indexOf('{'));
+      const parsed = JSON.parse(jsonPart);
+
+      // Extract from detail object if present
+      const errorData = parsed.detail || parsed;
+
+      if (errorData.message) {
+        errorMessage = errorData.message;
+      }
+
+      if (errorData.suggestion) {
+        suggestion = errorData.suggestion;
+      }
+
+      // Set title and action based on category
+      if (errorData.category === 'harmful') {
+        errorTitle = '⛔ Inappropriate Content Detected';
+        errorAction = 'ProCheck is designed for medical protocol queries only. Please ask a healthcare-related question.';
+      } else if (errorData.category === 'out_of_scope_medical') {
+        errorTitle = '📋 Out of ProCheck\'s Scope';
+        errorMessage = errorData.message || errorMessage;
+        // Add sample queries for out-of-scope medical with proper markdown list
+        errorAction = '\n\n**Try one of these example queries:**\n\n' +
+          '- "What are the symptoms of dengue fever?"\n' +
+          '- "How do I treat malaria?"\n' +
+          '- "Emergency treatment for asthma attack"\n' +
+          '- "Diabetes management guidelines"\n' +
+          '- "CPR protocol for cardiac arrest"\n' +
+          '- "Stroke warning signs and FAST test"\n' +
+          '- "COVID-19 home management protocol"';
+      } else if (errorData.category === 'irrelevant') {
+        errorTitle = '❌ Non-Medical Query';
+        errorMessage = errorData.message || errorMessage;
+        // Add sample queries for irrelevant with proper markdown list
+        errorAction = '\n\n**Try one of these example queries:**\n\n' +
+          '- "What are the symptoms of dengue fever?"\n' +
+          '- "How do I treat malaria?"\n' +
+          '- "Emergency treatment for asthma attack"\n' +
+          '- "What should I do if someone has a heart attack?"\n' +
+          '- "How to prevent mosquito-borne diseases?"\n' +
+          '- "Childhood fever - when to seek help?"';
+      } else if (errorData.category === 'greeting') {
+        errorTitle = '👋 Welcome to ProCheck!';
+        errorMessage = errorData.message || 'Hello! Welcome to ProCheck. I\'m here to help you find medical protocols and emergency information.';
+        errorAction = '\n\n**Try one of these example queries to get started:**\n\n' +
+          '- "What are the symptoms of dengue fever?"\n' +
+          '- "How do I treat malaria?"\n' +
+          '- "Emergency treatment for asthma attack"\n' +
+          '- "What should I do if someone has a heart attack?"\n' +
+          '- "Diabetes management guidelines"\n' +
+          '- "CPR protocol for cardiac arrest"\n' +
+          '- "Stroke warning signs and FAST test"';
+      } else if (errorData.category === 'too_short') {
+        errorTitle = '⚠️ Query Too Short';
+        errorAction = 'Please provide more details about your medical question.';
+      } else if (errorData.category === 'empty') {
+        errorTitle = '⚠️ Empty Query';
+        errorAction = 'Please enter a medical question or search term.';
+      }
+    } catch {
+      // If parsing fails, extract message from error string
+      const match = error.message.match(/"message":"([^"]+)"/);
+      if (match) {
+        errorMessage = match[1];
+      }
+    }
+
+    // Try to extract user's original query from context
+    if (error.context?.req?.query) {
+      userQuery = error.context.req.query;
+    }
+
+    return {
+      title: errorTitle,
+      message: userQuery ? `Your query: "${userQuery}"\n\n${errorMessage}` : errorMessage,
+      action: errorAction,
+      technical: error.message,
+      retryable: false,
+    };
+  }
+
   // Validation errors
   if (error.message?.includes('required') || error.message?.includes('invalid')) {
     return {
@@ -175,12 +274,17 @@ export function handleError(error: any): UserFriendlyError {
  */
 export function formatErrorMessage(error: any): string {
   const friendly = handleError(error);
-  
+
   let message = friendly.message;
   if (friendly.action) {
-    message += ` ${friendly.action}`;
+    // For content moderation errors with multiple lines/suggestions, use proper line breaks
+    if (friendly.action.includes('\n')) {
+      message += `\n\n${friendly.action}`;
+    } else {
+      message += ` ${friendly.action}`;
+    }
   }
-  
+
   return message;
 }
 
