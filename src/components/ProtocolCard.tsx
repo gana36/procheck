@@ -23,14 +23,7 @@ import {
   Building,
   AlertCircle,
   Clock,
-  TrendingUp,
-  Globe,
-  User,
-  MessageSquare,
-  Check,
-  Circle,
-  Send,
-  Loader2
+  TrendingUp
 } from 'lucide-react';
 import { ProtocolData } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';

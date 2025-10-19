@@ -507,3 +507,6 @@ ehthumbs.db
 Thumbs.db
 
 backend/cred.json
+
+# Firebase cache
+.firebase/

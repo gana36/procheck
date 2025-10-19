@@ -167,7 +167,7 @@ export type ConversationListResponse = {
   details?: string;
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://procheck-backend-562929115050.us-central1.run.app/' || 'http://localhost:8000' ;
 
 // Default request options
 const DEFAULT_REQUEST_OPTIONS: RequestOptions = {
