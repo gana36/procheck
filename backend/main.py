@@ -40,6 +40,7 @@ from services.gemini_service import summarize_checklist, step_thread_chat, proto
 from services.firestore_service import FirestoreService
 from services.embedding_service import generate_embedding, enhance_query_with_llm
 from services.document_processor import DocumentProcessor
+from services.content_moderation import content_moderator
 
 # Global document processor instance to maintain state across requests
 document_processor = DocumentProcessor()
@@ -150,6 +151,19 @@ async def protocols_search(
     """
     if not settings.elasticsearch_configured:
         raise HTTPException(status_code=400, detail="Elasticsearch is not configured.")
+
+    # Validate query content
+    if payload.query:
+        validation = content_moderator.validate_query(payload.query)
+        if not validation['valid']:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "invalid_query",
+                    "message": validation['reason'],
+                    "category": validation['category']
+                }
+            )
 
     original_query = payload.query
     enhanced_info = None
@@ -298,6 +312,22 @@ async def get_user_protocols(user_id: str, size: int = 20):
 async def protocols_generate(payload: ProtocolGenerateRequest):
     if not settings.GEMINI_API_KEY:
         raise HTTPException(status_code=400, detail="GEMINI_API_KEY is not configured.")
+
+    # Validate title and instructions
+    validation = content_moderator.validate_protocol_generation(
+        payload.title,
+        payload.instructions
+    )
+    if not validation['valid']:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_input",
+                "message": validation['reason'],
+                "category": validation['category']
+            }
+        )
+
     try:
         result = summarize_checklist(
             title=payload.title,
@@ -331,7 +361,19 @@ async def step_thread(payload: StepThreadRequest):
     """Step-level thread chat for focused discussions"""
     if not settings.GEMINI_API_KEY:
         raise HTTPException(status_code=400, detail="GEMINI_API_KEY is not configured.")
-    
+
+    # Validate message content
+    validation = content_moderator.validate_query(payload.message)
+    if not validation['valid']:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_message",
+                "message": validation['reason'],
+                "category": validation['category']
+            }
+        )
+
     try:
         # Convert pydantic models to dicts for service layer
         history = [{"role": msg.role, "content": msg.content} for msg in payload.thread_history]
@@ -359,7 +401,19 @@ async def protocol_conversation(payload: ProtocolConversationRequest):
     """Protocol-level conversational chat for follow-up questions"""
     if not settings.GEMINI_API_KEY:
         raise HTTPException(status_code=400, detail="GEMINI_API_KEY is not configured.")
-    
+
+    # Validate message content
+    validation = content_moderator.validate_query(payload.message)
+    if not validation['valid']:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_message",
+                "message": validation['reason'],
+                "category": validation['category']
+            }
+        )
+
     try:
         # Convert pydantic models to dicts for service layer
         history = [{"role": msg.role, "content": msg.content} for msg in payload.conversation_history]

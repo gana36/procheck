@@ -221,7 +221,7 @@ export async function searchProtocols(
     
     return res.json();
   } catch (error) {
-    logError(error, { function: 'searchProtocols', req });
+    logError(error, { function: 'searchProtocols', req, query: req.query });
     throw error;
   }
 }

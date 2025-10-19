@@ -1185,31 +1185,26 @@ CITATION REQUIREMENT:
       // Save conversation (debounced to prevent excessive API calls)
       debouncedSaveConversation(newMessages, content, currentConversationId);
     } catch (err: any) {
-      // Mark user message as failed
-      const activeTab = getActiveTab();
-      const currentTabMessages = (activeTab?.type === 'chat' ? activeTab.messages : []) || [];
-      const failedMessages = currentTabMessages.map(msg =>
-        msg.id === userMessage.id ? { 
-          ...msg, 
-          status: 'failed' as const,
-          error: err instanceof Error ? err.message : 'Failed to send message'
-        } : msg
-      );
-      
+      // Ensure user message is marked as sent and stays visible
+      const sentUserMessage = { ...userMessage, status: 'sent' as const };
+
+      // Format error message (user query already visible on right side)
+      let errorContent = formatErrorMessage(err);
+
       const assistantMessage: Message = {
         id: generateMessageId(),
         type: 'assistant',
-        content: formatErrorMessage(err),
+        content: errorContent,
         timestamp: getUserTimestamp(),
       };
-      
-      // Update current tab with error message
-      const newMessages = [...failedMessages, assistantMessage];
+
+      // Update current tab with user message (if not already there) and error message
+      const newMessages = [...currentMessages, sentUserMessage, assistantMessage];
       updateActiveTab({
         messages: newMessages,
         isLoading: false
       });
-      
+
       debouncedSaveConversation(newMessages, content, currentConversationId);
     }
   };
