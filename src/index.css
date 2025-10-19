@@ -56,6 +56,22 @@
   body {
     @apply bg-background text-foreground;
   }
+  
+  /* PERFORMANCE: GPU acceleration for smooth animations */
+  [data-chat-container],
+  [data-message-type],
+  .group:hover,
+  button:hover,
+  .transition-all,
+  .transition-transform,
+  .transition-opacity {
+    will-change: transform, opacity;
+  }
+  
+  /* Reset will-change after animation to free GPU resources */
+  * {
+    transition-property: transform, opacity;
+  }
 }
 
 /* Protocol Chat Styles */

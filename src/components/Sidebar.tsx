@@ -175,7 +175,6 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   );
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
-  const [conversationsUpdateKey, setConversationsUpdateKey] = useState(0); // Force re-render trigger
   
   const [savedProtocols, setSavedProtocols] = useState<ApiSavedProtocol[]>(() =>
     globalDataCache.userId === userId ? globalDataCache.protocols : []
@@ -320,25 +319,26 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     const handleNewConversation = (conversation: ConversationListItem) => {
       console.log('📥 [LIVE UPDATE] New conversation added to sidebar:', conversation.id);
       
-      setRecentConversations(prev => {
-        // Check if conversation already exists
-        if (prev.find(c => c.id === conversation.id)) {
-          console.log('⏭️ Conversation already in sidebar, skipping');
-          return prev;
-        }
-        
-        // Add to top of list (most recent)
-        const updated = [conversation, ...prev];
-        
-        // Update global cache
-        if (globalDataCache.userId === userId) {
-          globalDataCache.conversations = updated;
-        }
-        
-        return updated;
+      // PERFORMANCE: Batch state updates using queueMicrotask to avoid layout thrashing
+      queueMicrotask(() => {
+        setRecentConversations(prev => {
+          // Check if conversation already exists
+          if (prev.find(c => c.id === conversation.id)) {
+            console.log('⏭️ Conversation already in sidebar, skipping');
+            return prev;
+          }
+          
+          // Add to top of list (most recent)
+          const updated = [conversation, ...prev];
+          
+          // Update global cache
+          if (globalDataCache.userId === userId) {
+            globalDataCache.conversations = updated;
+          }
+          
+          return updated;
+        });
       });
-      
-      setConversationsUpdateKey(prev => prev + 1); // Force re-render
     };
     
     // Store function reference so parent can call it
@@ -385,8 +385,6 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         
         return updated;
       });
-      
-      setConversationsUpdateKey(prev => prev + 1); // Force re-render
     };
     
     // Store function reference so parent can call it
@@ -425,11 +423,30 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
       });
     };
     
-    // Store function reference so parent can call it
+    // Expose function to parent that removes unbookmarked protocol
+    const handleProtocolUnbookmarked = (protocolId: string) => {
+      console.log('🗑️ [LIVE UPDATE] Protocol unbookmarked, removed from sidebar:', protocolId);
+      
+      setSavedProtocols(prev => {
+        // Remove from list
+        const updated = prev.filter(p => p.id !== protocolId);
+        
+        // Update global cache
+        if (globalDataCache.userId === userId) {
+          globalDataCache.protocols = updated;
+        }
+        
+        return updated;
+      });
+    };
+    
+    // Store function references so parent can call them
     (window as any).__sidebarAddProtocol = handleProtocolBookmarked;
+    (window as any).__sidebarRemoveProtocol = handleProtocolUnbookmarked;
     
     return () => {
       delete (window as any).__sidebarAddProtocol;
+      delete (window as any).__sidebarRemoveProtocol;
     };
   }, [onProtocolBookmarked, userId]);
 
@@ -635,11 +652,16 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     });
   }, [userId, loadConversations, loadSavedProtocols, loadUploadedProtocols]);
 
-  // Handle refresh trigger - only when trigger value changes
+  // DEPRECATED: Handle refresh trigger - no longer needed with live updates
   const lastRefreshTriggerRef = useRef(0);
   useEffect(() => {
+    // Skip if no trigger provided (new behavior - we use live updates instead)
+    if (savedProtocolsRefreshTrigger === undefined) {
+      console.log('✅ Using live updates - no refresh trigger needed');
+      return;
+    }
+    
     const triggerValue = savedProtocolsRefreshTrigger || 0;
-    // Refresh trigger effect
     
     // Only reload if trigger actually changed and is greater than 0
     if (triggerValue > 0 && triggerValue !== lastRefreshTriggerRef.current) {
@@ -707,7 +729,6 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
               console.log('✅ Updated global cache immediately');
             }
             
-            setConversationsUpdateKey(prev => prev + 1); // Force re-render
             skipNextLoadRef.current = true; // Prevent next API reload from overwriting
             console.log('🚫 Set skipNextLoadRef = true to prevent reload');
             setOpenMenuId(null);
@@ -806,28 +827,56 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
         confirmText: 'Remove from Saved',
         dangerous: true,
         confirmAction: async () => {
+          // Store protocol data BEFORE removing for potential rollback
+          const protocolToDelete = savedProtocols.find(p => p.id === protocolId);
+          
           try {
-            await deleteSavedProtocol(currentUser.uid, protocolId);
-            
-            // Remove from local state - no need to reload from server
+            // LIVE UPDATE: Optimistically remove from UI first for instant feedback
             const updatedProtocols = savedProtocols.filter(p => p.id !== protocolId);
-            setSavedProtocols(updatedProtocols);
             
-            // Update global cache to persist across remounts
+            console.log('🔄 Optimistically removed protocol from sidebar');
+            console.log('   Before:', savedProtocols.length, 'protocols');
+            console.log('   After:', updatedProtocols.length, 'protocols');
+            console.log('   Removed ID:', protocolId);
+            
+            // Update BOTH local state AND global cache IMMEDIATELY
+            setSavedProtocols(updatedProtocols);
             if (globalDataCache.userId === userId) {
               globalDataCache.protocols = updatedProtocols;
+              console.log('✅ Updated global cache immediately');
             }
             
             setOpenProtocolMenuId(null);
-            console.log('✅ Protocol deleted (local + cache updated)');
             
-            // Notify parent to close any open tabs with this saved protocol
+            // Notify parent FIRST to close tabs
             if (onSavedProtocolDeleted) {
               onSavedProtocolDeleted(protocolId, protocolTitle);
             }
+
+            // Then delete from backend
+            await deleteSavedProtocol(currentUser.uid, protocolId);
+            
+            console.log('✅ Protocol deleted successfully (backend + cache + tabs)');
           } catch (error) {
-            console.error('Failed to delete protocol:', error);
-            alert('Failed to delete protocol');
+            console.error('❌ Failed to delete protocol:', error);
+            
+            // ROLLBACK: Restore protocol to sidebar on error
+            if (protocolToDelete) {
+              setSavedProtocols(prev => [...prev, protocolToDelete].sort((a, b) => 
+                new Date(b.saved_at).getTime() - new Date(a.saved_at).getTime()
+              ));
+              
+              // Restore to global cache too
+              if (globalDataCache.userId === userId) {
+                globalDataCache.protocols = [...globalDataCache.protocols, protocolToDelete].sort((a, b) => 
+                  new Date(b.saved_at).getTime() - new Date(a.saved_at).getTime()
+                );
+              }
+              
+              console.log('🔄 Rolled back protocol deletion in sidebar');
+            }
+            
+            alert('Failed to remove protocol. Please try again.');
           }
         }
       });
@@ -881,31 +930,29 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
     console.log('🎯 [USER ACTION] Clicking saved protocol:', protocolId);
     if (!currentUser) return;
 
+    // PERFORMANCE: Use cached protocol data from savedProtocols state (no API call needed)
+    const protocol = savedProtocols.find(p => p.id === protocolId);
+    if (protocol && protocol.protocol_data) {
+      console.log('✅ Using cached protocol data (instant load)');
+      onSavedProtocol(protocolId, protocol.protocol_data);
+      return;
+    }
+
+    // Fallback: Only fetch from API if protocol_data is missing (rare case)
     try {
-      // Only call getSavedProtocol API - this is necessary to get full protocol data
-      console.log('🔄 [API CALL] Starting getSavedProtocol (required for protocol data)...');
+      console.log('🔄 [API CALL] Protocol data not in cache, fetching from API...');
       const response = await getSavedProtocol(currentUser.uid, protocolId);
       console.log('🔄 [API CALL] getSavedProtocol completed');
       if (response.success && response.protocol) {
-        console.log('✅ Protocol data fetched, calling onSavedProtocol');
+        console.log('✅ Protocol data fetched from API');
         onSavedProtocol(protocolId, response.protocol.protocol_data);
       } else {
         console.error('❌ Failed to load saved protocol:', response.error);
-        // Fallback: try to find in the current list
-        const protocol = savedProtocols.find(p => p.id === protocolId);
-        if (protocol) {
-          console.log('🔄 Using fallback protocol data');
-          onSavedProtocol(protocolId, null);
-        }
+        onSavedProtocol(protocolId, null);
       }
     } catch (error) {
       console.error('❌ Error loading saved protocol:', error);
-      // Fallback: try to find in the current list
-      const protocol = savedProtocols.find(p => p.id === protocolId);
-      if (protocol) {
-        console.log('🔄 Using fallback protocol data (error case)');
-        onSavedProtocol(protocolId, null);
-      }
+      onSavedProtocol(protocolId, null);
     }
   };
 
@@ -1606,8 +1653,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
               </div>
             )}
 
-            <div className="space-y-3" key={conversationsUpdateKey}>
-              {/* Debug: {recentConversations.length} conversations, key: {conversationsUpdateKey} */}
+            <div className="space-y-3">
               {isLoadingConversations ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 text-teal-600 animate-spin" />
@@ -1619,7 +1665,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
               ) : (
               recentConversations.map((conversation) => (
                 <Card
-                  key={`${conversation.id}-${conversationsUpdateKey}`}
+                  key={conversation.id}
                   className="group relative cursor-pointer hover:shadow-md transition-all duration-200 hover:border-teal-200"
                   onClick={() => editingId !== conversation.id && onRecentSearch(conversation.id)}
                 >
