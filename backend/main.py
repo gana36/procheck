@@ -362,17 +362,7 @@ async def step_thread(payload: StepThreadRequest):
     if not settings.GEMINI_API_KEY:
         raise HTTPException(status_code=400, detail="GEMINI_API_KEY is not configured.")
 
-    # Validate message content
-    validation = content_moderator.validate_query(payload.message)
-    if not validation['valid']:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "invalid_message",
-                "message": validation['reason'],
-                "category": validation['category']
-            }
-        )
+    # No content moderation for step threads - users are asking follow-up questions about existing protocols
 
     try:
         # Convert pydantic models to dicts for service layer
