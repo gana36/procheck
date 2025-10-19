@@ -32,7 +32,7 @@ import StepThread from './StepThread';
 
 interface ProtocolCardProps {
   protocolData: ProtocolData;
-  onSaveToggle?: () => void; // Callback to refresh saved list in sidebar
+  // DEPRECATED: onSaveToggle - no longer needed, we use live updates
   onProtocolUpdate?: (updatedProtocol: ProtocolData) => void; // Callback when protocol is updated via threads
   intent?: 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general';
   isAlreadySaved?: boolean; // Pass this to avoid unnecessary API calls
@@ -121,7 +121,7 @@ const intentThemes = {
   }
 };
 
-const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, onProtocolUpdate, intent = 'general', isAlreadySaved = false, onUnsave }: ProtocolCardProps) {
+const ProtocolCard = memo(function ProtocolCard({ protocolData, onProtocolUpdate, intent = 'general', isAlreadySaved = false, onUnsave }: ProtocolCardProps) {
   const { currentUser } = useAuth();
   const theme = intentThemes[intent] || intentThemes.general;
   const ThemeIcon = theme.icon;
@@ -210,6 +210,11 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
         await deleteSavedProtocol(currentUser.uid, protocolId);
         setIsSaved(false);
         
+        // LIVE UPDATE: Remove from sidebar without API reload
+        if ((window as any).__sidebarRemoveProtocol) {
+          (window as any).__sidebarRemoveProtocol(protocolId);
+        }
+        
         // Notify parent to close tab if this is a saved protocol being viewed
         if (onUnsave) {
           onUnsave();
@@ -229,16 +234,19 @@ const ProtocolCard = memo(function ProtocolCard({ protocolData, onSaveToggle, on
           (window as any).__sidebarAddProtocol({
             id: protocolId,
             title: protocolData.title || 'Untitled Protocol',
-            created_at: new Date().toISOString(),
+            organization: protocolData.organization || 'Unknown',
+            region: protocolData.region || 'Unknown',
+            year: protocolData.year || 'Unknown',
+            saved_at: new Date().toISOString(),
             protocol_data: protocolData,
           });
         }
       }
 
-      // Trigger callback to refresh sidebar (DEPRECATED - now using live updates)
-      if (onSaveToggle) {
-        onSaveToggle();
-      }
+      // DEPRECATED: Don't trigger refresh - we now use live updates for instant UI
+      // if (onSaveToggle) {
+      //   onSaveToggle();
+      // }
     } catch (error) {
       console.error('Failed to toggle save protocol:', error);
     } finally {

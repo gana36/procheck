@@ -27,6 +27,7 @@ const ChatMessageList = memo(({
   onUnsave,
 }: ChatMessageListProps) => {
   // Group messages with date separators
+  // PERFORMANCE: Only depend on messages array - callbacks are stable
   const messageElements = useMemo(() => {
     const elements: JSX.Element[] = [];
     
@@ -62,7 +63,7 @@ const ChatMessageList = memo(({
     });
 
     return elements;
-  }, [messages, onSaveToggle, onProtocolUpdate, onFollowUpClick, onRetryMessage, isSavedProtocolMessage]);
+  }, [messages]); // Removed callbacks from deps - they're passed directly to ChatMessage
 
   return (
     <>

@@ -361,19 +361,22 @@ export function ChatProvider({ children, userId, onSendMessageHandler }: ChatPro
     }
   }, []);
 
-  // Persist tabs to localStorage whenever they change
+  // Persist tabs to localStorage whenever they change (ASYNC to prevent UI jank)
   useEffect(() => {
     if (isRestoringRef.current) {
       isRestoringRef.current = false;
       return;
     }
 
-    try {
-      localStorage.setItem(STORAGE_KEYS.TABS, JSON.stringify(state.tabs));
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, state.activeTabId);
-    } catch (error) {
-      console.error('Failed to persist tabs to localStorage:', error);
-    }
+    // Use queueMicrotask to defer localStorage writes without blocking render
+    queueMicrotask(() => {
+      try {
+        localStorage.setItem(STORAGE_KEYS.TABS, JSON.stringify(state.tabs));
+        localStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, state.activeTabId);
+      } catch (error) {
+        console.error('Failed to persist tabs to localStorage:', error);
+      }
+    });
   }, [state.tabs, state.activeTabId]);
 
   // Get active tab

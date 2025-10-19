@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, startTransition } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -186,7 +186,8 @@ function App() {
     confirmAction: () => void;
     dangerous?: boolean;
   } | null>(null);
-  const [savedProtocolsRefreshTrigger, setSavedProtocolsRefreshTrigger] = useState(0);
+  // DEPRECATED: No longer needed - we use live updates instead
+  // const [savedProtocolsRefreshTrigger, setSavedProtocolsRefreshTrigger] = useState(0);
   const [searchFilter, setSearchFilter] = useState<'all' | 'global' | 'user'>('all');
   const [showProtocolPreview, setShowProtocolPreview] = useState(false);
   const [previewProtocols, setPreviewProtocols] = useState<any[]>([]);
@@ -311,6 +312,33 @@ function App() {
   
   // Abort controller for managing in-flight requests
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // PERFORMANCE: Async localStorage persistence with debouncing to prevent UI jank
+  const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    // Clear any pending persist operations
+    if (persistTimeoutRef.current) {
+      clearTimeout(persistTimeoutRef.current);
+    }
+
+    // Debounce localStorage writes to avoid blocking renders during rapid state changes
+    persistTimeoutRef.current = setTimeout(() => {
+      queueMicrotask(() => {
+        try {
+          localStorage.setItem('procheck_tabs', JSON.stringify(tabs));
+          localStorage.setItem('procheck_active_tab', activeTabId);
+        } catch (error) {
+          console.error('Failed to persist tabs to localStorage:', error);
+        }
+      });
+    }, 300); // 300ms debounce - writes happen after user stops rapidly switching tabs
+
+    return () => {
+      if (persistTimeoutRef.current) {
+        clearTimeout(persistTimeoutRef.current);
+      }
+    };
+  }, [tabs, activeTabId]);
 
   const handleStartSearch = () => {
     if (currentUser) {
@@ -735,16 +763,19 @@ function App() {
       abortControllerRef.current = null;
     }
     
-    // Save current tab's conversation before switching
+    // Save current tab's conversation before switching (non-blocking)
     const currentTab = getActiveTab();
     if (currentTab && currentTab.type === 'chat' && currentTab.messages.length > 0 && userId) {
       const lastUserMessage = [...currentTab.messages].reverse().find(m => m.type === 'user');
       if (lastUserMessage) {
-        await saveCurrentConversation(currentTab.messages, lastUserMessage.content, currentTab.conversationId);
+        saveCurrentConversation(currentTab.messages, lastUserMessage.content, currentTab.conversationId);
       }
     }
     
-    setActiveTabId(tabId);
+    // Use startTransition to mark tab switch as non-urgent (allows React to prioritize urgent updates)
+    startTransition(() => {
+      setActiveTabId(tabId);
+    });
   };
 
   const closeTab = async (tabId: string) => {
@@ -1616,7 +1647,8 @@ CITATION REQUIREMENT:
   }, [currentUser, currentConversationId, messages]);
 
   const handleSaveToggle = useCallback(() => {
-    setSavedProtocolsRefreshTrigger(prev => prev + 1);
+    // DEPRECATED: No longer needed - we use live updates for instant UI
+    // setSavedProtocolsRefreshTrigger(prev => prev + 1);
   }, []);
 
   // Helper function to determine if a message contains a saved protocol
@@ -1723,6 +1755,61 @@ CITATION REQUIREMENT:
     console.log(`✅ Live update complete for deleted conversation`);
   }, [tabs, activeTabId]);
 
+  const handleSavedProtocolDeleted = useCallback((protocolId: string, protocolTitle: string) => {
+    console.log(`🗑️ [LIVE UPDATE] Saved protocol deleted: ${protocolId}`);
+    
+    // Find and close all tabs with this saved protocol
+    // Saved protocols have content that starts with "Saved: {title}"
+    const contentPattern = `Saved: ${protocolTitle}`;
+    
+    const tabsToClose = tabs.filter(tab => 
+      tab.type === 'chat' && 
+      tab.messages.some(m => m.content === contentPattern)
+    );
+    
+    if (tabsToClose.length > 0) {
+      console.log(`🗑️ Closing ${tabsToClose.length} tab(s) for saved protocol: ${protocolTitle}`);
+      
+      setTabs(prevTabs => {
+        // Remove all tabs with this saved protocol
+        const remainingTabs = prevTabs.filter(tab => 
+          !(tab.type === 'chat' && tab.messages.some(m => m.content === contentPattern))
+        );
+        
+        if (remainingTabs.length > 0) {
+          // Check if active tab was removed
+          const activeTabRemoved = !remainingTabs.find(tab => tab.id === activeTabId);
+          
+          if (activeTabRemoved) {
+            // Switch to first remaining tab
+            console.log(`🔄 Active tab was deleted, switching to: ${remainingTabs[0].id}`);
+            setActiveTabId(remainingTabs[0].id);
+          }
+        } else if (remainingTabs.length === 0) {
+          // All tabs were closed, create a new default tab
+          console.log(`🆕 All tabs closed, creating new default tab`);
+          const newTabId = generateTabId();
+          const newTab: ConversationTab = {
+            id: newTabId,
+            title: 'New Protocol',
+            type: 'chat',
+            messages: [],
+            conversationId: generateConversationId(),
+            isLoading: false
+          };
+          setActiveTabId(newTabId);
+          return [newTab];
+        }
+
+        return remainingTabs;
+      });
+    } else {
+      console.log(`ℹ️ No open tabs found for saved protocol: ${protocolTitle}`);
+    }
+
+    console.log(`✅ Live update complete for deleted saved protocol`);
+  }, [tabs, activeTabId]);
+
   const handleSavedProtocol = useCallback(async (protocolId: string, protocolData: any) => {
     console.log('🎯 [APP] handleSavedProtocol called', { protocolId, hasProtocolData: !!protocolData });
     
@@ -1768,10 +1855,38 @@ CITATION REQUIREMENT:
         }
       }
 
-      // Create new tab for the saved protocol
+      // Create new tab immediately (same as recent search pattern)
       const newTabId = createNewTab('Loading...');
-      
-      // Set loading state for new tab
+
+      // PERFORMANCE: If we have protocol data, load instantly (same as recent search with cache)
+      if (fullProtocol) {
+        console.log('✅ Protocol data available, loading instantly (no loading state)');
+        const assistantMessage: Message = {
+          id: generateMessageId(),
+          type: 'assistant',
+          content: contentTitle,
+          timestamp: getUserTimestamp(),
+          protocolData: fullProtocol,
+        };
+
+        // Update tab immediately with data (no loading state, same as cached recent search)
+        setTabs(prevTabs =>
+          prevTabs.map(tab =>
+            tab.id === newTabId
+              ? {
+                  ...tab,
+                  messages: [assistantMessage],
+                  title: fullProtocol.title || 'Saved Protocol',
+                  isLoading: false
+                }
+              : tab
+          )
+        );
+        return;
+      }
+
+      // Fallback: Show loading state only if we don't have data (rare case)
+      console.log('⏳ Protocol data not available, showing loading state');
       setTabs(prevTabs =>
         prevTabs.map(tab =>
           tab.id === newTabId ? { ...tab, isLoading: true } : tab
@@ -1783,16 +1898,17 @@ CITATION REQUIREMENT:
         type: 'assistant',
         content: contentTitle,
         timestamp: getUserTimestamp(),
-        protocolData: fullProtocol || undefined,
+        protocolData: undefined,
       };
 
+      // Update with message after loading
       setTabs(prevTabs =>
         prevTabs.map(tab =>
           tab.id === newTabId
             ? {
                 ...tab,
                 messages: [assistantMessage],
-                title: fullProtocol?.title || 'Saved Protocol',
+                title: 'Saved Protocol',
                 isLoading: false
               }
             : tab
@@ -2066,8 +2182,8 @@ CITATION REQUIREMENT:
         message: 'Protocols approved successfully! Indexing in progress...'
       });
 
-      // Trigger sidebar refresh for saved protocols
-      setSavedProtocolsRefreshTrigger(prev => prev + 1);
+      // DEPRECATED: No longer trigger refresh - uploaded protocols use live updates
+      // setSavedProtocolsRefreshTrigger(prev => prev + 1);
 
       // Refresh user uploaded protocols after a short delay to allow indexing to complete
       setTimeout(async () => {
@@ -2543,10 +2659,11 @@ CITATION REQUIREMENT:
           onRecentSearch={handleRecentSearch}
           onSavedProtocol={handleSavedProtocol}
           onConversationDeleted={handleConversationDeleted}
+          onSavedProtocolDeleted={handleSavedProtocolDeleted}
           onConversationSaved={() => {}} // Enable live updates
           onConversationUpdated={() => {}} // Enable live updates
           onProtocolBookmarked={() => {}} // Enable live updates
-          savedProtocolsRefreshTrigger={savedProtocolsRefreshTrigger}
+          savedProtocolsRefreshTrigger={undefined}
           onShowLogoutModal={handleShowLogoutModal}
           onShowDeleteModal={handleShowDeleteModal}
           onShowProtocolPreview={handleShowProtocolPreview}
