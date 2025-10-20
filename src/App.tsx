@@ -1060,6 +1060,29 @@ function App() {
         debouncedSaveConversation(newMessages, content, currentConversationId);
         return;
       }
+
+      // Check if user has selected "My Protocols" but has no personal protocols
+      if (searchFilter === 'user' && userIndexProtocols.length === 0) {
+        // Show a helpful message in the chat
+        const assistantMessage: Message = {
+          id: generateMessageId(),
+          type: 'assistant',
+          content: "Sorry, you don't have any personal protocols yet. To create personal protocols, go to **Profile > Upload Medical Documents** to upload your medical PDFs or documents. Once uploaded, you'll be able to search through your personal protocol collection!",
+          timestamp: getUserTimestamp(),
+        };
+
+        // Update current messages with user message marked as sent and assistant response
+        const updatedUserMessage = { ...userMessage, status: 'sent' as const };
+        const newMessages = [...currentMessages, updatedUserMessage, assistantMessage];
+
+        updateActiveTab({
+          messages: newMessages,
+          isLoading: false
+        });
+        debouncedSaveConversation(newMessages, content, currentConversationId);
+        return;
+      }
+
       // Map search filter to API search mode
       const getSearchMode = (filter: 'all' | 'global' | 'user'): 'mixed' | 'global_only' | 'user_only' => {
         switch (filter) {
@@ -1091,8 +1114,36 @@ function App() {
       console.log('📤 Search Results:', {
         total: searchRes.total,
         hitsCount: searchRes.hits.length,
-        firstHitSource: searchRes.hits[0]?.source
+        firstHitSource: searchRes.hits[0]?.source,
+        firstHitScore: searchRes.hits[0]?.score
       });
+
+      // Check if user-only search returned no results or very low relevance results
+      if (searchFilter === 'user' && searchRes.hits.length > 0) {
+        // Get the best score from results
+        const bestScore = searchRes.hits[0]?.score || 0;
+
+        // If the best matching protocol has a very low score (< 1.0), it's likely irrelevant
+        // Elasticsearch scores typically range from 0-10+, with <1.0 being very poor matches
+        if (bestScore < 1.0) {
+          const assistantMessage: Message = {
+            id: generateMessageId(),
+            type: 'assistant',
+            content: `I found protocols in your personal collection, but they don't seem relevant to "${content}". Your protocols appear to be focused on different medical topics. \n\n To view your protocols **Profile > My Protocols > Your Protocol Index**  \n\n**Suggestions:**\n- Switch to **All Protocols** to search both your protocols and the global database\n- Switch to **Global Only** to search the comprehensive medical protocol database\n- Upload more protocols related to "${content}" via **Profile > Upload Medical Documents**`,
+            timestamp: getUserTimestamp(),
+          };
+
+          const updatedUserMessage = { ...userMessage, status: 'sent' as const };
+          const newMessages = [...currentMessages, updatedUserMessage, assistantMessage];
+
+          updateActiveTab({
+            messages: newMessages,
+            isLoading: false
+          });
+          debouncedSaveConversation(newMessages, content, currentConversationId);
+          return;
+        }
+      }
 
       const snippets = selectSnippets(content, searchRes.hits);
 
