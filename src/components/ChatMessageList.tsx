@@ -8,7 +8,6 @@ import { isSameDay, formatMessageDate } from '@/lib/date-utils';
 interface ChatMessageListProps {
   messages: Message[];
   isLoading: boolean;
-  onSaveToggle: (message: Message) => void;
   onProtocolUpdate?: (updatedProtocol: any) => void;
   onFollowUpClick?: (question: string) => void;
   onRetryMessage?: (messageId: string) => void;
@@ -19,7 +18,6 @@ interface ChatMessageListProps {
 const ChatMessageList = memo(({
   messages,
   isLoading,
-  onSaveToggle,
   onProtocolUpdate,
   onFollowUpClick,
   onRetryMessage,
@@ -50,7 +48,6 @@ const ChatMessageList = memo(({
         <div key={message.id}>
           <ChatMessage
             message={message}
-            onSaveToggle={() => onSaveToggle(message)}
             onProtocolUpdate={onProtocolUpdate}
             onFollowUpClick={onFollowUpClick}
             onRetryMessage={onRetryMessage}

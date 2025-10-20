@@ -150,7 +150,6 @@ export function handleError(error: any): UserFriendlyError {
     let errorMessage = 'Your query contains inappropriate or irrelevant content.';
     let errorTitle = 'Invalid Query';
     let errorAction = 'Please reformulate your question to be medical-related and appropriate.';
-    let suggestion = null;
     let userQuery = null;
 
     try {
@@ -164,10 +163,6 @@ export function handleError(error: any): UserFriendlyError {
 
       if (errorData.message) {
         errorMessage = errorData.message;
-      }
-
-      if (errorData.suggestion) {
-        suggestion = errorData.suggestion;
       }
 
       // Set title and action based on category

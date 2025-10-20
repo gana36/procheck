@@ -11,7 +11,6 @@ import CitationsDropdown from './CitationsDropdown';
 
 interface ChatMessageProps {
   message: Message;
-  onSaveToggle?: () => void;
   onProtocolUpdate?: (updatedProtocol: any) => void;
   onFollowUpClick?: (question: string) => void;
   onRetryMessage?: (messageId: string) => void;
@@ -117,7 +116,7 @@ const stripMarkdown = (text: string): string => {
     .trim();
 };
 
-export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, onFollowUpClick, onRetryMessage, isFirstUserMessage = false, isProtocolAlreadySaved = false, onUnsave }: ChatMessageProps) {
+export default function ChatMessage({ message, onProtocolUpdate, onFollowUpClick, onRetryMessage, isFirstUserMessage = false, isProtocolAlreadySaved = false, onUnsave }: ChatMessageProps) {
 
   if (message.type === 'user') {
     return (
@@ -225,7 +224,6 @@ export default function ChatMessage({ message, onSaveToggle, onProtocolUpdate, o
               return (
                 <ProtocolCard
                   protocolData={message.protocolData}
-                  onSaveToggle={onSaveToggle}
                   onProtocolUpdate={onProtocolUpdate}
                   intent={protocolIntent as 'emergency' | 'symptoms' | 'treatment' | 'diagnosis' | 'prevention' | 'general'}
                   isAlreadySaved={isProtocolAlreadySaved}

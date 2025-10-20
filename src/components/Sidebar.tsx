@@ -1141,14 +1141,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
         // CRITICAL: For completion statuses, check cancellation BEFORE updating uploadProgress
         if (status.status === 'completed' || status.status === 'awaiting_approval') {
-          // Use functional update to check the absolute latest cancelled state
-          let isCancelled = false;
-          setUploadCancelled((currentCancelled) => {
-            isCancelled = currentCancelled;
-            return currentCancelled; // Don't change it, just read it
-          });
-
-          if (isCancelled) {
+          // Check the ref for the absolute latest cancelled state
+          if (uploadCancelledRef.current) {
             console.log('🚫 Upload is cancelled - ignoring backend completion, NOT updating uploadProgress');
             // Stop polling and bail out WITHOUT updating any state
             if (pollingRef.current) {
@@ -1186,20 +1180,10 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
             setUploadProgress(null);
           }, 3000); // Show success for 3 seconds
         } else if (status.status === 'awaiting_approval') {
-          // TRIPLE CHECK: Use functional update to get the absolute latest cancelled state
-          let shouldShowPreview = true;
-          setUploadCancelled((currentCancelled) => {
-            console.log('🔍 FINAL CHECK: Is upload currently cancelled?', currentCancelled);
-            if (currentCancelled) {
-              console.log('🚫 Upload is cancelled - will NOT show preview or reset state');
-              shouldShowPreview = false;
-              return true; // Keep it cancelled
-            }
-            console.log('⏳ Upload processing completed, awaiting user approval');
-            return false; // Not cancelled, reset to false
-          });
-
-          if (!shouldShowPreview) {
+          // TRIPLE CHECK: Check the ref for the absolute latest cancelled state
+          console.log('🔍 FINAL CHECK: Is upload currently cancelled?', uploadCancelledRef.current);
+          if (uploadCancelledRef.current) {
+            console.log('🚫 Upload is cancelled - will NOT show preview or reset state');
             // Stop polling and bail out - don't update uploadProgress
             if (pollingRef.current) {
               clearTimeout(pollingRef.current);
@@ -1207,6 +1191,8 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
             }
             return;
           }
+
+          console.log('⏳ Upload processing completed, awaiting user approval');
 
           setIsUploading(false);
           uploadCancelledRef.current = false; // Sync ref with state
@@ -2512,7 +2498,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                       <div className="flex items-center text-sm text-green-600">
                         <div className="h-2 w-2 bg-green-500 rounded-full mr-2"></div>
                         {uploadProgress.status === 'awaiting_approval'
-                          ? `Ready for review! ${uploadProgress.protocols_extracted || 0} protocols generated`
+                          ? `${uploadProgress.protocols_extracted || 0} protocols generated`
                           : `Successfully processed ${uploadProgress.protocols_extracted || 0} protocols`
                         }
                       </div>

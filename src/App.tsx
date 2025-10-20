@@ -1648,11 +1648,6 @@ CITATION REQUIREMENT:
     }, 2000); // Save 2 seconds after last update
   }, [currentUser, currentConversationId, messages]);
 
-  const handleSaveToggle = useCallback(() => {
-    // DEPRECATED: No longer needed - we use live updates for instant UI
-    // setSavedProtocolsRefreshTrigger(prev => prev + 1);
-  }, []);
-
   // Helper function to determine if a message contains a saved protocol
   const isSavedProtocolMessage = (message: Message): boolean => {
     // Check if the message content starts with "Saved:" which indicates it's a saved protocol
@@ -2767,7 +2762,6 @@ CITATION REQUIREMENT:
             messages={messages}
             isLoading={isLoading}
             savedScrollPosition={savedScrollPositionRef.current}
-            onSaveToggle={handleSaveToggle}
             onProtocolUpdate={handleProtocolUpdate}
             onFollowUpClick={handleFollowUpClick}
             onRetryMessage={handleRetryMessage}
