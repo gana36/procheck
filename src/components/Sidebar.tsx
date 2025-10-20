@@ -223,6 +223,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   // Upload modal state - now comes from props for persistence
   // Upload state - now comes from props for persistence
   const [customPrompt, setCustomPrompt] = useState('');
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const uploadAbortController = useRef<AbortController | null>(null);
   const uploadCancelledRef = useRef(false); // Track cancellation state immediately (not async like state)
@@ -1009,24 +1010,33 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
 
   // Upload handling functions
   const handleFileUpload = async (file: File) => {
+    // Clear any previous error
+    setUploadError(null);
+
     if (!currentUser) {
-      alert('Please log in to upload files');
+      console.warn('⚠️ User not logged in, ignoring file upload');
       return;
     }
 
     // Prevent multiple simultaneous uploads
     if (isUploading) {
-      alert('Please wait for the current upload to complete before starting a new one');
+      setUploadError('Please wait for the current upload to complete');
+      setTimeout(() => setUploadError(null), 3000);
       return;
     }
 
-    if (!file.name.toLowerCase().endsWith('.zip')) {
-      alert('Please select a ZIP file');
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith('.zip') && !fileName.endsWith('.pdf')) {
+      console.warn('⚠️ Invalid file type:', fileName, '(only .zip and .pdf are supported)');
+      setUploadError('Please upload a ZIP or PDF file');
+      setTimeout(() => setUploadError(null), 3000);
       return;
     }
 
     if (file.size > 100 * 1024 * 1024) { // 100MB limit
-      alert('File size exceeds 100MB limit');
+      console.warn('⚠️ File size exceeds 100MB limit:', (file.size / 1024 / 1024).toFixed(2), 'MB');
+      setUploadError(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is 100MB`);
+      setTimeout(() => setUploadError(null), 3000);
       return;
     }
 
@@ -1266,6 +1276,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
   const handleUploadDocuments = () => {
     setShowUploadModal(true);
     setCustomPrompt(''); // Reset custom prompt when opening modal
+    setUploadError(null); // Clear any previous errors
   };
 
   const handleCancelUpload = async () => {
@@ -2350,6 +2361,16 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                 </div>
               </div>
 
+              {/* Upload Error Message */}
+              {uploadError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">
+                  <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-sm font-medium">{uploadError}</span>
+                </div>
+              )}
+
               {/* File Upload Area */}
               <div
                 className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:border-teal-400 transition-colors"
@@ -2372,14 +2393,14 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
               >
                 <Upload className="h-12 w-12 text-slate-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-slate-900 mb-2">
-                  Drop your ZIP file here
+                  Drop your file here
                 </h3>
                 <p className="text-sm text-slate-600 mb-4">
-                  or click to browse files
+                  ZIP or PDF files • Max 100MB
                 </p>
                 <input
                   type="file"
-                  accept=".zip"
+                  accept=".zip,.pdf"
                   className="hidden"
                   id="file-upload"
                   disabled={isUploading}
@@ -2402,7 +2423,7 @@ const Sidebar = memo(function Sidebar({ onNewSearch, onRecentSearch, onSavedProt
                   ) : (
                     <Upload className="h-4 w-4 mr-2" />
                   )}
-                  {isUploading ? 'Upload in Progress...' : 'Choose ZIP File'}
+                  {isUploading ? 'Upload in Progress...' : 'Choose ZIP/PDF File'}
                 </label>
               </div>
 
