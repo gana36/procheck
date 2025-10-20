@@ -10,7 +10,6 @@ interface ChatContainerProps {
   messages: Message[];
   isLoading: boolean;
   savedScrollPosition?: number;
-  onSaveToggle: (message: Message) => void;
   onProtocolUpdate: (updatedProtocol: any) => void;
   onFollowUpClick: (question: string) => void;
   onRetryMessage: (messageId: string) => void;
@@ -22,7 +21,6 @@ const ChatContainer = memo(({
   messages,
   isLoading,
   savedScrollPosition = 0,
-  onSaveToggle,
   onProtocolUpdate,
   onFollowUpClick,
   onRetryMessage,
@@ -111,7 +109,6 @@ const ChatContainer = memo(({
           <OptimizedChatMessageList
             messages={messages}
             isLoading={isLoading}
-            onSaveToggle={onSaveToggle}
             onProtocolUpdate={onProtocolUpdate}
             onFollowUpClick={onFollowUpClick}
             onRetryMessage={onRetryMessage}
@@ -122,7 +119,6 @@ const ChatContainer = memo(({
           <ChatMessageList
             messages={messages}
             isLoading={isLoading}
-            onSaveToggle={onSaveToggle}
             onProtocolUpdate={onProtocolUpdate}
             onFollowUpClick={onFollowUpClick}
             onRetryMessage={onRetryMessage}

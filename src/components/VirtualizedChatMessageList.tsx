@@ -8,7 +8,6 @@ import { isSameDay, formatMessageDate } from '@/lib/date-utils';
 interface LazyMessageProps {
   message: Message;
   isFirstUserMessage: boolean;
-  onSaveToggle: (message: Message) => void;
   onProtocolUpdate?: (updatedProtocol: any) => void;
   onFollowUpClick?: (question: string) => void;
   onRetryMessage?: (messageId: string) => void;
@@ -19,7 +18,6 @@ interface LazyMessageProps {
 const LazyMessage = memo(({
   message,
   isFirstUserMessage,
-  onSaveToggle,
   onProtocolUpdate,
   onFollowUpClick,
   onRetryMessage,
@@ -62,7 +60,6 @@ const LazyMessage = memo(({
       {isVisible ? (
         <ChatMessage
           message={message}
-          onSaveToggle={() => onSaveToggle(message)}
           onProtocolUpdate={onProtocolUpdate}
           onFollowUpClick={onFollowUpClick}
           onRetryMessage={onRetryMessage}
@@ -81,7 +78,6 @@ LazyMessage.displayName = 'LazyMessage';
 interface OptimizedChatMessageListProps {
   messages: Message[];
   isLoading: boolean;
-  onSaveToggle: (message: Message) => void;
   onProtocolUpdate?: (updatedProtocol: any) => void;
   onFollowUpClick?: (question: string) => void;
   onRetryMessage?: (messageId: string) => void;
@@ -95,7 +91,6 @@ interface OptimizedChatMessageListProps {
 const OptimizedChatMessageList = memo(({
   messages,
   isLoading,
-  onSaveToggle,
   onProtocolUpdate,
   onFollowUpClick,
   onRetryMessage,
@@ -136,7 +131,6 @@ const OptimizedChatMessageList = memo(({
             key={message.id}
             message={message}
             isFirstUserMessage={isFirstUserMessage}
-            onSaveToggle={onSaveToggle}
             onProtocolUpdate={onProtocolUpdate}
             onFollowUpClick={onFollowUpClick}
             onRetryMessage={onRetryMessage}
@@ -148,7 +142,6 @@ const OptimizedChatMessageList = memo(({
           <div key={message.id}>
             <ChatMessage
               message={message}
-              onSaveToggle={() => onSaveToggle(message)}
               onProtocolUpdate={onProtocolUpdate}
               onFollowUpClick={onFollowUpClick}
               onRetryMessage={onRetryMessage}
@@ -162,7 +155,7 @@ const OptimizedChatMessageList = memo(({
     });
 
     return elements;
-  }, [messages, shouldUseLazyLoading, onSaveToggle, onProtocolUpdate, onFollowUpClick, onRetryMessage, isSavedProtocolMessage]);
+  }, [messages, shouldUseLazyLoading, onProtocolUpdate, onFollowUpClick, onRetryMessage, isSavedProtocolMessage]);
 
   return (
     <>
