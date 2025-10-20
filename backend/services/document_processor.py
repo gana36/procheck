@@ -43,15 +43,16 @@ class DocumentProcessor:
         self.active_tasks = {}  # upload_key -> asyncio.Task
         self.cancelled_uploads = set()
 
-    async def process_upload(self, user_id: str, zip_content: bytes, upload_id: str, custom_prompt: Optional[str] = None) -> Dict[str, Any]:
+    async def process_upload(self, user_id: str, file_content: bytes, upload_id: str, custom_prompt: Optional[str] = None, filename: str = None) -> Dict[str, Any]:
         """
         Main processing pipeline for uploaded documents
 
         Args:
             user_id: Firebase Auth user ID
-            zip_content: Raw ZIP file content
+            file_content: Raw ZIP or PDF file content
             upload_id: Unique upload identifier
             custom_prompt: Optional custom instructions for protocol generation
+            filename: Original filename to determine file type
 
         Returns:
             Dict with processing results
@@ -62,8 +63,8 @@ class DocumentProcessor:
         try:
             print(f"🔄 Starting document processing for upload {upload_id}")
 
-            # Step 1: Extract ZIP file
-            pdf_files = await self.extract_zip(zip_content, upload_id)
+            # Step 1: Extract files (ZIP or single PDF)
+            pdf_files = await self.extract_files(file_content, upload_id, filename)
             print(f"📁 Extracted {len(pdf_files)} PDF files")
 
             # Check for cancellation
@@ -172,6 +173,50 @@ class DocumentProcessor:
             if upload_key in self.active_tasks:
                 del self.active_tasks[upload_key]
                 print(f"🧹 Removed {upload_key} from active_tasks")
+
+    async def extract_files(self, file_content: bytes, upload_id: str, filename: str = None) -> List[Dict[str, Any]]:
+        """Extract PDF files from ZIP archive or handle single PDF file"""
+        # Determine if it's a ZIP or PDF based on filename
+        is_pdf = filename and filename.lower().endswith('.pdf')
+
+        if is_pdf:
+            # Handle single PDF file
+            return await self.extract_single_pdf(file_content, upload_id, filename)
+        else:
+            # Handle ZIP file
+            return await self.extract_zip(file_content, upload_id)
+
+    async def extract_single_pdf(self, pdf_content: bytes, upload_id: str, filename: str) -> List[Dict[str, Any]]:
+        """Handle a single PDF file upload"""
+        pdf_files = []
+
+        # Create a dedicated directory for this upload
+        upload_session_dir = os.path.join(self.upload_dir, upload_id)
+        os.makedirs(upload_session_dir, exist_ok=True)
+        print(f"📁 Created upload session directory: {upload_session_dir}")
+
+        # Yield to event loop to allow cancellation
+        await asyncio.sleep(0)
+
+        # Create safe filename
+        safe_filename = os.path.basename(filename).replace('/', '_').replace('\\', '_')
+        file_path = os.path.join(upload_session_dir, safe_filename)
+
+        # Save the PDF file
+        with open(file_path, 'wb') as f:
+            f.write(pdf_content)
+
+        # Match the structure expected by extract_text_from_pdfs
+        pdf_files.append({
+            'filename': filename,
+            'safe_filename': safe_filename,
+            'size': len(pdf_content),
+            'extracted_path': file_path,
+            'content': pdf_content  # IMPORTANT: This is needed for text extraction
+        })
+
+        print(f"📄 Saved single PDF: {filename} ({len(pdf_content)} bytes)")
+        return pdf_files
 
     async def extract_zip(self, zip_content: bytes, upload_id: str) -> List[Dict[str, Any]]:
         """Extract PDF files from ZIP archive to upload directory"""

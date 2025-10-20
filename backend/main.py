@@ -662,13 +662,13 @@ async def upload_documents(
     file: UploadFile = File(...),
     custom_prompt: str = Form(None)
 ):
-    """Upload ZIP file containing medical PDFs for protocol extraction"""
+    """Upload ZIP or PDF file containing medical PDFs for protocol extraction"""
     if not user_id or not user_id.strip():
         raise HTTPException(status_code=400, detail="user_id is required")
 
     # Validate file type
-    if not file.filename or not file.filename.endswith('.zip'):
-        raise HTTPException(status_code=400, detail="Only ZIP files are allowed")
+    if not file.filename or not (file.filename.endswith('.zip') or file.filename.endswith('.pdf')):
+        raise HTTPException(status_code=400, detail="Only ZIP or PDF files are allowed")
 
     # Validate file size (100MB limit)
     content = await file.read()
@@ -684,7 +684,8 @@ async def upload_documents(
     # Add background task for processing
     # Create a cancellable task instead of using background_tasks
     async def wrapped_process_upload():
-        return await document_processor.process_upload(user_id, content, upload_id, custom_prompt)
+        # Pass the filename to determine if it's a ZIP or PDF
+        return await document_processor.process_upload(user_id, content, upload_id, custom_prompt, file.filename)
 
     # Create and track the task immediately
     upload_key = f"{user_id}_{upload_id}"
