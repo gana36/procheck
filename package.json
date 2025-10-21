@@ -1,8 +1,30 @@
 {
   "name": "procheck",
-  "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "AI-powered medical protocol search and checklist generation platform using Elasticsearch Hybrid Search and Google Gemini AI",
   "type": "module",
+  "author": "ProCheck Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/procheck.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/procheck/issues"
+  },
+  "homepage": "https://github.com/yourusername/procheck#readme",
+  "keywords": [
+    "medical",
+    "healthcare",
+    "protocol",
+    "checklist",
+    "elasticsearch",
+    "gemini",
+    "ai",
+    "hybrid-search",
+    "react",
+    "typescript"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
