@@ -4152,18 +4152,106 @@ CITATION REQUIREMENT:
   );
 
   return (
-    <Routes>
-      <Route path="/" element={<LandingScreen onStartSearch={handleStartSearch} onSampleQuery={handleSampleQuery} />} />
-      <Route path="/login" element={<LoginPage onLoginSuccess={handleAuthSuccess} />} />
-      <Route path="/signup" element={<SignupPage onSignupSuccess={handleAuthSuccess} />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/dashboard" element={
-        <ProtectedRoute>
-          <Dashboard />
-        </ProtectedRoute>
-      } />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<LandingScreen onStartSearch={handleStartSearch} onSampleQuery={handleSampleQuery} onShowLogoutModal={handleShowLogoutModal} />} />
+        <Route path="/login" element={<LoginPage onLoginSuccess={handleAuthSuccess} />} />
+        <Route path="/signup" element={<SignupPage onSignupSuccess={handleAuthSuccess} />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/dashboard" element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+
+      {/* Global Logout Confirmation Modal */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="h-10 w-10 bg-orange-100 rounded-full flex items-center justify-center">
+                <LogOut className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Log Out</h3>
+                <p className="text-sm text-slate-600">Are you sure you want to log out?</p>
+              </div>
+            </div>
+            <div className="flex space-x-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setShowLogoutModal(false)}
+                className="px-4 py-2"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmLogout}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white"
+              >
+                Log Out
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Delete Account Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="h-10 w-10 bg-red-100 rounded-full flex items-center justify-center">
+                <UserX className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Delete Account</h3>
+                <p className="text-sm text-slate-600">This action cannot be undone. All your data will be permanently deleted.</p>
+              </div>
+            </div>
+            <div className="space-y-4 mb-4">
+              {/* Password input for email/password users */}
+              {currentUser && !currentUser.providerData.some(p => p.providerId === 'google.com') && (
+                <div>
+                  <label htmlFor="deletePasswordInput" className="block text-sm font-medium text-slate-700 mb-2">
+                    Enter your password to confirm
+                  </label>
+                  <input
+                    id="deletePasswordInput"
+                    type="password"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="Password"
+                  />
+                </div>
+              )}
+              {deleteConfirmError && (
+                <p className="text-sm text-red-600">{deleteConfirmError}</p>
+              )}
+            </div>
+            <div className="flex space-x-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteConfirmError('');
+                }}
+                className="px-4 py-2"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmDeleteAccount}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white"
+              >
+                Delete Account
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

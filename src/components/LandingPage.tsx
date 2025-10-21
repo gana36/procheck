@@ -2,22 +2,19 @@ import { useState } from "react";
 import { Search, Stethoscope, User, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { sampleQueries } from "@/data/mockData";
 
-const SAMPLE_QUERIES = [
-  "Dengue fever management in pediatric patients",
-  "Sepsis early recognition protocol",
-  "Drug-resistant tuberculosis treatment guidelines",
-  "Post-exposure prophylaxis for needle stick injury"
-];
+const SAMPLE_QUERIES = sampleQueries.slice(0, 4); // Use first 4 queries from mockData
 
 interface LandingPageProps {
   onStartSearch?: () => void;
   onSampleQuery?: (query: string) => void;
+  onShowLogoutModal?: () => void;
 }
 
-export default function LandingPage({ onStartSearch, onSampleQuery }: LandingPageProps) {
+export default function LandingPage({ onStartSearch, onSampleQuery, onShowLogoutModal }: LandingPageProps) {
   const navigate = useNavigate();
-  const { currentUser, logout } = useAuth();
+  const { currentUser } = useAuth();
   const [query, setQuery] = useState("");
 
   const handleSearch = () => {
@@ -49,11 +46,9 @@ export default function LandingPage({ onStartSearch, onSampleQuery }: LandingPag
     navigate('/login');
   };
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } catch (error) {
-      console.error('Failed to log out:', error);
+  const handleLogout = () => {
+    if (onShowLogoutModal) {
+      onShowLogoutModal();
     }
   };
 
@@ -169,17 +164,11 @@ export default function LandingPage({ onStartSearch, onSampleQuery }: LandingPag
 
           {/* Simple stats */}
           <div className="flex items-center justify-center gap-8 text-sm text-slate-600">
-            <div>
-              <span className="text-slate-900 font-semibold">1,247</span> protocols
-            </div>
+            <div>protocols</div>
             <div className="w-1 h-1 bg-slate-300 rounded-full" />
-            <div>
-              <span className="text-slate-900 font-semibold">52</span> sources
-            </div>
+            <div>sources</div>
             <div className="w-1 h-1 bg-slate-300 rounded-full" />
-            <div>
-              <span className="text-slate-900 font-semibold">30s</span> average search
-            </div>
+            <div>flash search</div>
           </div>
 
           {/* Medical illustration section below */}
@@ -210,7 +199,7 @@ export default function LandingPage({ onStartSearch, onSampleQuery }: LandingPag
                 </h2>
                 <p className="text-slate-600 mb-6 leading-relaxed">
                   ProCheck uses hybrid AI search to synthesize medical protocols from 
-                  global health authorities. Get comprehensive clinical guidelines in 30 seconds.
+                  global health authorities. Get comprehensive clinical guidelines in 10 seconds.
                 </p>
                 
                 <div className="space-y-3">
@@ -224,7 +213,7 @@ export default function LandingPage({ onStartSearch, onSampleQuery }: LandingPag
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                    <span className="text-slate-700">30x faster than manual search</span>
+                    <span className="text-slate-700">90x faster than manual search</span>
                   </div>
                 </div>
 
