@@ -2,19 +2,19 @@
 
 FastAPI backend service for medical protocol search and generation using **Elastic Hybrid Search** and **Google Cloud Gemini AI**.
 
-## 🏆 **NEW: Hybrid Search Feature!**
+## NEW: Hybrid Search Feature
 
 This implementation combines **BM25 keyword search** with **semantic vector search** using Elasticsearch's RRF (Reciprocal Rank Fusion) - perfect for the Elastic + Google Cloud hackathon challenge!
 
 **Key Features:**
-- 🔍 **Hybrid Search**: Combines text matching + semantic understanding
-- 🤖 **AI Query Enhancement**: Gemini expands queries with medical terminology
-- 📊 **Vector Embeddings**: 768-dim Gemini embeddings for semantic search
-- ⚡ **RRF Ranking**: Intelligent result fusion from multiple retrievers
+- **Hybrid Search**: Combines text matching + semantic understanding
+- **AI Query Enhancement**: Gemini expands queries with medical terminology
+- **Vector Embeddings**: 768-dim Gemini embeddings for semantic search
+- **RRF Ranking**: Intelligent result fusion from multiple retrievers
 
-👉 **See [HYBRID_SEARCH_GUIDE.md](HYBRID_SEARCH_GUIDE.md) for detailed documentation**
+See [HYBRID_SEARCH_GUIDE.md](HYBRID_SEARCH_GUIDE.md) for detailed documentation
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Python 3.8+
@@ -56,7 +56,7 @@ The API will be available at:
 - Documentation: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 backend/
@@ -71,7 +71,7 @@ backend/
 └── tests/                 # Test files
 ```
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 
@@ -88,14 +88,14 @@ Optional:
 - `DEBUG`: Enable debug mode (default: True)
 - `ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins
 
-## 🏥 API Endpoints
+## API Endpoints
 
 ### Health & Status
 - `GET /` - Root endpoint with basic info
 - `GET /health` - Detailed health check
 - `GET /elasticsearch/health` - Elasticsearch cluster health
 
-### Protocol Search ✨ **NEW HYBRID SEARCH**
+### Protocol Search - NEW HYBRID SEARCH
 - `POST /protocols/search?use_hybrid=true` - **Hybrid search** (BM25 + vectors + RRF)
 - `POST /protocols/search?use_hybrid=true&enhance_query=true` - With AI query enhancement
 - `POST /protocols/generate` - Generate protocol checklist with Gemini
@@ -111,12 +111,12 @@ Optional:
 - `GET /conversations/{user_id}/{conversation_id}` - Get specific conversation
 - `DELETE /conversations/{user_id}/{conversation_id}` - Delete conversation
 
-## 🔍 Development Status
+## Development Status
 
-✅ **Completed:**
-- ✨ **Hybrid Search** with Elasticsearch RRF (BM25 + Vector)
-- ✨ **Gemini Embeddings** (text-embedding-004, 768-dim)
-- ✨ **AI Query Enhancement** using Gemini LLM
+**Completed:**
+- **Hybrid Search** with Elasticsearch RRF (BM25 + Vector)
+- **Gemini Embeddings** (text-embedding-004, 768-dim)
+- **AI Query Enhancement** using Gemini LLM
 - Elasticsearch integration with dense_vector support
 - Gemini API integration for summarization
 - Protocol search and generation endpoints
@@ -124,7 +124,7 @@ Optional:
 - CORS middleware and health checks
 - Complete API documentation
 
-📋 **Optional Enhancements:**
+**Optional Enhancements:**
 - Result re-ranking with LLM
 - Search analytics dashboard
 - Query suggestions
@@ -133,7 +133,7 @@ Optional:
 - Rate limiting
 - Docker configuration
 
-## 🧪 Quick Start Guide
+## Quick Start Guide
 
 ### 1. Index Sample Data
 ```bash
@@ -166,7 +166,7 @@ curl http://localhost:8000/elasticsearch/health
 curl http://localhost:8000/elasticsearch/count
 ```
 
-## 📚 Documentation
+## Documentation
 
 - **[Hybrid Search Guide](HYBRID_SEARCH_GUIDE.md)** - Complete technical documentation
 - **[Hackathon Plan](../HACKATHON_IMPROVEMENT_PLAN.md)** - Step-by-step implementation guide
@@ -174,13 +174,13 @@ curl http://localhost:8000/elasticsearch/count
 - ReDoc documentation: http://localhost:8000/redoc
 - OpenAPI schema: http://localhost:8000/openapi.json
 
-## 🎯 For the Hackathon
+## For the Hackathon
 
 This implementation directly addresses the **Elastic Challenge**:
-- ✅ Elastic's **hybrid search capabilities** (RRF)
-- ✅ **Google Cloud's generative AI** (Gemini embeddings + LLM)
-- ✅ **Conversational and context-aware** solution
-- ✅ Transforms how people interact with **medical protocol data**
+- Elastic's **hybrid search capabilities** (RRF)
+- **Google Cloud's generative AI** (Gemini embeddings + LLM)
+- **Conversational and context-aware** solution
+- Transforms how people interact with **medical protocol data**
 
 See [HACKATHON_IMPROVEMENT_PLAN.md](../HACKATHON_IMPROVEMENT_PLAN.md) for the complete strategy!
 
