@@ -1,4 +1,4 @@
-# ProCheck - AI-Powered Medical Protocol Search & Generation
+# ProCheck - AI-Powered Medical Protocol Search & Generation - [🎥 Watch Video](https://www.youtube.com/watch?v=QS8evOeT4SM)
 
 > An intelligent medical protocol search and checklist generation platform powered by Elasticsearch Hybrid Search and Google Gemini AI.
 
