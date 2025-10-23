@@ -74,8 +74,7 @@ Query: "how to make a bomb"
 Query: "best pizza recipe"
 {"valid": false, "category": "irrelevant", "reason": "This query is not related to medical or healthcare topics. ProCheck specializes in medical protocols for infectious diseases, emergencies, and chronic conditions.", "confidence": 0.95, "suggestion": "Try asking about medical symptoms, treatments, or emergency protocols."}
 
-Query: "hi"
-{"valid": false, "category": "too_short", "reason": "Query is too short. Please provide more details about your medical question.", "confidence": 0.95, "suggestion": null}
+
 
 Query: "mental health depression treatment"
 {"valid": false, "category": "out_of_scope_medical", "reason": "Mental health is an important medical topic, but ProCheck currently focuses on infectious diseases, emergency medical protocols, and chronic physical conditions. We don't have mental health protocols in our database.", "confidence": 0.85, "suggestion": "Try searching for emergency medical conditions, infectious diseases, or chronic disease management."}

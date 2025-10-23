@@ -458,9 +458,9 @@ export function validateMessageContent(content: string): { valid: boolean; error
   }
 
   // Check for minimum meaningful content
-  if (content.trim().length < 3) {
-    return { valid: false, error: 'Message too short' };
-  }
+  // if (content.trim().length < 3) {
+  //   return { valid: false, error: 'Message too short' };
+  // }
 
   return { valid: true };
 }
