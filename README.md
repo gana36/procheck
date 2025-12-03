@@ -2,10 +2,17 @@
 
 > An intelligent medical protocol search and checklist generation platform powered by Elasticsearch Hybrid Search and Google Gemini AI.
 
+[![Devpost](https://img.shields.io/badge/Devpost-ProCheck-003E54?logo=devpost&logoColor=white)](https://devpost.com/software/procheck)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB)](https://reactjs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+
+## 🏆 Hackathon Achievement
+
+**ProCheck** was built for the **Elastic + Google Cloud Hackathon**, showcasing the power of combining Elasticsearch's hybrid search capabilities with Google Cloud's Gemini AI. 
+
+🔗 **[View on Devpost](https://devpost.com/software/procheck)**
 
 ## Features
 
@@ -193,7 +200,7 @@ See `backend/.env.example` for required configuration:
 
 ### Console Logging
 
-The application uses Vite's esbuild configuration to automatically remove `console.log`, `console.debug`, and `console.info` statements in production builds. `console.error` and `console.warn` are preserved for production debugging.
+The application uses Vite's esbuild configuration to automatically remove `console.log`, `console.debug`, and `console.info` statements in production builds. `console.error` and `console.warn` are preserved.
 
 **Development mode:** All console statements work normally
 **Production build:** Only `console.error` and `console.warn` are included
