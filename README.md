@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB)](https://reactjs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 
-## 🏆 Hackathon Achievement
+## Hackathon Achievement
 
 **ProCheck** was built for the **Elastic + Google Cloud Hackathon**, showcasing the power of combining Elasticsearch's hybrid search capabilities with Google Cloud's Gemini AI. 
 
